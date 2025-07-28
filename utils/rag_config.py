@@ -9,9 +9,15 @@ from typing import Type
 from pydantic import BaseModel
 
 
+from langchain.text_splitter import MarkdownTextSplitter
+import pymupdf4llm
+
+
+
 # --- LLM setup ---
 llm = ChatOllama(
-    model="llama3.2:latest", 
+    model="qwen3:8b", 
+    # model="qwen3:4b", 
     temperature=0.1, 
     top_p=0.9,
 )
@@ -23,19 +29,22 @@ def load_and_split_pdf(pdf_path: str):
     Load a PDF, split it into chunks, and store them in a vector database.
     """
 
-    loader = PyMuPDFLoader(pdf_path)
+    # loader = PyMuPDFLoader(pdf_path)
+    # documents = loader.load()
+    # print(documents)
 
-    documents = loader.load()
+    # splitter = RecursiveCharacterTextSplitter(chunk_size=800, chunk_overlap=90)
+    # chunks = splitter.split_documents(documents)
 
-    print(documents)
+    md_text = pymupdf4llm.to_markdown(pdf_path, pages=[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15])
 
-    splitter = RecursiveCharacterTextSplitter(chunk_size=600, chunk_overlap=30)
-    chunks = splitter.split_documents(documents)
+    splitter = MarkdownTextSplitter(chunk_size=2500, chunk_overlap=100)
+    docs = splitter.create_documents([md_text])
 
-    print(f"Loaded {len(documents)} documents and split them into {len(chunks)} chunks.")
+    # print(f"Loaded {len(documents)} documents and split them into {len(chunks)} chunks.")
 
     vectordb = Chroma.from_documents(
-            chunks,
+            docs,
             embedding=OllamaEmbeddings(model="nomic-embed-text"),
             persist_directory="./vector_db"
     )
@@ -51,68 +60,29 @@ def load_and_split_pdf(pdf_path: str):
 def generate_desc(description: str, retrieved_docs, schema: Type[BaseModel]) -> BaseModel:
     docs_content = "\n\n".join(doc.page_content for doc in retrieved_docs)
 
+
     prompt = f"""
-                You are an ontology expert tasked with extracting detailed descriptions of the following Digital Twin (DT) characteristics:
 
-                \n{description}\n
+You are an ontology expert tasked with extracting detailed descriptions of the following Digital Twin (DT) characteristics:
 
-                Based only on the following documents:
+\n{description}\n
 
-                \n{docs_content}\n
+Based only on the following documents:
 
-                Remember to extract the following characteristics:
-                \n{description}\n
-                ---
+\n{docs_content}\n
 
-                IMPORTANT:
-                - Provide a detailed and factual description for each characteristic for the specific use case.
-                - Use ONLY the provided information to infer the contents to be filled for each characteristic.
-                - Be VERY specific of the tecnologies mentioned and assume you are presenting it to someone without any context of the use case.
-                - Insert "Not Found" into the field if no evidence is found in the text.
-                """
+Remember to extract the following characteristics:
+\n{description}\n
+---
+
+IMPORTANT:
+- Provide a very detailed and factual description for each characteristic for the specific use case.
+- Use ONLY the provided information to fill the content for each characteristic.
+- Be VERY specific of the tecnologies mentioned and assume you are presenting it to someone without any context of the use case.
+- State the facts without making any specific references to the documents.
+- Insert "Not Found" into the field if no evidence is found in the text.
+        """
 
     output = llm.with_structured_output(schema).invoke(prompt)
     # output = llm.invoke(prompt)
     return output
-
-
-
-################### NOTE: Compare with old generation function #########################
-
-# def generate_desc(retrieved_docs, characteristics):
-
-#     docs_content = "\n\n".join(doc.page_content for doc in retrieved_docs)
-
-#     query = f"""
-#     You are an ontology expert tasked with extracting detailed descriptions of the characteristics 
-#     of a Digital Twin (DT) based on provided documents.
-
-#     Given the following information:\n\n{docs_content}\n\n
-
-#     Your task is to provide detailed descriptions for each of the following characteristics 
-#     of a Digital Twin: \n\n{characteristics}\n\n
-
-#     IMPORTANT:
-#     - Provide a detailed description for each characteristic.
-#     - Use the information from the provided documents to inform your descriptions.
-#     - ONLY include information that is directly related to the characteristics, nothing else.
-#     """
-    
-#     response = llm.invoke({"query": query})
-
-#     return response
-
-
-################### NOTE: This is most likely trash: ###################################3
-
-# def retrieve_documents(state, vectordb):
-
-#     """
-#     Retrieve documents from the vector database based on a query.
-#     """
-#     if "query" not in state:
-#         raise ValueError("Query must be provided.")
-
-    #  retrieved_docs = vectordb.similarity_search(state["query"], k=5)
-
-#     return retrieved_docs
