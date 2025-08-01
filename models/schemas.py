@@ -1,5 +1,13 @@
 from pydantic import BaseModel
 from typing import Optional
+from enum import Enum
+
+class DetailLevel(str, Enum):
+    """Enumeration for detail levels in descriptions."""
+    NOT_FOUND = "Not Found"
+    BASIC = "Basic"
+    DETAILED = "Detailed"
+    COMPREHENSIVE = "Comprehensive"
 
 class DTCharacteristics(BaseModel):
     system_under_study: Optional[str]
