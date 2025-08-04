@@ -117,8 +117,7 @@ class EnhancedRAGPipeline:
         
         return vectordb
     
-    def enhanced_retrieval(self, vectordb: Chroma, query: str, k: int = 5, 
-                          use_mmr: bool = True, diversity_factor: float = 0.3) -> List:
+    def enhanced_retrieval(self, vectordb: Chroma, query: str, k: int = 5) -> List:
         """
         Enhanced retrieval with multiple strategies and query expansion.
         """      

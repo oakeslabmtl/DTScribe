@@ -14,9 +14,6 @@ class ExtractionConfig:
     query: str
     description: str
     k: int = 6
-    use_mmr: bool = True
-    diversity_factor: float = 0.3
-
 
 @dataclass
 class ExtractionResult:
