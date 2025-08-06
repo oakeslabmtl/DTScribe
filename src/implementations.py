@@ -137,33 +137,36 @@ class OMLGenerator(IOMLGenerator):
         self._rag_pipeline = rag_pipeline
     
     def generate(self, characteristics: Dict[str, Any], vocab_files: Dict[str, str]) -> str:
-        print("🏗️ Generating enhanced OML description...")
-        oml_output = self._rag_pipeline.generate_enhanced_oml(characteristics, vocab_files)
+        print("🏗️ Generating OML description...")
+        oml_output = self._rag_pipeline.generate_oml(characteristics, vocab_files)
         print("✅ OML generation completed")
         return oml_output
 
 
 class QualityAnalyzer(IQualityAnalyzer):
     """Analyzes extraction quality."""
-    
-    def analyze(self, results: Dict[str, Any]) -> Dict[str, Any]:
+
+    def analyze_characteristics(self, results: Dict[str, Any]) -> Dict[str, Any]:
         characteristics = results.get("extracted_characteristics", {})
         metadata = results.get("extraction_metadata", {})
         
-        # Count extracted vs not found
         total_characteristics = len(characteristics)
-        not_found_count = sum(1 for v in characteristics.values() if v == "Not Found")
-        extracted_count = total_characteristics - not_found_count
-        
-        # Calculate average description length for extracted characteristics
-        extracted_values = [v for v in characteristics.values() if v != "Not Found"]
-        avg_length = sum(len(str(v)) for v in extracted_values) / len(extracted_values) if extracted_values else 0
-        
+        valid_extractions = 0
+        total_length = 0
+
+        for v in characteristics.values():
+            if v and v != "Not Found" and v.strip() != "":
+                valid_extractions += 1
+                total_length += len(v)
+
+        avg_length = total_length / valid_extractions if valid_extractions > 0 else 0
+
+
         return {
             "total_characteristics": total_characteristics,
-            "extracted_count": extracted_count,
-            "not_found_count": not_found_count,
-            "extraction_rate": extracted_count / total_characteristics * 100,
+            "extracted_count": valid_extractions,
+            "not_found_count": total_characteristics - valid_extractions,
+            "extraction_rate": (valid_extractions / total_characteristics * 100) if total_characteristics > 0 else 0,
             "average_description_length": avg_length,
             "total_docs_retrieved": sum(v for k, v in metadata.items() if k.endswith("_docs_retrieved")),
             "total_chunks": metadata.get("total_chunks", 0)

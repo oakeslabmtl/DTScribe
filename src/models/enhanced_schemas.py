@@ -111,21 +111,6 @@ class DTCharacteristics(BaseModel):
         if isinstance(v, str) and v.strip() == "":
             return "Not Found"
         return v
-    
-    def get_extraction_summary(self) -> Dict[str, Any]:
-        """Get a summary of the extraction quality."""
-        fields = self.model_dump(exclude_none=True)
-        total_fields = len(self.model_fields)
-        not_found_count = sum(1 for v in fields.values() if v == "Not Found")
-        extracted_count = len(fields) - not_found_count
-        
-        return {
-            "total_characteristics": total_fields,
-            "extracted_count": extracted_count,
-            "not_found_count": not_found_count,
-            "extraction_rate": (extracted_count / total_fields) * 100,
-            "average_length": sum(len(str(v)) for v in fields.values() if v != "Not Found") / max(extracted_count, 1)
-        }
 
 # Validation utilities
 class ExtractionQualityValidator:

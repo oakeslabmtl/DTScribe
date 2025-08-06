@@ -83,7 +83,7 @@ class IQualityAnalyzer(ABC):
     """Interface for quality analysis."""
     
     @abstractmethod
-    def analyze(self, results: Dict[str, Any]) -> Dict[str, Any]:
+    def analyze_characteristics(self, results: Dict[str, Any]) -> Dict[str, Any]:
         """Analyze extraction quality."""
         pass
 

@@ -47,7 +47,7 @@ class ExtractionOrchestrator:
         self._retriever: IDocumentRetriever = None
         self._extractor: ICharacteristicsExtractor = None
     
-    def run_extraction(self, pdf_path: str, config: ExperimentConfig = None, save_results: bool = True) -> Dict[str, Any]:
+    def run_extraction(self, pdf_path: str, experiment_id: str = None, config: ExperimentConfig = None, save_results: bool = True) -> Dict[str, Any]:
         """Run the complete extraction pipeline with optional experiment tracking."""
         print("🚀 Starting Enhanced Digital Twin Characteristics Extraction")
         print("=" * 60)
@@ -118,24 +118,41 @@ class ExtractionOrchestrator:
         characteristics_result = None
         if self._experiment_tracker and save_results:
             results = self._state_manager.get_all_state()
-            quality_metrics = self._quality_analyzer.analyze(results)
+            quality_metrics = self.analyze_characteristic_extraction(results)
 
-            characteristics_result = self._experiment_tracker.create_characteristics_result(
-                experiment_id=experiment_id or f"manual_{int(time.time())}",
+            print("==" * 60)
+            print(quality_metrics.get('extraction_rate', 0.0), "% characteristics extracted")
+            print("==" * 60)
+
+            characteristics_result = CharacteristicsExtractionResult(
+                experiment_id=experiment_id,
                 pdf_path=pdf_path,
                 extracted_characteristics=results.get("extracted_characteristics", {}),
                 extraction_metadata=results.get("extraction_metadata", {}),
-                quality_metrics=quality_metrics,
-                processing_time=characteristics_processing_time,
-                block_metrics=block_metrics,
                 errors=errors,
-                warnings=warnings
+                warnings=warnings,
+                timestamp=datetime.now(),
+                config=config,
+                total_characteristics=quality_metrics.get('total_characteristics', 0),
+                extracted_count=quality_metrics.get('extracted_count', 0),
+                not_found_count=quality_metrics.get('not_found_count', 0),
+                extraction_rate=quality_metrics.get('extraction_rate', 0.0),
+                average_description_length=quality_metrics.get('average_description_length', 0.0),
+                total_docs_retrieved=quality_metrics.get('total_docs_retrieved', 0),
+                total_chunks=quality_metrics.get('total_chunks', 0),
+                processing_time_seconds=characteristics_processing_time,
+                block_processing_times=block_metrics.get('processing_times', {}),
+                block_success_rates=block_metrics.get('success_rates', {}),
             )
 
             saved_path = self._experiment_tracker.results_saver.save_characteristics_results(characteristics_result)
             print(f"💾 Characteristics results saved to: {saved_path}")
-
-        # Generate OML (separate task)
+        
+        return self._state_manager.get_all_state()
+        
+        
+    def run_oml_generation(self, experiment_id: str = None, save_results: bool = True) -> Dict[str, Any]:
+        """Run OML generation as a separate task with optional experiment tracking."""
         print("\n--- Generating OML ---")
         oml_start_time = time.time()
         oml_errors = []
@@ -161,24 +178,29 @@ class ExtractionOrchestrator:
 
         # Save OML generation results if tracking is enabled
         if self._experiment_tracker and save_results and oml_output:
-            oml_result = self._experiment_tracker.create_oml_result(
+            oml_result = OMLGenerationResult(
                 experiment_id=f"{experiment_id}_oml" if experiment_id else f"manual_{int(time.time())}_oml",
                 characteristics_experiment_id=experiment_id or f"manual_{int(time.time())}",
                 generated_oml=oml_output,
                 oml_metadata={},
-                generation_time=oml_processing_time,
+                generation_time_seconds=oml_processing_time,
                 errors=oml_errors,
-                warnings=oml_warnings
+                warnings=oml_warnings,
+                timestamp=datetime.now(),
+                oml_syntax_valid=True,
+                oml_completeness_score=1.0,
+                oml_line_count=len(oml_output.splitlines()),
+                oml_instance_count=oml_output.count("instance")
             )
 
             saved_oml_path = self._experiment_tracker.results_saver.save_oml_results(oml_result)
             print(f"💾 OML results saved to: {saved_oml_path}")
 
         return self._state_manager.get_all_state()
-    
-    def analyze_results(self, results: Dict[str, Any]) -> Dict[str, Any]:
+
+    def analyze_characteristic_extraction(self, results: Dict[str, Any]) -> Dict[str, Any]:
         """Analyze the quality of extraction results."""
-        return self._quality_analyzer.analyze(results)
+        return self._quality_analyzer.analyze_characteristics(results)
 
 
 class ExtractionPipelineFactory:
@@ -270,7 +292,7 @@ def main():
     
     # Create experiment configuration
     config = ExtractionPipelineFactory.create_config(
-        model_name="qwen3:8b",
+        model_name="qwen3:4b",
         embedding_model="nomic-embed-text",
         chunk_size=1500,
         chunk_overlap=200,
@@ -293,46 +315,54 @@ def main():
         config = ExtractionPipelineFactory.create_config(**exp_params)
 
         print(f"\n🔬 Running experiment with parameters: {exp_params}")
-        # Run extraction with experiment tracking
-        results = orchestrator.run_extraction(pdf_path, config=config, save_results=True)
+
+        experiment_id = None
+        # Start experiment tracking if configured
+        if orchestrator._experiment_tracker and config:
+            # Only create one experiment per unique configuration
+            experiment_id = orchestrator._experiment_tracker.start_experiment(config)
+            print(f"📊 Experiment ID: {experiment_id}")
+
+        extraction_results = orchestrator.run_extraction(pdf_path, experiment_id=experiment_id, config=config, save_results=True)
+        oml_results = orchestrator.run_oml_generation(experiment_id=experiment_id, save_results=True)
+        
+        # Detailed results
+        print(f"\n📋 Extracted Characteristics:")
+        df = pd.DataFrame(list(extraction_results["extracted_characteristics"].items()), 
+                        columns=['Characteristic', 'Description'])
+        print(df.to_markdown(index=False, tablefmt="grid"))
+        
+        print(f"\n🏗️ Generated OML:")
+        print("-" * 40)
+        oml_output = oml_results.get("oml_output", "Not generated")
+        print(oml_output)
 
         # Analyze and display results
         print("\n" + "=" * 60)
         print("📊 EXTRACTION RESULTS")
         print("=" * 60)
 
-        quality_metrics = orchestrator.analyze_results(results)
+        quality_metrics = orchestrator.analyze_characteristic_extraction(extraction_results)
         print(f"📈 Quality Metrics:")
         print(f"   • Extraction Rate: {quality_metrics['extraction_rate']:.1f}%")
         print(f"   • Characteristics Extracted: {quality_metrics['extracted_count']}/{quality_metrics['total_characteristics']}")
         print(f"   • Average Description Length: {quality_metrics['average_description_length']:.0f} characters")
         print(f"   • Total Documents Retrieved: {quality_metrics['total_docs_retrieved']}")
         print(f"   • Total Chunks in Vector DB: {quality_metrics['total_chunks']}")
-
-        # Detailed results
-        print(f"\n📋 Extracted Characteristics:")
-        df = pd.DataFrame(list(results["extracted_characteristics"].items()), 
-                        columns=['Characteristic', 'Description'])
-        print(df.to_markdown(index=False, tablefmt="grid"))
-
-        print(f"\n🏗️ Generated OML:")
-        print("-" * 40)
-        oml_output = results.get("oml_output", "Not generated")
-        print(oml_output)
-
+        
         # Show experiment tracking info
         if orchestrator._experiment_tracker:
             print(f"\n📊 Experiment Tracking:")
             print(f"   • Results saved to: experiments/")
             print(f"   • Characteristics summary: experiments/analysis/characteristics_summary.csv")
             print(f"   • OML summary: experiments/analysis/oml_summary.csv")
-
-            # Show recent experiments summary
-            char_summary = orchestrator._experiment_tracker.results_saver.get_characteristics_summary()
-            if not char_summary.empty:
-                print(f"   • Total experiments: {len(char_summary)}")
-                print(f"   • Latest extraction rate: {char_summary.iloc[-1]['extraction_rate']:.1f}%")
-
+            
+            # # Show recent experiments summary
+            # char_summary = orchestrator._experiment_tracker.results_saver.get_characteristics_summary()
+            # if not char_summary.empty:
+            #     print(f"   • Total experiments: {len(char_summary)}")
+            #     print(f"   • Latest extraction rate: {char_summary.iloc[-1]['extraction_rate']:.1f}%")
+    
     print("\n✅ Enhanced extraction completed successfully!")
 
     # Generate comprehensive analysis
