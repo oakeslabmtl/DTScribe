@@ -143,18 +143,38 @@ class EnhancedRAGPipeline:
     def _rerank_documents(self, docs: List, original_query: str) -> List:
         """Re-rank documents based on multiple factors."""
         def score_document(doc):
-            content = doc.page_content.lower()
-            query_lower = original_query.lower()
+            # content = doc.page_content.lower()
+            # query_lower = original_query.lower()
+
+            content = doc.page_content
+            query_embedding = self.embeddings.embed_query(original_query)
+            doc_embedding = self.embeddings.embed_documents([content])[0]
+
+            # Compute cosine similarity
+            def cosine_similarity(a, b):
+                dot_product = sum(x * y for x, y in zip(a, b))
+                norm_a = sum(x * x for x in a) ** 0.5
+                norm_b = sum(y * y for y in b) ** 0.5
+                return dot_product / (norm_a * norm_b + 1e-8)
             
-            # Basic relevance score
-            relevance_score = sum(1 for word in query_lower.split() if word in content)
-            
+            relevance_score = cosine_similarity(query_embedding, doc_embedding)
+
             # Length penalty (prefer moderate length chunks)
             length_penalty = abs(len(content.split()) - 200) / 1000
-            
+
             return relevance_score - length_penalty
+            
+            # # Basic relevance score
+            # relevance_score = sum(1 for word in query_lower.split() if word in content)
+            
+            # # Length penalty (prefer moderate length chunks)
+            # length_penalty = abs(len(content.split()) - 200) / 1000
+            
+            # return relevance_score - length_penalty
         
         return sorted(docs, key=score_document, reverse=True)
+
+            
     
     def generate_with_cot_and_validation(self, description: str, retrieved_docs: List, 
                                        schema: Type[BaseModel]) -> BaseModel:
