@@ -86,12 +86,10 @@ class ResultsAnalyzer:
                 report.append(chunk_analysis.to_string())
                 report.append("")
             
-            # Retrieval K analysis
-            if len(char_df['retrieval_k'].unique()) > 1:
-                k_analysis = char_df.groupby('retrieval_k')['extraction_rate'].agg(['mean', 'std', 'count'])
-                report.append("#### Retrieval K Impact on Extraction Rate")
-                report.append(k_analysis.to_string())
-                report.append("")
+            # # Retrieval K analysis
+            #     report.append("#### Retrieval K Impact on Extraction Rate")
+            #     report.append(k_analysis.to_string())
+            #     report.append("")
             
             # Temperature analysis
             if len(char_df['temperature'].unique()) > 1:
@@ -142,7 +140,6 @@ class ResultsAnalyzer:
             report.append(f"- **Model**: {best_exp['model_name']}")
             report.append(f"- **Chunk Size**: {best_exp['chunk_size']}")
             report.append(f"- **Chunk Overlap**: {best_exp['chunk_overlap']}")
-            report.append(f"- **Retrieval K**: {best_exp['retrieval_k']}")
             report.append(f"- **Temperature**: {best_exp['temperature']}")
             report.append(f"- **Extraction Rate**: {best_exp['extraction_rate']:.2f}%")
             report.append("")
@@ -151,7 +148,7 @@ class ResultsAnalyzer:
             report.append("### Performance Insights")
             
             # Correlation analysis
-            numeric_cols = ['chunk_size', 'chunk_overlap', 'retrieval_k', 'temperature', 'extraction_rate']
+            numeric_cols = ['chunk_size', 'chunk_overlap', 'temperature', 'extraction_rate']
             available_cols = [col for col in numeric_cols if col in char_df.columns]
             
             if len(available_cols) > 2:
@@ -420,8 +417,8 @@ class ResultsAnalyzer:
         return {
             'syntax_valid': validation_result.get('success', False),
             'completeness_score': 1.0 if validation_result.get('success') else 0.0,
-            'line_count': oml_content.count('\n') + 1,  # Count lines
-            'instance_count': oml_content.count('instance ')  # Count instances
+            'line_count': oml_content.count('\n') + 1,
+            'instance_count': oml_content.count('instance ')
         }
 
 

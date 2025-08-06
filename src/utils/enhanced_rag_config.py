@@ -28,7 +28,7 @@ class EnhancedRAGPipeline:
             top_p=0.9,
             # Add more specific parameters for better control
             top_k=20,
-            repeat_penalty=1.1,
+            # repeat_penalty=1.1,
         )
         
         self.embeddings = OllamaEmbeddings(model=embedding_model)

@@ -49,29 +49,45 @@ class ExtractionOrchestrator:
     
     def run_extraction(self, pdf_path: str, config: ExperimentConfig = None, save_results: bool = True) -> Dict[str, Any]:
         """Run the complete extraction pipeline with optional experiment tracking."""
-        
-        # Initialize pipeline
         print("🚀 Starting Enhanced Digital Twin Characteristics Extraction")
         print("=" * 60)
-        
+
         overall_start_time = time.time()
         experiment_id = None
-        
+
         # Start experiment tracking if configured
         if self._experiment_tracker and config:
             experiment_id = self._experiment_tracker.start_experiment(config)
             print(f"📊 Experiment ID: {experiment_id}")
-        
-        init_result = self._initializer.initialize(pdf_path)
-        self._state_manager.update_state(init_result)
-        
+
+        # Only process PDF and create vector DB if it does not exist
+        vector_db_path = Path("vector_db")
+        if not vector_db_path.exists() or not any(vector_db_path.iterdir()):
+            print("📁 Vector DB not found, processing PDF and creating vector DB...")
+            init_result = self._initializer.initialize(pdf_path)
+            self._state_manager.update_state(init_result)
+        else:
+            print("📂 Vector DB found, loading existing vector DB...")
+            # Only initialize the RAG pipeline and load the existing vector DB
+            rag_pipeline = self._initializer.create_rag_pipeline()
+            vectordb = rag_pipeline.enhanced_pdf_processing(
+                pdf_path,  # pdf_path is still needed for metadata, but Chroma will load from persist_directory
+                chunk_size=config.chunk_size if config else 1500,
+                overlap=config.chunk_overlap if config else 200,
+                max_pages=config.max_pages if config else None
+            )
+            self._state_manager.update_state({
+                "rag_pipeline": rag_pipeline,
+                "vectordb": vectordb
+            })
+
         # Set up retriever and extractor
         rag_pipeline = self._state_manager.get_state("rag_pipeline")
         vectordb = self._state_manager.get_state("vectordb")
-        
+
         self._retriever = DocumentRetriever(rag_pipeline, vectordb)
         self._extractor = CharacteristicsExtractor(rag_pipeline)
-        
+
         # Track block processing
         block_metrics = {
             'processing_times': {},
@@ -79,21 +95,21 @@ class ExtractionOrchestrator:
         }
         errors = []
         warnings = []
-        
+
         # Process all blocks
         for i, processor in enumerate(self._block_processors, 1):
             print(f"\n--- Processing Block {i} ---")
             result = processor.process(self._retriever, self._extractor)
-            
+
             # Track block metrics
             block_name = f"block_{i}"
             block_metrics['success_rates'][block_name] = result.success
             if f"{block_name}_processing_time" in result.metadata:
                 block_metrics['processing_times'][block_name] = result.metadata[f"{block_name}_processing_time"]
-            
+
             if result.success:
                 self._state_manager.merge_characteristics(result.characteristics)
-                
+
                 # Update metadata
                 existing_metadata = self._state_manager.get_state("extraction_metadata") or {}
                 existing_metadata.update(result.metadata)
@@ -102,16 +118,16 @@ class ExtractionOrchestrator:
                 error_msg = f"Block {i} processing failed: {result.error_message}"
                 print(f"❌ {error_msg}")
                 errors.append(error_msg)
-        
+
         # Calculate characteristics extraction metrics
         characteristics_processing_time = time.time() - overall_start_time
-        
+
         # Save characteristics extraction results if tracking is enabled
         characteristics_result = None
         if self._experiment_tracker and save_results:
             results = self._state_manager.get_all_state()
             quality_metrics = self._quality_analyzer.analyze(results)
-            
+
             characteristics_result = self._experiment_tracker.create_characteristics_result(
                 experiment_id=experiment_id or f"manual_{int(time.time())}",
                 pdf_path=pdf_path,
@@ -123,34 +139,34 @@ class ExtractionOrchestrator:
                 errors=errors,
                 warnings=warnings
             )
-            
+
             saved_path = self._experiment_tracker.results_saver.save_characteristics_results(characteristics_result)
             print(f"💾 Characteristics results saved to: {saved_path}")
-        
+
         # Generate OML (separate task)
         print("\n--- Generating OML ---")
         oml_start_time = time.time()
         oml_errors = []
         oml_warnings = []
-        
+
         try:
             characteristics = self._state_manager.get_state("extracted_characteristics")
             vocab_files = {
                 "DTDFVocab": "data/oml/DTDF/vocab/DTDFVocab.oml",
                 "base": "data/oml/DTDF/vocab/base.oml"
             }
-            
+
             oml_output = self._oml_generator.generate(characteristics, vocab_files)
             self._state_manager.update_state({"oml_output": oml_output})
-            
+
         except Exception as e:
             oml_error = f"OML generation failed: {str(e)}"
             print(f"❌ {oml_error}")
             oml_errors.append(oml_error)
             oml_output = ""
-        
+
         oml_processing_time = time.time() - oml_start_time
-        
+
         # Save OML generation results if tracking is enabled
         if self._experiment_tracker and save_results and oml_output:
             oml_result = self._experiment_tracker.create_oml_result(
@@ -162,10 +178,10 @@ class ExtractionOrchestrator:
                 errors=oml_errors,
                 warnings=oml_warnings
             )
-            
+
             saved_oml_path = self._experiment_tracker.results_saver.save_oml_results(oml_result)
             print(f"💾 OML results saved to: {saved_oml_path}")
-        
+
         return self._state_manager.get_all_state()
     
     def analyze_results(self, results: Dict[str, Any]) -> Dict[str, Any]:
@@ -234,7 +250,7 @@ class ExtractionPipelineFactory:
         temperature: float = 0.1,
         top_p: float = 0.9,
         top_k: int = 20,
-        repeat_penalty: float = 1.1,
+        # repeat_penalty: float = 1.1,
         max_pages: int = None,
         **custom_params
     ) -> ExperimentConfig:
@@ -248,7 +264,7 @@ class ExtractionPipelineFactory:
             temperature=temperature,
             top_p=top_p,
             top_k=top_k,
-            repeat_penalty=repeat_penalty,
+            # repeat_penalty=repeat_penalty,
             max_pages=max_pages,
             custom_params=custom_params
         )
@@ -281,24 +297,19 @@ def main():
 
     # Run systematic experiments
     for exp_params in experiments:
-        # Clean up previous vector database
-        vector_db_path = Path("vector_db")
-        if vector_db_path.exists():
-            shutil.rmtree(vector_db_path)
-            print("🧹 Cleaned up previous vector database")
-        
+        # Do NOT delete the vector database; reuse it if it exists
         # Create configuration for this experiment
         config = ExtractionPipelineFactory.create_config(**exp_params)
 
         print(f"\n🔬 Running experiment with parameters: {exp_params}")
         # Run extraction with experiment tracking
         results = orchestrator.run_extraction(pdf_path, config=config, save_results=True)
-        
+
         # Analyze and display results
         print("\n" + "=" * 60)
         print("📊 EXTRACTION RESULTS")
         print("=" * 60)
-        
+
         quality_metrics = orchestrator.analyze_results(results)
         print(f"📈 Quality Metrics:")
         print(f"   • Extraction Rate: {quality_metrics['extraction_rate']:.1f}%")
@@ -306,31 +317,31 @@ def main():
         print(f"   • Average Description Length: {quality_metrics['average_description_length']:.0f} characters")
         print(f"   • Total Documents Retrieved: {quality_metrics['total_docs_retrieved']}")
         print(f"   • Total Chunks in Vector DB: {quality_metrics['total_chunks']}")
-        
+
         # Detailed results
         print(f"\n📋 Extracted Characteristics:")
         df = pd.DataFrame(list(results["extracted_characteristics"].items()), 
                         columns=['Characteristic', 'Description'])
         print(df.to_markdown(index=False, tablefmt="grid"))
-        
+
         print(f"\n🏗️ Generated OML:")
         print("-" * 40)
         oml_output = results.get("oml_output", "Not generated")
         print(oml_output)
-        
+
         # Show experiment tracking info
         if orchestrator._experiment_tracker:
             print(f"\n📊 Experiment Tracking:")
             print(f"   • Results saved to: experiments/")
             print(f"   • Characteristics summary: experiments/analysis/characteristics_summary.csv")
             print(f"   • OML summary: experiments/analysis/oml_summary.csv")
-            
+
             # Show recent experiments summary
             char_summary = orchestrator._experiment_tracker.results_saver.get_characteristics_summary()
             if not char_summary.empty:
                 print(f"   • Total experiments: {len(char_summary)}")
                 print(f"   • Latest extraction rate: {char_summary.iloc[-1]['extraction_rate']:.1f}%")
-    
+
     print("\n✅ Enhanced extraction completed successfully!")
 
     # Generate comprehensive analysis
