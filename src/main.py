@@ -256,7 +256,7 @@ class ExtractionPipelineFactory:
     
     @staticmethod
     def create_config(
-        model_name: str = "qwen3:8b",
+        model_name: str = "qwen3:4b",
         embedding_model: str = "nomic-embed-text",
         chunk_size: int = 1500,
         chunk_overlap: int = 200,
