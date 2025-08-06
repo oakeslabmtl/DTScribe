@@ -60,8 +60,6 @@ class EnhancedRAGPipeline:
             overlap: Overlap between chunks
             max_pages: Maximum number of pages to process (None for all pages)
         """
-        # Get PDF page count and extract pages
-        import pymupdf
         try:
             doc = pymupdf.open(pdf_path)
             total_pages = len(doc)
@@ -259,7 +257,6 @@ Remember: Be highly specific and technical. Include exact technologies, methods,
         """
         Clean LLM response by removing thinking tags and extracting JSON content.
         """
-        import re
         
         # Strip whitespace
         response_text = response_text.strip()
@@ -366,7 +363,6 @@ JSON:
             cleaned_text = self._clean_llm_response(response_text)
             
             # Parse JSON manually
-            import json
             parsed_data = json.loads(cleaned_text)
             
             # Create schema instance

@@ -3,6 +3,7 @@ Concrete implementations following SOLID principles.
 """
 
 from typing import Dict, Any, List, Type, Optional
+from langchain_chroma import Chroma
 from pydantic import BaseModel
 from pathlib import Path
 import pandas as pd
@@ -104,6 +105,27 @@ class PipelineInitializer(IPipelineInitializer):
             "extraction_metadata": {
                 "total_chunks": vectordb._collection.count(),
                 "pdf_info": pdf_info
+            }
+        }
+    
+    def load_existing_vector_db(self, vector_db_path: str = "vector_db") -> Dict[str, Any]:
+        """
+        Loads an existing vector database from disk.
+        """
+        print(f"📂 Loading existing vector DB from {vector_db_path} ...")
+        self._rag_pipeline = EnhancedRAGPipeline()
+        # Load Chroma vector DB from persist_directory
+        
+        vectordb = Chroma(
+            embedding_function=self._rag_pipeline.embeddings,
+            persist_directory=vector_db_path
+        )
+        print("✅ Existing vector DB loaded successfully")
+        return {
+            "vectordb": vectordb,
+            "rag_pipeline": self._rag_pipeline,
+            "extraction_metadata": {
+                "total_chunks": vectordb._collection.count() if hasattr(vectordb, '_collection') else None
             }
         }
 

@@ -256,7 +256,8 @@ def main():
     tuner = HyperparameterTuner(pdf_path)
 
     # Run experiments
-    experiment_results = tuner.run_experiment_batch(max_experiments=-1)  # Run all combinations
+    # experiment_results = tuner.run_experiment_batch(max_experiments=-1)  # Run all combinations
+    experiment_results = tuner.run_experiment_batch(max_experiments=-1) 
     
     # Analyze and visualize results
     tuner.analyze_and_visualize_results(experiment_results)

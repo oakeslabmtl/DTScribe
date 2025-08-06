@@ -61,6 +61,7 @@ class ExtractionOrchestrator:
             print(f"📊 Experiment ID: {experiment_id}")
 
         # Only process PDF and create vector DB if it does not exist
+
         vector_db_path = Path("vector_db")
         if not vector_db_path.exists() or not any(vector_db_path.iterdir()):
             print("📁 Vector DB not found, processing PDF and creating vector DB...")
@@ -68,18 +69,9 @@ class ExtractionOrchestrator:
             self._state_manager.update_state(init_result)
         else:
             print("📂 Vector DB found, loading existing vector DB...")
-            # Only initialize the RAG pipeline and load the existing vector DB
-            rag_pipeline = self._initializer.create_rag_pipeline()
-            vectordb = rag_pipeline.enhanced_pdf_processing(
-                pdf_path,  # pdf_path is still needed for metadata, but Chroma will load from persist_directory
-                chunk_size=config.chunk_size if config else 1500,
-                overlap=config.chunk_overlap if config else 200,
-                max_pages=config.max_pages if config else None
-            )
-            self._state_manager.update_state({
-                "rag_pipeline": rag_pipeline,
-                "vectordb": vectordb
-            })
+            # Ensure RAG pipeline and vector DB are loaded into state manager
+            init_result = self._initializer.load_existing_vector_db(str(vector_db_path))
+            self._state_manager.update_state(init_result)
 
         # Set up retriever and extractor
         rag_pipeline = self._state_manager.get_state("rag_pipeline")
@@ -246,7 +238,7 @@ class ExtractionPipelineFactory:
         embedding_model: str = "nomic-embed-text",
         chunk_size: int = 1500,
         chunk_overlap: int = 200,
-        retrieval_k: int = 6,
+        # retrieval_k: int = 6,
         temperature: float = 0.1,
         top_p: float = 0.9,
         top_k: int = 20,
@@ -260,7 +252,7 @@ class ExtractionPipelineFactory:
             embedding_model=embedding_model,
             chunk_size=chunk_size,
             chunk_overlap=chunk_overlap,
-            retrieval_k=retrieval_k,
+            # retrieval_k=retrieval_k,
             temperature=temperature,
             top_p=top_p,
             top_k=top_k,
@@ -282,7 +274,7 @@ def main():
         embedding_model="nomic-embed-text",
         chunk_size=1500,
         chunk_overlap=200,
-        retrieval_k=6,
+        # retrieval_k=6,
         temperature=0.1,
         custom_params={"experiment_name": "baseline_run"}
     )
@@ -297,7 +289,6 @@ def main():
 
     # Run systematic experiments
     for exp_params in experiments:
-        # Do NOT delete the vector database; reuse it if it exists
         # Create configuration for this experiment
         config = ExtractionPipelineFactory.create_config(**exp_params)
 
