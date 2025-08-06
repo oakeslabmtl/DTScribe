@@ -396,6 +396,7 @@ JSON:
             "standardization": "Standardization",
             "security_and_safety_considerations": "SecuritySafety",
         }
+        comma_separated_description_based_vocab_mapping_keys = ", ".join(description_based_vocab_mapping.keys())
         # Keys not in description-based characteristics will be considered component-based
         component_based_characteristics_keys = {key for key in characteristics if key not in description_based_vocab_mapping}
         print("🏗️ Splitting characteristics for OML generation...")
@@ -405,12 +406,20 @@ JSON:
         component_based_characteristics = {key: characteristics[key] for key in component_based_characteristics_keys if key in characteristics}
 
         # Generate OML sections
-        component_based_oml = self.generate_component_based_oml(component_based_characteristics, vocab_files)
         description_based_oml = self.generate_description_based_oml(description_based_characteristics, description_based_vocab_mapping)
+        component_based_oml = self.generate_component_based_oml(component_based_characteristics, vocab_files, comma_separated_description_based_vocab_mapping_keys)
 
         # Combine both OML description-based and component-based characteristics
         print("🏗️ Combining OML descriptions...")
-        return f"{component_based_oml}\n\n{description_based_oml}"
+        combined_oml = f"{component_based_oml}\n\n{description_based_oml}"
+        # Clean the combined OML content
+        combined_oml = self._clean_llm_response(combined_oml)
+        # Validate the combined OML syntax
+        if not self._validate_oml_syntax(combined_oml):
+            print("Warning: Combined OML may have syntax issues")
+        if not self._validate_oml_with_opencaesar(combined_oml):
+            print("Warning: Combined OML may not meet OpenCAESAR standards")
+        return combined_oml
 
     def generate_description_based_oml(self, characteristics: Dict[str, Any], vocab_mapping: Dict[str, str]) -> str:
         """Generate OML based on characteristics description."""
@@ -426,7 +435,7 @@ JSON:
         return self._clean_llm_response(joined_parts)
     
     def generate_component_based_oml(self, characteristics: Dict[str, Any], 
-                                    vocab_files: Dict[str, str]) -> str:
+                                    vocab_files: Dict[str, str], description_based_vocab_mapping: str) -> str:
         """Generate OML based on components and vocabulary files."""
         print("🏗️ Generating component-based OML description...")
         # Load vocabulary files
@@ -450,56 +459,67 @@ EXTRACTED CHARACTERISTICS:
 
 VOCABULARY REFERENCE:
 {vocab_context}
+                                                  
+LIST OF ALREADY GENERATED CHARACTERISTICS (do not generate again):
+{description_based_vocab_mapping}
 
-Only generate OML code that’s similar to the following syntax examples:
+Only generate OML code that's similar to the following syntax examples:
 SYNTAX EXAMPLES:
 ```oml
+// C2: Acting Components
+instance <name_of_acting_component> : DTDFVocab:ActingComponent [
+    base:desc "<description of the acting component>"
+]
+    
+// C3: Physical sensing components
+instance <name_of_sensing_component> : DTDFVocab:SensingComponent[
+    base:desc "<description of the sensing component>"
+]
+
+// C4: Physical-to-virtual interaction                                           
+instance <name_of_physical_to_virtual_interaction> : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom <name_of_sensing_component1, name_of_sensing_component2, ...>
+]
+
 // Insights/Actions (C17)
 instance <name_of_insight> : DTDFVocab:Insight [
     base:desc "<description of the insight>"
-    DTDFVocab:hasTimeScale baseDesc:<time_scale>
 ]
 
 instance <name_of_action> : DTDFVocab:Action[
     base:desc "<description of the action>"
     DTDFVocab:IsAutomatic <true_or_false>
-    DTDFVocab:hasTimeScale baseDesc:<time_scale>
 ]
                                                   
 // Services (C6)
 instance <name_of_service> : DTDFVocab:Service [
     base:desc "<description of the service>"
-    DTDFVocab:provides <name_of_action_or_insight1>
-    DTDFVocab:provides <name_of_action_or_insight2>
-    DTDFVocab:hasTimeScale baseDesc:<time_scale>
+    DTDFVocab:provides <name_of_action_or_insight1, name_of_action_or_insight2, ...>
     DTDFVocab:atStage baseDesc:<stage>
 ]
 
 // Enablers (C11)
 instance <name_of_enabler> : DTDFVocab:Enabler [
     base:desc "<description of the enabler>"
-    DTDFVocab:enables <name_of_service_enabled_1>
-    DTDFVocab:enables <name_of_service_enabled_2>
+    DTDFVocab:enables <name_of_service_enabled_1, name_of_service_enabled_2, ...>
 ]
 
 // Models/Data (C10)
 instance <name_of_model> : DTDFVocab:Model [
     base:desc "<description of the model>"
-    DTDFVocab:inputTo <name_of_enabler_1>
-    DTDFVocab:inputTo <name_of_enabler_2>
-    DTDFVocab:fromData <name_of-physical_to_virtual_interaction>
+    DTDFVocab:inputTo <name_of_enabler_1, name_of_enabler_2, ...>
+    DTDFVocab:fromData <name_of_physical_to_virtual_interaction>
 ]
                                                   
 instance <name_of_data> : DTDFVocab:Data [
     base:desc "<description of the data>"
-    DTDFVocab:inputTo <name_of_enabler_1>
-    DTDFVocab:inputTo <name_of_enabler_2>
-    DTDFVocab:fromData <name_of-physical_to_virtual_interaction>
+    DTDFVocab:inputTo <name_of_enabler_1, name_of_enabler_2, ...>
+    DTDFVocab:fromData <name_of_physical_to_virtual_interaction>
 ]
 ```
                                                   
 REQUIREMENTS:
-1. Follow OML syntax precisely
+1. Follow OML syntax precisely. Names between <> are placeholders for actual names.
 2. Create instances for each characteristic that has meaningful content (not "Not Found")
 3. Establish proper relationships between instances using the vocabulary predicates
 4. Use descriptive, technical names for instances based on the content
@@ -517,7 +537,8 @@ Generate ONLY the OML code, no explanations or comments outside the OML syntax:
         
         formatted_prompt = oml_prompt.format(
             characteristics=json.dumps(characteristics, indent=2),
-            vocab_context=vocab_context
+            vocab_context=vocab_context,
+            description_based_vocab_mapping=description_based_vocab_mapping
         )
         
         response = self.llm.invoke(formatted_prompt)
