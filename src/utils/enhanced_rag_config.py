@@ -376,10 +376,10 @@ JSON:
             print(f"Manual parsing failed: {e}")
             return self._create_fallback_output(schema)
     
-    def generate_enhanced_oml(self, characteristics: Dict[str, Any], 
+    def generate_oml(self, characteristics: Dict[str, Any], 
                             vocab_files: Dict[str, str]) -> str:
         """
-        Enhanced OML generation with better context and validation.
+        OML generation with better context and validation.
         """
         # Load vocabulary files
         vocab_context = ""
@@ -454,11 +454,18 @@ Generate ONLY the OML code, no explanations or comments outside the OML syntax:
         
         # Basic OML syntax validation
         if self._validate_oml_syntax(oml_content):
-            return oml_content
+            print("Basic OML syntax validation passed")
         else:
             print("Warning: Generated OML may have syntax issues")
-            return oml_content
-    
+            # TODO: Retry generation
+
+        # Advanced validation with OpenCAESAR OML validator
+        if not self._validate_oml_with_opencaesar(oml_content):
+            print("Warning: Generated OML may not meet OpenCAESAR standards")
+            # TODO: Retry generation
+
+        return oml_content
+
     def _validate_oml_syntax(self, oml_content: str) -> bool:
         """Basic OML syntax validation."""
         # Check for basic OML patterns
@@ -467,3 +474,8 @@ Generate ONLY the OML code, no explanations or comments outside the OML syntax:
         has_vocabulary_references = "DTDFVocab:" in oml_content or "base:" in oml_content
         
         return has_instances and has_proper_brackets and has_vocabulary_references
+
+    def _validate_oml_with_opencaesar(self, oml_content: str) -> bool:
+        """Validate OML content using OpenCAESAR's OML Validate."""
+        # TODO: Implement OpenCAESAR OML Validate service
+        return True  # Placeholder for actual validation result

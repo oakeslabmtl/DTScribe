@@ -115,8 +115,8 @@ class OMLGenerator(IOMLGenerator):
         self._rag_pipeline = rag_pipeline
     
     def generate(self, characteristics: Dict[str, Any], vocab_files: Dict[str, str]) -> str:
-        print("🏗️ Generating enhanced OML description...")
-        oml_output = self._rag_pipeline.generate_enhanced_oml(characteristics, vocab_files)
+        print("🏗️ Generating OML description...")
+        oml_output = self._rag_pipeline.generate_oml(characteristics, vocab_files)
         print("✅ OML generation completed")
         return oml_output
 
