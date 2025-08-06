@@ -249,36 +249,3 @@ class ExperimentTracker:
             f.write(f"Configuration: {json.dumps(asdict(config), indent=2)}\n")
         
         return experiment_id
-    
-    def create_characteristics_result(self, 
-                                    experiment_id: str,
-                                    pdf_path: str,
-                                    extracted_characteristics: Dict[str, Any],
-                                    extraction_metadata: Dict[str, Any],
-                                    quality_metrics: Dict[str, Any],
-                                    processing_time: float,
-                                    block_metrics: Dict[str, Any],
-                                    errors: List[str] = None,
-                                    warnings: List[str] = None) -> CharacteristicsExtractionResult:
-        """Create a characteristics extraction result."""
-        
-        return CharacteristicsExtractionResult(
-            experiment_id=experiment_id,
-            timestamp=datetime.now(),
-            pdf_path=pdf_path,
-            config=self.current_config,
-            extracted_characteristics=extracted_characteristics,
-            extraction_metadata=extraction_metadata,
-            total_characteristics=quality_metrics.get('total_characteristics', 0),
-            extracted_count=quality_metrics.get('extracted_count', 0),
-            not_found_count=quality_metrics.get('not_found_count', 0),
-            extraction_rate=quality_metrics.get('extraction_rate', 0.0),
-            average_description_length=quality_metrics.get('average_description_length', 0.0),
-            total_docs_retrieved=quality_metrics.get('total_docs_retrieved', 0),
-            total_chunks=quality_metrics.get('total_chunks', 0),
-            processing_time_seconds=processing_time,
-            block_processing_times=block_metrics.get('processing_times', {}),
-            block_success_rates=block_metrics.get('success_rates', {}),
-            errors=errors or [],
-            warnings=warnings or []
-        )

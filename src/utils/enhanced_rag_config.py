@@ -267,6 +267,8 @@ Remember: Be highly specific and technical. Include exact technologies, methods,
         # Remove code block markers
         if response_text.startswith('```json'):
             response_text = response_text[7:]
+        elif response_text.startswith('```oml'):
+            response_text = response_text[6:]
         elif response_text.startswith('```'):
             response_text = response_text[3:]
         if response_text.endswith('```'):
@@ -381,6 +383,52 @@ JSON:
         """
         OML generation with better context and validation.
         """
+        description_based_vocab_mapping = {
+            "virtual_to_physical_interaction": "VirtualToPhysical",
+            "twinning_time_scale": "TimeScale",
+            "dt_constellation": "Constellation",
+            "life_cycle_stages": "EvolutionStage",
+            "fidelity_and_validity_considerations": "FidelityConsideration",
+            "dt_technical_connection": "TechnicalConnection",
+            "dt_hosting_deployment": "Deployment",
+            "horizontal_integration": "HoriIntegration",
+            "data_ownership_and_privacy": "DataOwnershipPrivacy",
+            "standardization": "Standardization",
+            "security_and_safety_considerations": "SecuritySafety",
+        }
+        # Keys not in description-based characteristics will be considered component-based
+        component_based_characteristics_keys = {key for key in characteristics if key not in description_based_vocab_mapping}
+        print("🏗️ Splitting characteristics for OML generation...")
+        # Create description-based dictionary
+        description_based_characteristics = {key: characteristics[key] for key in description_based_vocab_mapping if key in characteristics}
+        # Create component-based dictionary
+        component_based_characteristics = {key: characteristics[key] for key in component_based_characteristics_keys if key in characteristics}
+
+        # Generate OML sections
+        component_based_oml = self.generate_component_based_oml(component_based_characteristics, vocab_files)
+        description_based_oml = self.generate_description_based_oml(description_based_characteristics, description_based_vocab_mapping)
+
+        # Combine both OML description-based and component-based characteristics
+        print("🏗️ Combining OML descriptions...")
+        return f"{component_based_oml}\n\n{description_based_oml}"
+
+    def generate_description_based_oml(self, characteristics: Dict[str, Any], vocab_mapping: Dict[str, str]) -> str:
+        """Generate OML based on characteristics description."""
+        print("🏗️ Generating description-based OML...")
+        # Generate OML for each characteristic
+
+        oml_parts = []
+        for key in characteristics:
+            value = characteristics.get(key)
+            if value and value != "Not Found":
+                oml_parts.append(f"instance {key} : DTDFVocab:{vocab_mapping.get(key, 'Unknown')} [\n    base:desc \"{value}\"\n]")
+        joined_parts = "\n\n".join(oml_parts)
+        return self._clean_llm_response(joined_parts)
+    
+    def generate_component_based_oml(self, characteristics: Dict[str, Any], 
+                                    vocab_files: Dict[str, str]) -> str:
+        """Generate OML based on components and vocabulary files."""
+        print("🏗️ Generating component-based OML description...")
         # Load vocabulary files
         vocab_context = ""
         for name, path in vocab_files.items():
@@ -406,25 +454,48 @@ VOCABULARY REFERENCE:
 Only generate OML code that’s similar to the following syntax examples:
 SYNTAX EXAMPLES:
 ```oml
-// Enablers (C11)
-instance <name_of_enabler> : DTDFVocab:Enabler [
-        DTDFVocab:enables <name_of_service_enabled_1>
-        DTDFVocab:enables <name_of_service_enabled_2>
-        DTDFVocab:enables <name_of_service_enabled_3>
+// Insights/Actions (C17)
+instance <name_of_insight> : DTDFVocab:Insight [
+    base:desc "<description of the insight>"
+    DTDFVocab:hasTimeScale baseDesc:<time_scale>
 ]
 
-// DT hosting/deployment (C16)
-instance deployment : DTDFVocab:Deployment [
-        base:desc "<Description of the DT hosting/deployment characteristic>"
+instance <name_of_action> : DTDFVocab:Action[
+    base:desc "<description of the action>"
+    DTDFVocab:IsAutomatic <true_or_false>
+    DTDFVocab:hasTimeScale baseDesc:<time_scale>
+]
+                                                  
+// Services (C6)
+instance <name_of_service> : DTDFVocab:Service [
+    base:desc "<description of the service>"
+    DTDFVocab:provides <name_of_action_or_insight1>
+    DTDFVocab:provides <name_of_action_or_insight2>
+    DTDFVocab:hasTimeScale baseDesc:<time_scale>
+    DTDFVocab:atStage baseDesc:<stage>
+]
+
+// Enablers (C11)
+instance <name_of_enabler> : DTDFVocab:Enabler [
+    base:desc "<description of the enabler>"
+    DTDFVocab:enables <name_of_service_enabled_1>
+    DTDFVocab:enables <name_of_service_enabled_2>
 ]
 
 // Models/Data (C10)
-instance <name_of_model_or_data> : DTDFVocab:Data
-    [
-        DTDFVocab:inputTo <name_of_enabler_1>
-        DTDFVocab:inputTo <name_of_enabler_2>
-        DTDFVocab:fromData <name_of-physical_to_virtual_interaction>
-    ]
+instance <name_of_model> : DTDFVocab:Model [
+    base:desc "<description of the model>"
+    DTDFVocab:inputTo <name_of_enabler_1>
+    DTDFVocab:inputTo <name_of_enabler_2>
+    DTDFVocab:fromData <name_of-physical_to_virtual_interaction>
+]
+                                                  
+instance <name_of_data> : DTDFVocab:Data [
+    base:desc "<description of the data>"
+    DTDFVocab:inputTo <name_of_enabler_1>
+    DTDFVocab:inputTo <name_of_enabler_2>
+    DTDFVocab:fromData <name_of-physical_to_virtual_interaction>
+]
 ```
                                                   
 REQUIREMENTS:
@@ -451,6 +522,8 @@ Generate ONLY the OML code, no explanations or comments outside the OML syntax:
         
         response = self.llm.invoke(formatted_prompt)
         oml_content = response.content if hasattr(response, 'content') else str(response)
+        # Clean the response to ensure valid OML syntax
+        oml_content = self._clean_llm_response(oml_content)
         
         # Basic OML syntax validation
         if self._validate_oml_syntax(oml_content):
