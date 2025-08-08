@@ -442,37 +442,89 @@ JSON:
             try:
                 print(f"📝 Attempt {attempt + 1}/{max_retries + 1}: Generating OML...")
                 component_based_oml = self.generate_component_based_oml(component_based_characteristics, vocab_files, comma_separated_description_based_vocab_mapping_keys)
-                # Clean the response
-                component_based_oml = self._clean_llm_response(component_based_oml)
                 # Validate the generated OML syntax
                 if not self._validate_oml_syntax(component_based_oml):
                     print(f"❌ Attempt {attempt + 1}: Invalid OML syntax detected")
                     continue
+                
                 # Write the OML content to file
                 print("💾 Writing OML to file...")
                 write_success = writer.write_oml(component_based_oml, output_path)
                 if not write_success:
                     print(f"❌ Attempt {attempt + 1}: Failed to write OML to file")
                     continue
+                
                 # Validate the written OML file with OpenCAESAR
                 print("⚙️ Validating written OML file with OpenCAESAR...")
-                if not self._validate_oml_with_opencaesar(catalog_parent_path):
+                is_valid, validation_output = self._validate_oml_with_opencaesar(catalog_parent_path)
+                
+                if not is_valid:
                     print(f"❌ Attempt {attempt + 1}: Written OML file validation with OpenCAESAR failed")
-                    continue
+                    print("🔧 Attempting to fix OML based on validation feedback...")
+                    
+                    # Try to fix the OML based on validation feedback
+                    fixed_oml = self._fix_oml_with_feedback(
+                        component_based_oml, 
+                        validation_output, 
+                        component_based_characteristics, 
+                        vocab_files
+                    )
+                    
+                    # Write the fixed OML and validate again
+                    write_success = writer.write_oml(fixed_oml, output_path)
+                    if write_success:
+                        is_valid_fixed, _ = self._validate_oml_with_opencaesar(catalog_parent_path)
+                        if is_valid_fixed:
+                            print("✅ Fixed OML validation successful!")
+                            component_based_oml = fixed_oml
+                        else:
+                            print(f"❌ Attempt {attempt + 1}: Fixed OML still failed validation")
+                            continue
+                    else:
+                        print(f"❌ Attempt {attempt + 1}: Failed to write fixed OML to file")
+                        continue
+                
                 # Combine both OML description-based and component-based characteristics
                 print("🏗️ Combining OML descriptions...")
                 combined_oml = f"{component_based_oml}\n\n{description_based_oml}"
                 combined_oml = self._clean_llm_response(combined_oml)
                 # Write the OML content to file
-                print("💾 Writing OML to file...")
+                print("💾 Writing combined OML to file...")
                 write_success = writer.write_oml(combined_oml, output_path)
                 # Validate the combined OML syntax
                 if not self._validate_oml_syntax(combined_oml):
                     print(f"❌ Attempt {attempt + 1}: Combined OML syntax validation failed")
                     continue
-                if not self._validate_oml_with_opencaesar(catalog_parent_path):
+                
+                # Validate combined OML with OpenCAESAR
+                is_combined_valid, combined_validation_output = self._validate_oml_with_opencaesar(catalog_parent_path)
+                if not is_combined_valid:
                     print(f"❌ Attempt {attempt + 1}: Combined OML validation with OpenCAESAR failed")
-                    continue
+                    print("🔧 Attempting to fix combined OML based on validation feedback...")
+                    
+                    # Try to fix the combined OML based on validation feedback
+                    all_characteristics = {**component_based_characteristics, **description_based_characteristics}
+                    fixed_combined_oml = self._fix_oml_with_feedback(
+                        combined_oml, 
+                        combined_validation_output, 
+                        all_characteristics, 
+                        vocab_files
+                    )
+                    
+                    # Write the fixed combined OML and validate again
+                    write_success = writer.write_oml(fixed_combined_oml, output_path)
+                    if write_success:
+                        is_final_valid, _ = self._validate_oml_with_opencaesar(catalog_parent_path)
+                        if is_final_valid:
+                            print("✅ Fixed combined OML validation successful!")
+                            combined_oml = fixed_combined_oml
+                        else:
+                            print(f"❌ Attempt {attempt + 1}: Fixed combined OML still failed validation")
+                            continue
+                    else:
+                        print(f"❌ Attempt {attempt + 1}: Failed to write fixed combined OML to file")
+                        continue
+                
                 print("✅ OML generation and validation successful!")
                 return combined_oml
             except Exception as e:
@@ -607,6 +659,7 @@ Generate ONLY the OML code, no explanations or comments outside the OML syntax:
         
         response = self.llm.invoke(formatted_prompt)
         oml_content = response.content if hasattr(response, 'content') else str(response)
+        oml_content = self._clean_llm_response(oml_content)
         return oml_content
 
     def _validate_oml_syntax(self, oml_content: str) -> bool:
@@ -618,21 +671,101 @@ Generate ONLY the OML code, no explanations or comments outside the OML syntax:
         
         return has_instances and has_proper_brackets and has_vocabulary_references
 
-    def _validate_oml_with_opencaesar(self, catalog_parent_path: Path, output_path: str = "report.txt") -> bool:
-        """Validate OML content using OpenCAESAR's OML Validate."""
+    def _fix_oml_with_feedback(self, oml_content: str, validation_output: str, 
+                              characteristics: Dict[str, Any], vocab_files: Dict[str, str]) -> str:
+        """
+        Fix OML content based on OpenCAESAR validation feedback.
+        """
+        print("🔧 Attempting to fix OML based on validation feedback...")
+        
+        # Load vocabulary context
+        vocab_context = ""
+        for name, path in vocab_files.items():
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    content = f.read()
+                    vocab_context += f"\n\n{name}:\n```oml\n{content}\n```"
+            except FileNotFoundError:
+                print(f"Warning: Could not find '{path}'")
+        
+        # Create fix prompt with validation feedback
+        fix_prompt = PromptTemplate.from_template("""
+You are an expert in OML (Ontological Modeling Language) debugging and fixing syntax errors.
+
+TASK: Fix the OML code based on the validation errors provided by OpenCAESAR.
+
+ORIGINAL OML CODE:
+```oml
+{original_oml}
+```
+
+VALIDATION ERRORS FROM OPENCAESAR:
+{validation_errors}
+
+CHARACTERISTICS TO REPRESENT:
+{characteristics}
+
+VOCABULARY REFERENCE:
+{vocab_context}
+
+INSTRUCTIONS:
+1. Analyze the validation errors carefully
+2. Identify specific syntax or semantic issues
+3. Fix the OML code while preserving the intent and content
+4. Ensure all instances and relationships are properly defined
+5. Follow OML syntax rules precisely
+6. Keep all meaningful information from the original code
+
+COMMON OML ISSUES TO FIX:
+- Missing or incorrect namespace declarations
+- Malformed instance definitions
+- Incorrect property references
+- Missing closing brackets or semicolons
+- Invalid vocabulary references
+- Circular dependencies or undefined references
+
+Generate ONLY the corrected OML code, no explanations:
+""")
+        
+        formatted_prompt = fix_prompt.format(
+            original_oml=oml_content,
+            validation_errors=validation_output,
+            characteristics=json.dumps(characteristics, indent=2),
+            vocab_context=vocab_context
+        )
+        
+        try:
+            response = self.llm.invoke(formatted_prompt)
+            fixed_oml = response.content if hasattr(response, 'content') else str(response)
+            fixed_oml = self._clean_llm_response(fixed_oml)
+            
+            print("🔧 Fixed OML generated based on validation feedback")
+            return fixed_oml
+            
+        except Exception as e:
+            print(f"❌ Error fixing OML with feedback: {e}")
+            return oml_content  # Return original if fixing fails
+
+    def _validate_oml_with_opencaesar(self, catalog_parent_path: Path, output_path: str = "report.txt") -> tuple[bool, str]:
+        """
+        Validate OML content using OpenCAESAR's OML Validate.
+        Returns: (is_valid, validation_output) where validation_output contains error details if validation fails
+        """
         try:
             # Convert to absolute path to avoid relative path issues
             abs_catalog_path = catalog_parent_path.resolve()
             
             # Check if the directory exists
             if not abs_catalog_path.exists():
-                print(f"Error: Directory {abs_catalog_path} does not exist")
-                return False
+                error_msg = f"Error: Directory {abs_catalog_path} does not exist"
+                print(error_msg)
+                return False, error_msg
             
             # Check if gradlew.bat exists in the directory
             gradlew_script = abs_catalog_path / ("gradlew.bat" if os.name == "nt" else "gradlew")
             if not gradlew_script.exists():
-                print(f"Error: {gradlew_script} not found")
+                error_msg = f"Error: {gradlew_script} not found"
+                print(error_msg)
                 print(f"Looking for gradlew in: {abs_catalog_path}")
                 # List files in directory for debugging
                 try:
@@ -640,7 +773,7 @@ Generate ONLY the OML code, no explanations or comments outside the OML syntax:
                     print(f"Files in directory: {[f.name for f in files[:10]]}")  # Show first 10 files
                 except Exception as e:
                     print(f"Cannot list directory contents: {e}")
-                return False
+                return False, error_msg
             
             # Run the validation
             print("Running OpenCAESAR OML validation...")
@@ -664,15 +797,23 @@ Generate ONLY the OML code, no explanations or comments outside the OML syntax:
             print(f"Stdout: {result.stdout}")
             print(f"Stderr: {result.stderr}")
 
-            return result.returncode == 0
+            # Prepare validation output for feedback
+            validation_output = f"Return code: {result.returncode}\n"
+            validation_output += f"Stdout:\n{result.stdout}\n"
+            if result.stderr:
+                validation_output += f"Stderr:\n{result.stderr}\n"
+
+            return result.returncode == 0, validation_output
             
         except subprocess.TimeoutExpired:
-            print("Error: OpenCAESAR validation timed out (300 seconds)")
-            return False
+            error_msg = "Error: OpenCAESAR validation timed out (300 seconds)"
+            print(error_msg)
+            return False, error_msg
         except FileNotFoundError as e:
-            print(f"Error: File not found - {e}")
-            print("This usually means gradlew.bat is not in the expected location")
-            return False
+            error_msg = f"Error: File not found - {e}. This usually means gradlew.bat is not in the expected location"
+            print(error_msg)
+            return False, error_msg
         except Exception as e:
-            print(f"Error during OpenCAESAR validation: {e}")
-            return False
+            error_msg = f"Error during OpenCAESAR validation: {e}"
+            print(error_msg)
+            return False, error_msg
