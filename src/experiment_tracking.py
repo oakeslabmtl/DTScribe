@@ -20,11 +20,10 @@ class ExperimentConfig:
     embedding_model: str
     chunk_size: int
     chunk_overlap: int
-    retrieval_k: int
     temperature: float
     top_p: float
     top_k: int
-    repeat_penalty: float
+    # repeat_penalty: float
     max_pages: Optional[int] = None
     custom_params: Optional[Dict[str, Any]] = None
 
@@ -163,7 +162,7 @@ class ResultsSaver:
             'embedding_model': result.config.embedding_model,
             'chunk_size': result.config.chunk_size,
             'chunk_overlap': result.config.chunk_overlap,
-            'retrieval_k': result.config.retrieval_k,
+            # 'retrieval_k' removed
             'temperature': result.config.temperature,
             'extraction_rate': result.extraction_rate,
             'extracted_count': result.extracted_count,

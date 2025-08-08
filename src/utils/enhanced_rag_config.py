@@ -31,7 +31,7 @@ class EnhancedRAGPipeline:
             top_p=0.9,
             # Add more specific parameters for better control
             top_k=20,
-            repeat_penalty=1.1,
+            # repeat_penalty=1.1,
         )
         
         self.embeddings = OllamaEmbeddings(model=embedding_model)
@@ -63,8 +63,6 @@ class EnhancedRAGPipeline:
             overlap: Overlap between chunks
             max_pages: Maximum number of pages to process (None for all pages)
         """
-        # Get PDF page count and extract pages
-        import pymupdf
         try:
             doc = pymupdf.open(pdf_path)
             total_pages = len(doc)
@@ -148,18 +146,38 @@ class EnhancedRAGPipeline:
     def _rerank_documents(self, docs: List, original_query: str) -> List:
         """Re-rank documents based on multiple factors."""
         def score_document(doc):
-            content = doc.page_content.lower()
-            query_lower = original_query.lower()
+            # content = doc.page_content.lower()
+            # query_lower = original_query.lower()
+
+            content = doc.page_content
+            query_embedding = self.embeddings.embed_query(original_query)
+            doc_embedding = self.embeddings.embed_documents([content])[0]
+
+            # Compute cosine similarity
+            def cosine_similarity(a, b):
+                dot_product = sum(x * y for x, y in zip(a, b))
+                norm_a = sum(x * x for x in a) ** 0.5
+                norm_b = sum(y * y for y in b) ** 0.5
+                return dot_product / (norm_a * norm_b + 1e-8)
             
-            # Basic relevance score
-            relevance_score = sum(1 for word in query_lower.split() if word in content)
-            
+            relevance_score = cosine_similarity(query_embedding, doc_embedding)
+
             # Length penalty (prefer moderate length chunks)
             length_penalty = abs(len(content.split()) - 200) / 1000
-            
+
             return relevance_score - length_penalty
+            
+            # # Basic relevance score
+            # relevance_score = sum(1 for word in query_lower.split() if word in content)
+            
+            # # Length penalty (prefer moderate length chunks)
+            # length_penalty = abs(len(content.split()) - 200) / 1000
+            
+            # return relevance_score - length_penalty
         
         return sorted(docs, key=score_document, reverse=True)
+
+            
     
     def generate_with_cot_and_validation(self, description: str, retrieved_docs: List, 
                                        schema: Type[BaseModel]) -> BaseModel:
@@ -262,7 +280,6 @@ Remember: Be highly specific and technical. Include exact technologies, methods,
         """
         Clean LLM response by removing thinking tags and extracting JSON content.
         """
-        import re
         
         # Strip whitespace
         response_text = response_text.strip()
@@ -371,7 +388,6 @@ JSON:
             cleaned_text = self._clean_llm_response(response_text)
             
             # Parse JSON manually
-            import json
             parsed_data = json.loads(cleaned_text)
             
             # Create schema instance

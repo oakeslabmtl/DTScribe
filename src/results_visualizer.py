@@ -106,7 +106,7 @@ class ExperimentResultsVisualizer:
     
     def _print_config(self, config_row):
         """Print configuration parameters."""
-        param_columns = ['chunk_size', 'chunk_overlap', 'retrieval_k',  
+        param_columns = ['chunk_size', 'chunk_overlap',  
                          'temperature']
         for param in param_columns:
             if param in config_row:
@@ -196,7 +196,7 @@ class ExperimentResultsVisualizer:
             return
         
         # Check available parameters
-        param_columns = ['chunk_size', 'chunk_overlap', 'retrieval_k', 'temperature']
+        param_columns = ['chunk_size', 'chunk_overlap', 'temperature']
         available_params = [p for p in param_columns if p in self.successful_df.columns]
         
         if not available_params:

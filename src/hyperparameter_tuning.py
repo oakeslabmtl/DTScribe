@@ -33,7 +33,6 @@ class HyperparameterTuner:
         param_grid = {
             'chunk_size': [2000, 2500, 3000],
             'chunk_overlap': [250, 300, 350],
-            'retrieval_k': [6],
             'temperature': [0.1, 0.3],
         }
         
@@ -146,12 +145,12 @@ class HyperparameterTuner:
         fastest_config = successful_df.loc[successful_df['total_time'].idxmin()]
         
         print(f"\n🏆 Best Extraction Rate Configuration:")
-        for param in ['chunk_size', 'chunk_overlap', 'retrieval_k', 'temperature']:
+        for param in ['chunk_size', 'chunk_overlap', 'temperature']:
             print(f"   • {param}: {best_extraction[param]}")
         print(f"   • Extraction Rate: {best_extraction['extraction_rate']:.2f}%")
         
         print(f"\n⚡ Fastest Configuration:")
-        for param in ['chunk_size', 'chunk_overlap', 'retrieval_k', 'temperature']:
+        for param in ['chunk_size', 'chunk_overlap', 'temperature']:
             print(f"   • {param}: {fastest_config[param]}")
         print(f"   • Time: {fastest_config['total_time']:.2f}s")
         
@@ -184,12 +183,7 @@ class HyperparameterTuner:
         axes[0, 1].set_title('Extraction Rate by Chunk Size')
         
         # Box plot: Processing Time by Retrieval K
-        retrieval_ks = sorted(df['retrieval_k'].unique())
-        times_by_k = [df[df['retrieval_k'] == k]['total_time'].values for k in retrieval_ks]
-        axes[1, 0].boxplot(times_by_k, labels=retrieval_ks)
-        axes[1, 0].set_xlabel('Retrieval K')
-        axes[1, 0].set_ylabel('Processing Time (seconds)')
-        axes[1, 0].set_title('Processing Time by Retrieval K')
+        # Removed box plot for Retrieval K since retrieval_k is no longer a parameter
         
         plt.tight_layout()
         
@@ -204,7 +198,7 @@ class HyperparameterTuner:
         fig, ax = plt.subplots(1, 1, figsize=(10, 8))
         
         # Select numeric columns for correlation
-        numeric_cols = ['chunk_size', 'chunk_overlap', 'retrieval_k',
+        numeric_cols = ['chunk_size', 'chunk_overlap',
                        'temperature', 'extraction_rate', 'total_time', 'extracted_count']
         corr_matrix = df[numeric_cols].corr()
         
@@ -262,7 +256,8 @@ def main():
     tuner = HyperparameterTuner(pdf_path)
 
     # Run experiments
-    experiment_results = tuner.run_experiment_batch(max_experiments=-1)  # Run all combinations
+    # experiment_results = tuner.run_experiment_batch(max_experiments=-1)  # Run all combinations
+    experiment_results = tuner.run_experiment_batch(max_experiments=-1) 
     
     # Analyze and visualize results
     tuner.analyze_and_visualize_results(experiment_results)
