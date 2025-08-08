@@ -17,6 +17,9 @@ import re
 import json
 from pathlib import Path
 
+# Import OML Writer components
+from .oml_writer import IOMLWriter, OMLFileWriter
+
 
 class EnhancedRAGPipeline:
     """Enhanced RAG Pipeline with improved techniques for better generation quality."""
@@ -379,10 +382,18 @@ JSON:
             return self._create_fallback_output(schema)
     
     def generate_oml(self, characteristics: Dict[str, Any], 
-                            vocab_files: Dict[str, str]) -> str:
+                        vocab_files: Dict[str, str],
+                        output_path: str = r"data\DTDF\src\oml\bentleyjoakes.github.io\LLM_described_DT\llm_dt.oml",
+                        catalog_parent_path: str = r"data\DTDF\\",
+                        writer: IOMLWriter = None,
+                        max_retries: int = 3) -> str:
         """
         OML generation with better context and validation.
         """
+        if writer is None:
+            writer = OMLFileWriter()
+
+        # Define description-based vocab mapping
         description_based_vocab_mapping = {
             "virtual_to_physical_interaction": "VirtualToPhysical",
             "twinning_time_scale": "TimeScale",
@@ -405,21 +416,53 @@ JSON:
         # Create component-based dictionary
         component_based_characteristics = {key: characteristics[key] for key in component_based_characteristics_keys if key in characteristics}
 
-        # Generate OML sections
         description_based_oml = self.generate_description_based_oml(description_based_characteristics, description_based_vocab_mapping)
-        component_based_oml = self.generate_component_based_oml(component_based_characteristics, vocab_files, comma_separated_description_based_vocab_mapping_keys)
 
-        # Combine both OML description-based and component-based characteristics
-        print("🏗️ Combining OML descriptions...")
-        combined_oml = f"{component_based_oml}\n\n{description_based_oml}"
-        # Clean the combined OML content
-        combined_oml = self._clean_llm_response(combined_oml)
-        # Validate the combined OML syntax
-        if not self._validate_oml_syntax(combined_oml):
-            print("Warning: Combined OML may have syntax issues")
-        if not self._validate_oml_with_opencaesar(combined_oml):
-            print("Warning: Combined OML may not meet OpenCAESAR standards")
-        return combined_oml
+        # Retry mechanism for component-based OML generation
+        print("🔄 Retrying component-based OML generation with multiple attempts...")
+        for attempt in range(max_retries + 1):
+            try:
+                print(f"📝 Attempt {attempt + 1}/{max_retries + 1}: Generating OML...")
+                component_based_oml = self.generate_component_based_oml(component_based_characteristics, vocab_files, comma_separated_description_based_vocab_mapping_keys)
+                # Validate the generated OML syntax
+                if not self._validate_oml_syntax(component_based_oml):
+                    print(f"❌ Attempt {attempt + 1}: Invalid OML syntax detected")
+                    continue
+                # Write the OML content to file
+                print("💾 Writing OML to file...")
+                write_success = writer.write_oml(component_based_oml, output_path)
+                if not write_success:
+                    print(f"❌ Attempt {attempt + 1}: Failed to write OML to file")
+                    continue
+                # Validate the written OML file with OpenCAESAR
+                print("⚙️ Validating written OML file with OpenCAESAR...")
+                if not self._validate_oml_with_opencaesar(catalog_parent_path):
+                    print(f"❌ Attempt {attempt + 1}: Written OML file validation with OpenCAESAR failed")
+                    continue
+                # Combine both OML description-based and component-based characteristics
+                print("🏗️ Combining OML descriptions...")
+                combined_oml = f"{component_based_oml}\n\n{description_based_oml}"
+                combined_oml = self._clean_llm_response(combined_oml)
+                # Write the OML content to file
+                print("💾 Writing OML to file...")
+                write_success = writer.write_oml(combined_oml, output_path)
+                # Validate the combined OML syntax
+                if not self._validate_oml_syntax(combined_oml):
+                    print(f"❌ Attempt {attempt + 1}: Combined OML syntax validation failed")
+                    continue
+                if not self._validate_oml_with_opencaesar(combined_oml):
+                    print(f"❌ Attempt {attempt + 1}: Combined OML validation with OpenCAESAR failed")
+                    continue
+                print("✅ OML generation and validation successful!")
+                return combined_oml
+            except Exception as e:
+                print(f"❌ Attempt {attempt + 1}: Unexpected error: {str(e)}")
+                if attempt < max_retries:
+                    print("🔄 Retrying due to unexpected error...")
+                    continue
+                else:
+                    print("❌ Failed due to persistent errors")
+                    return None
 
     def generate_description_based_oml(self, characteristics: Dict[str, Any], vocab_mapping: Dict[str, str]) -> str:
         """Generate OML based on characteristics description."""
@@ -474,10 +517,11 @@ instance <name_of_acting_component> : DTDFVocab:ActingComponent [
 // C3: Physical sensing components
 instance <name_of_sensing_component> : DTDFVocab:SensingComponent[
     base:desc "<description of the sensing component>"
+    DTDFVocab:producedData <name_of_produced_data_transmitted>
 ]
 
 // C4: Physical-to-virtual interaction                                           
-instance <name_of_physical_to_virtual_interaction> : DTDFVocab:DataTransmitted [
+instance <name_of_produced_data_transmitted> : DTDFVocab:DataTransmitted [
     DTDFVocab:producedFrom <name_of_sensing_component1, name_of_sensing_component2, ...>
 ]
 
@@ -495,26 +539,25 @@ instance <name_of_action> : DTDFVocab:Action[
 instance <name_of_service> : DTDFVocab:Service [
     base:desc "<description of the service>"
     DTDFVocab:provides <name_of_action_or_insight1, name_of_action_or_insight2, ...>
-    DTDFVocab:atStage baseDesc:<stage>
 ]
 
 // Enablers (C11)
 instance <name_of_enabler> : DTDFVocab:Enabler [
     base:desc "<description of the enabler>"
-    DTDFVocab:enables <name_of_service_enabled_1, name_of_service_enabled_2, ...>
+    DTDFVocab:enables <name_of_service1, name_of_service2, ...>
 ]
 
 // Models/Data (C10)
 instance <name_of_model> : DTDFVocab:Model [
     base:desc "<description of the model>"
-    DTDFVocab:inputTo <name_of_enabler_1, name_of_enabler_2, ...>
+    DTDFVocab:inputTo <name_of_enabler1, name_of_enabler2, ...>
     DTDFVocab:fromData <name_of_physical_to_virtual_interaction>
 ]
                                                   
 instance <name_of_data> : DTDFVocab:Data [
     base:desc "<description of the data>"
-    DTDFVocab:inputTo <name_of_enabler_1, name_of_enabler_2, ...>
-    DTDFVocab:fromData <name_of_physical_to_virtual_interaction>
+    DTDFVocab:inputTo <name_of_enabler1, name_of_enabler2, ...>
+    DTDFVocab:fromData <name_of_DTDFVocab:DataTransmitted>
 ]
 ```
                                                   
@@ -569,7 +612,7 @@ Generate ONLY the OML code, no explanations or comments outside the OML syntax:
         
         return has_instances and has_proper_brackets and has_vocabulary_references
 
-    def _validate_oml_with_opencaesar(self, oml_content: str) -> bool:
+    def _validate_oml_with_opencaesar(self, oml_catalog_path: str) -> bool:
         """Validate OML content using OpenCAESAR's OML Validate."""
         # TODO: Implement OpenCAESAR OML Validate service
         return True  # Placeholder for actual validation result
