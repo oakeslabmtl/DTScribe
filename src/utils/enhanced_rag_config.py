@@ -2,6 +2,8 @@
 Enhanced RAG Configuration with modern LLM techniques for improved Digital Twin characteristics extraction.
 """
 
+import subprocess
+import os
 from langchain_community.document_loaders import PyMuPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_chroma import Chroma
@@ -283,25 +285,25 @@ Remember: Be highly specific and technical. Include exact technologies, methods,
         
         # Strip whitespace
         response_text = response_text.strip()
-        
-        # Remove code block markers
-        if response_text.startswith('```json'):
-            response_text = response_text[7:]
-        elif response_text.startswith('```oml'):
-            response_text = response_text[6:]
-        elif response_text.startswith('```'):
-            response_text = response_text[3:]
-        if response_text.endswith('```'):
-            response_text = response_text[:-3]
-        
+
         # Remove thinking tags and their content completely
         response_text = re.sub(r'<think>.*?</think>', '', response_text, flags=re.DOTALL | re.IGNORECASE)
-        
+
         # Also handle unclosed thinking tags
         response_text = re.sub(r'<think>.*', '', response_text, flags=re.DOTALL | re.IGNORECASE)
         
         # Strip again after cleaning
         response_text = response_text.strip()
+        
+        # Remove code block markers
+        if response_text.startswith('```json'):
+            response_text = response_text[7:]
+        if response_text.startswith('```oml'):
+            response_text = response_text[6:]
+        if response_text.startswith('```'):
+            response_text = response_text[3:]
+        if response_text.endswith('```'):
+            response_text = response_text[:-3]
         
         # Extract JSON content - look for the first complete JSON object
         json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
@@ -399,12 +401,12 @@ JSON:
     
     def generate_oml(self, characteristics: Dict[str, Any], 
                         vocab_files: Dict[str, str],
-                        output_path: str = r"data\DTDF\src\oml\bentleyjoakes.github.io\LLM_described_DT\llm_dt.oml",
-                        catalog_parent_path: str = r"data\DTDF\\",
+                        output_path: Path = Path(r"data\DTDF\src\oml\bentleyjoakes.github.io\LLM_described_DT\llm_dt.oml"),
+                        catalog_parent_path: Path = Path(r"data\DTDF\\"),
                         writer: IOMLWriter = None,
                         max_retries: int = 3) -> str:
         """
-        OML generation with better context and validation.
+        OML generation workflow with retries and validation.
         """
         if writer is None:
             writer = OMLFileWriter()
@@ -440,6 +442,8 @@ JSON:
             try:
                 print(f"📝 Attempt {attempt + 1}/{max_retries + 1}: Generating OML...")
                 component_based_oml = self.generate_component_based_oml(component_based_characteristics, vocab_files, comma_separated_description_based_vocab_mapping_keys)
+                # Clean the response
+                component_based_oml = self._clean_llm_response(component_based_oml)
                 # Validate the generated OML syntax
                 if not self._validate_oml_syntax(component_based_oml):
                     print(f"❌ Attempt {attempt + 1}: Invalid OML syntax detected")
@@ -466,7 +470,7 @@ JSON:
                 if not self._validate_oml_syntax(combined_oml):
                     print(f"❌ Attempt {attempt + 1}: Combined OML syntax validation failed")
                     continue
-                if not self._validate_oml_with_opencaesar(combined_oml):
+                if not self._validate_oml_with_opencaesar(catalog_parent_path):
                     print(f"❌ Attempt {attempt + 1}: Combined OML validation with OpenCAESAR failed")
                     continue
                 print("✅ OML generation and validation successful!")
@@ -603,21 +607,6 @@ Generate ONLY the OML code, no explanations or comments outside the OML syntax:
         
         response = self.llm.invoke(formatted_prompt)
         oml_content = response.content if hasattr(response, 'content') else str(response)
-        # Clean the response to ensure valid OML syntax
-        oml_content = self._clean_llm_response(oml_content)
-        
-        # Basic OML syntax validation
-        if self._validate_oml_syntax(oml_content):
-            print("Basic OML syntax validation passed")
-        else:
-            print("Warning: Generated OML may have syntax issues")
-            # TODO: Retry generation
-
-        # Advanced validation with OpenCAESAR OML validator
-        if not self._validate_oml_with_opencaesar(oml_content):
-            print("Warning: Generated OML may not meet OpenCAESAR standards")
-            # TODO: Retry generation
-
         return oml_content
 
     def _validate_oml_syntax(self, oml_content: str) -> bool:
@@ -629,7 +618,61 @@ Generate ONLY the OML code, no explanations or comments outside the OML syntax:
         
         return has_instances and has_proper_brackets and has_vocabulary_references
 
-    def _validate_oml_with_opencaesar(self, oml_catalog_path: str) -> bool:
+    def _validate_oml_with_opencaesar(self, catalog_parent_path: Path, output_path: str = "report.txt") -> bool:
         """Validate OML content using OpenCAESAR's OML Validate."""
-        # TODO: Implement OpenCAESAR OML Validate service
-        return True  # Placeholder for actual validation result
+        try:
+            # Convert to absolute path to avoid relative path issues
+            abs_catalog_path = catalog_parent_path.resolve()
+            
+            # Check if the directory exists
+            if not abs_catalog_path.exists():
+                print(f"Error: Directory {abs_catalog_path} does not exist")
+                return False
+            
+            # Check if gradlew.bat exists in the directory
+            gradlew_script = abs_catalog_path / ("gradlew.bat" if os.name == "nt" else "gradlew")
+            if not gradlew_script.exists():
+                print(f"Error: {gradlew_script} not found")
+                print(f"Looking for gradlew in: {abs_catalog_path}")
+                # List files in directory for debugging
+                try:
+                    files = list(abs_catalog_path.iterdir())
+                    print(f"Files in directory: {[f.name for f in files[:10]]}")  # Show first 10 files
+                except Exception as e:
+                    print(f"Cannot list directory contents: {e}")
+                return False
+            
+            # Run the validation
+            print("Running OpenCAESAR OML validation...")
+            print("Parameters:")
+            print(f" - Working Directory: {abs_catalog_path}")
+            print(f" - Gradlew Script: {gradlew_script}")
+            print(f" - Output Report: {output_path}")
+            
+            # Execute the command with absolute path
+            result = subprocess.run([
+                str(gradlew_script),
+                "owlReason"
+            ],
+            cwd=str(abs_catalog_path),
+            capture_output=True,
+            text=True,
+            timeout=300)
+
+            print("OpenCAESAR OML validation result:")
+            print(f"Return code: {result.returncode}")
+            print(f"Stdout: {result.stdout}")
+            print(f"Stderr: {result.stderr}")
+
+            return result.returncode == 0
+            
+        except subprocess.TimeoutExpired:
+            print("Error: OpenCAESAR validation timed out (300 seconds)")
+            return False
+        except FileNotFoundError as e:
+            print(f"Error: File not found - {e}")
+            print("This usually means gradlew.bat is not in the expected location")
+            return False
+        except Exception as e:
+            print(f"Error during OpenCAESAR validation: {e}")
+            return False

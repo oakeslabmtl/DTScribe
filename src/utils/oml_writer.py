@@ -36,7 +36,7 @@ class OMLFileWriter(IOMLWriter):
             with open(output_file, 'w', encoding='utf-8') as f:
                 f.write(wrapped_oml)
             
-            print(f"✅ OML output written to: {output_path}")
+            print(f"📝 OML output written to: {output_path}")
             return True
             
         except Exception as e:
