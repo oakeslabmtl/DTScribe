@@ -531,7 +531,7 @@ instance <name_of_acting_component> : DTDFVocab:ActingComponent [
 ]
     
 // C3: Physical sensing components
-instance <name_of_sensing_component> : DTDFVocab:SensingComponent[
+instance <name_of_sensing_component> : DTDFVocab:SensingComponent [
     base:desc "<description of the sensing component>"
     DTDFVocab:producedData <name_of_produced_data_transmitted>
 ]
@@ -550,7 +550,7 @@ instance <name_of_action> : DTDFVocab:Action[
     base:desc "<description of the action>"
     DTDFVocab:IsAutomatic <true_or_false>
 ]
-                                                  
+
 // Services (C6)
 instance <name_of_service> : DTDFVocab:Service [
     base:desc "<description of the service>"
@@ -586,6 +586,7 @@ REQUIREMENTS:
 
 GUIDELINES:
 - For multiple components (sensors, actuators, services), create separate instances
+- DTDFVocab:SensingComponent generate DTDFVocab:producedData as DTDFVocab:DataTransmitted, used as DTDFVocab:fromData by a DTDFVocab:Model or a DTDFVocab:Data, which serve as DTDFVocab:inputTo DTDFVocab:Enabler that process them, and it DTDFVocab:enables DTDFVocab:Service which themselves create DTDFVocab:Insight or DTDFVocab:Action.
 - Certain characteristics (Physical acting components, Physical sensing components, Physical-to-virtual interaction, DT services, Twinning time-scale, DT models and data, Tooling and enablers, Insights and decision making) usually have multiple instances
 - Use base:desc for detailed descriptions of other characteristics
 - Establish proper relationships using DTDFVocab predicates
