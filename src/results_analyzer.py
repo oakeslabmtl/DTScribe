@@ -107,6 +107,8 @@ class ResultsAnalyzer:
             report.append(f"- **Average Completeness Score**: {oml_df['oml_completeness_score'].mean():.2f}")
             report.append(f"- **Average Instance Count**: {oml_df['oml_instance_count'].mean():.1f}")
             report.append(f"- **Average Generation Time**: {oml_df['generation_time_seconds'].mean():.2f}s")
+            # if 'oml_memory_usage_mb' in oml_df.columns:
+            #     report.append(f"- **Average Memory Usage**: {oml_df['oml_memory_usage_mb'].mean():.2f} MB")
             report.append("")
         
         # Quality trends over time
@@ -270,6 +272,13 @@ class ResultsAnalyzer:
     def _create_oml_dashboard(self, oml_df: pd.DataFrame):
         """Create OML generation dashboard."""
         
+        # Adjust layout based on available data
+        # has_memory_data = 'oml_memory_usage_mb' in oml_df.columns and not oml_df['oml_memory_usage_mb'].isna().all()
+        
+        # if has_memory_data:
+        #     fig, axes = plt.subplots(2, 3, figsize=(18, 10))
+        # else:
+        #     fig, axes = plt.subplots(2, 2, figsize=(12, 10))
         fig, axes = plt.subplots(2, 2, figsize=(12, 10))
         fig.suptitle('OML Generation Performance Dashboard', fontsize=16)
         
@@ -301,6 +310,34 @@ class ResultsAnalyzer:
         axes[1, 1].set_ylabel('Frequency')
         axes[1, 1].set_title('OML Generation Time Distribution')
         axes[1, 1].legend()
+        
+        # # 5. Memory usage distribution (if available)
+        # if has_memory_data:
+        #     # Filter out zero values for better visualization
+        #     memory_data = oml_df[oml_df['oml_memory_usage_mb'] != 0]['oml_memory_usage_mb']
+        #     if len(memory_data) > 0:
+        #         axes[0, 2].hist(memory_data, bins=15, alpha=0.7, edgecolor='black', color='orange')
+        #         axes[0, 2].axvline(memory_data.mean(), color='red', linestyle='--', label='Mean')
+        #         axes[0, 2].set_xlabel('Memory Usage (MB)')
+        #         axes[0, 2].set_ylabel('Frequency')
+        #         axes[0, 2].set_title('OML Memory Usage Distribution')
+        #         axes[0, 2].legend()
+        #     else:
+        #         axes[0, 2].text(0.5, 0.5, 'No Memory Data', ha='center', va='center', transform=axes[0, 2].transAxes)
+        #         axes[0, 2].set_title('Memory Usage Distribution')
+            
+        #     # 6. Memory vs Generation Time scatter
+        #     valid_memory = oml_df['oml_memory_usage_mb'] != 0
+        #     if valid_memory.any():
+        #         axes[1, 2].scatter(oml_df.loc[valid_memory, 'generation_time_seconds'], 
+        #                          oml_df.loc[valid_memory, 'oml_memory_usage_mb'], alpha=0.7, color='orange')
+        #         axes[1, 2].set_xlabel('Generation Time (seconds)')
+        #         axes[1, 2].set_ylabel('Memory Usage (MB)')
+        #         axes[1, 2].set_title('Generation Time vs Memory Usage')
+        #         axes[1, 2].grid(True, alpha=0.3)
+        #     else:
+        #         axes[1, 2].text(0.5, 0.5, 'No Memory Data', ha='center', va='center', transform=axes[1, 2].transAxes)
+        #         axes[1, 2].set_title('Time vs Memory Usage')
         
         plt.tight_layout()
         

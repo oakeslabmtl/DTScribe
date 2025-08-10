@@ -24,6 +24,7 @@ from experiment_tracking import (
     CharacteristicsExtractionResult, OMLGenerationResult
 )
 from results_analyzer import ResultsAnalyzer
+# from utils.memory import get_memory_usage_mb
 
 
 class ExtractionOrchestrator:
@@ -83,6 +84,8 @@ class ExtractionOrchestrator:
         # Track block processing
         block_metrics = {
             'processing_times': {},
+            'docs_retrieved': {},
+            # 'memory_usages': {},
             'success_rates': {},
         }
         errors = []
@@ -98,6 +101,12 @@ class ExtractionOrchestrator:
             block_metrics['success_rates'][block_name] = result.success
             if f"{block_name}_processing_time" in result.metadata:
                 block_metrics['processing_times'][block_name] = result.metadata[f"{block_name}_processing_time"]
+
+            if  f"{block_name}_docs_retrieved" in result.metadata:
+                block_metrics['docs_retrieved'][block_name] = [doc.page_content if hasattr(doc, 'page_content') else str(doc) for doc in result.metadata[f"{block_name}_docs_retrieved"]]
+            
+            # if f"{block_name}_memory_usage_mb" in result.metadata:
+            #     block_metrics['memory_usages'][block_name] = result.metadata[f"{block_name}_memory_usage_mb"]
 
             if result.success:
                 self._state_manager.merge_characteristics(result.characteristics)
@@ -138,10 +147,12 @@ class ExtractionOrchestrator:
                 not_found_count=quality_metrics.get('not_found_count', 0),
                 extraction_rate=quality_metrics.get('extraction_rate', 0.0),
                 average_description_length=quality_metrics.get('average_description_length', 0.0),
-                total_docs_retrieved=quality_metrics.get('total_docs_retrieved', 0),
+                # total_docs_retrieved=quality_metrics.get('total_docs_retrieved', 0),
                 total_chunks=quality_metrics.get('total_chunks', 0),
                 processing_time_seconds=characteristics_processing_time,
+                block_docs_retrieved=block_metrics.get('docs_retrieved', {}),
                 block_processing_times=block_metrics.get('processing_times', {}),
+                # block_memory_usages=block_metrics.get('memory_usages', {}),
                 block_success_rates=block_metrics.get('success_rates', {}),
             )
 
@@ -155,6 +166,7 @@ class ExtractionOrchestrator:
         """Run OML generation as a separate task with optional experiment tracking."""
         print("\n--- Generating OML ---")
         oml_start_time = time.time()
+        # mem_before = get_memory_usage_mb()
         oml_errors = []
         oml_warnings = []
 
@@ -175,6 +187,7 @@ class ExtractionOrchestrator:
             oml_output = ""
 
         oml_processing_time = time.time() - oml_start_time
+        # mem_after = get_memory_usage_mb()
 
         # Save OML generation results if tracking is enabled
         if self._experiment_tracker and save_results and oml_output:
@@ -184,6 +197,7 @@ class ExtractionOrchestrator:
                 generated_oml=oml_output,
                 oml_metadata={},
                 generation_time_seconds=oml_processing_time,
+                # oml_memory_usage_mb=mem_after - mem_before,
                 errors=oml_errors,
                 warnings=oml_warnings,
                 timestamp=datetime.now(),
@@ -306,7 +320,7 @@ def main():
 
     # Define experimental conditions
     experiments = [
-        {"chunk_size": 2500, "temperature": 0.2},
+        {"chunk_size": 2500, "temperature": 0.1},
     ]
 
     # Run systematic experiments
@@ -347,7 +361,7 @@ def main():
         print(f"   • Extraction Rate: {quality_metrics['extraction_rate']:.1f}%")
         print(f"   • Characteristics Extracted: {quality_metrics['extracted_count']}/{quality_metrics['total_characteristics']}")
         print(f"   • Average Description Length: {quality_metrics['average_description_length']:.0f} characters")
-        print(f"   • Total Documents Retrieved: {quality_metrics['total_docs_retrieved']}")
+        # print(f"   • Total Documents Retrieved: {quality_metrics['total_docs_retrieved']}")
         print(f"   • Total Chunks in Vector DB: {quality_metrics['total_chunks']}")
         
         # Show experiment tracking info

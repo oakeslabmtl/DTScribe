@@ -9,6 +9,8 @@ from pathlib import Path
 import pandas as pd
 import time
 
+# from utils.memory import get_memory_usage_mb
+
 from abstractions import (
     IDocumentRetriever, ICharacteristicsExtractor, IBlockProcessor,
     IPipelineInitializer, IOMLGenerator, IQualityAnalyzer, IStateManager,
@@ -168,7 +170,7 @@ class QualityAnalyzer(IQualityAnalyzer):
             "not_found_count": total_characteristics - valid_extractions,
             "extraction_rate": (valid_extractions / total_characteristics * 100) if total_characteristics > 0 else 0,
             "average_description_length": avg_length,
-            "total_docs_retrieved": sum(v for k, v in metadata.items() if k.endswith("_docs_retrieved")),
+            # "total_docs_retrieved": sum(v for k, v in metadata.items() if k.endswith("_docs_retrieved")),
             "total_chunks": metadata.get("total_chunks", 0)
         }
 
@@ -201,23 +203,17 @@ class Block1Processor(IBlockProcessor):
     def process(self, retriever: IDocumentRetriever, extractor: ICharacteristicsExtractor) -> ExtractionResult:
         config = self.get_config()
         print("🔍 Retrieving documents for Block 1 (Purpose) characteristics...")
-        
         start_time = time.time()
         try:
-            retrieved_docs = retriever.retrieve_documents(
-                config.query, k=config.k
-            )
-            
+            retrieved_docs = retriever.retrieve_documents(config.query, k=config.k)
             print("🧠 Extracting Block 1 characteristics with enhanced reasoning...")
             output = extractor.extract(config.description, retrieved_docs, self.get_schema())
-            
             processing_time = time.time() - start_time
-            
             return ExtractionResult(
                 characteristics=output.model_dump(exclude_none=True),
                 metadata={
-                    "block1_docs_retrieved": len(retrieved_docs),
-                    "block1_processing_time": processing_time
+                    "block1_processing_time": processing_time,
+                    "block1_docs_retrieved": [getattr(doc, "page_content", str(doc)) for doc in retrieved_docs]
                 },
                 success=True
             )
@@ -225,7 +221,11 @@ class Block1Processor(IBlockProcessor):
             processing_time = time.time() - start_time
             return ExtractionResult(
                 characteristics={},
-                metadata={"block1_processing_time": processing_time},
+                metadata={
+                    "block1_processing_time": processing_time,
+                    "block1_docs_retrieved": None
+                },
+                # docs_retrieved=None,
                 success=False,
                 error_message=str(e)
             )
@@ -257,39 +257,38 @@ class Block2Processor(IBlockProcessor):
     def get_schema(self) -> Type[BaseModel]:
         return Block2Characteristics
     
+
     def process(self, retriever: IDocumentRetriever, extractor: ICharacteristicsExtractor) -> ExtractionResult:
         config = self.get_config()
         print("🔍 Retrieving documents for Block 2 (Orchestration) characteristics...")
-        
         start_time = time.time()
         try:
-            retrieved_docs = retriever.retrieve_documents(
-                config.query, k=config.k
-            )
-            
+            retrieved_docs = retriever.retrieve_documents(config.query, k=config.k)
             print("🧠 Extracting Block 2 characteristics with enhanced reasoning...")
             output = extractor.extract(config.description, retrieved_docs, self.get_schema())
-            
             processing_time = time.time() - start_time
-            
             return ExtractionResult(
                 characteristics=output.model_dump(exclude_none=True),
                 metadata={
-                    "block2_docs_retrieved": len(retrieved_docs),
-                    "block2_processing_time": processing_time
+                    "block2_processing_time": processing_time,
+                    "block2_docs_retrieved": [getattr(doc, "page_content", str(doc)) for doc in retrieved_docs]
                 },
+                # docs_retrieved=retrieved_docs,
                 success=True
             )
         except Exception as e:
             processing_time = time.time() - start_time
             return ExtractionResult(
                 characteristics={},
-                metadata={"block2_processing_time": processing_time},
+                metadata={
+                    "block2_processing_time": processing_time,
+                    "block2_docs_retrieved": None
+                },
+                # docs_retrieved=None,
                 success=False,
                 error_message=str(e)
             )
-
-
+    
 class Block3Processor(IBlockProcessor):
     """Processes Block 3: Components characteristics."""
     
@@ -319,31 +318,30 @@ class Block3Processor(IBlockProcessor):
     def process(self, retriever: IDocumentRetriever, extractor: ICharacteristicsExtractor) -> ExtractionResult:
         config = self.get_config()
         print("🔍 Retrieving documents for Block 3 (Components) characteristics...")
-        
         start_time = time.time()
         try:
-            retrieved_docs = retriever.retrieve_documents(
-                config.query, k=config.k
-            )
-            
+            retrieved_docs = retriever.retrieve_documents(config.query, k=config.k)
             print("🧠 Extracting Block 3 characteristics with enhanced reasoning...")
             output = extractor.extract(config.description, retrieved_docs, self.get_schema())
-            
             processing_time = time.time() - start_time
-            
             return ExtractionResult(
                 characteristics=output.model_dump(exclude_none=True),
                 metadata={
-                    "block3_docs_retrieved": len(retrieved_docs),
-                    "block3_processing_time": processing_time
+                    "block3_processing_time": processing_time,
+                    "block3_docs_retrieved": [getattr(doc, "page_content", str(doc)) for doc in retrieved_docs]
                 },
+                # docs_retrieved=retrieved_docs,
                 success=True
             )
         except Exception as e:
             processing_time = time.time() - start_time
             return ExtractionResult(
                 characteristics={},
-                metadata={"block3_processing_time": processing_time},
+                metadata={
+                    "block3_processing_time": processing_time,
+                    "block3_docs_retrieved": None
+                },
+                # docs_retrieved=None,
                 success=False,
                 error_message=str(e)
             )
@@ -378,31 +376,30 @@ class Block4Processor(IBlockProcessor):
     def process(self, retriever: IDocumentRetriever, extractor: ICharacteristicsExtractor) -> ExtractionResult:
         config = self.get_config()
         print("🔍 Retrieving documents for Block 4 (Connectivity) characteristics...")
-        
         start_time = time.time()
         try:
-            retrieved_docs = retriever.retrieve_documents(
-                config.query, k=config.k
-            )
-            
+            retrieved_docs = retriever.retrieve_documents(config.query, k=config.k)
             print("🧠 Extracting Block 4 characteristics with enhanced reasoning...")
             output = extractor.extract(config.description, retrieved_docs, self.get_schema())
-            
             processing_time = time.time() - start_time
-            
             return ExtractionResult(
                 characteristics=output.model_dump(exclude_none=True),
                 metadata={
-                    "block4_docs_retrieved": len(retrieved_docs),
-                    "block4_processing_time": processing_time
+                    "block4_processing_time": processing_time,
+                    "block4_docs_retrieved": [getattr(doc, "page_content", str(doc)) for doc in retrieved_docs]
                 },
+                # docs_retrieved=retrieved_docs,
                 success=True
             )
         except Exception as e:
             processing_time = time.time() - start_time
             return ExtractionResult(
                 characteristics={},
-                metadata={"block4_processing_time": processing_time},
+                metadata={
+                    "block4_processing_time": processing_time,
+                    "block4_docs_retrieved": None
+                },
+                # docs_retrieved=None,
                 success=False,
                 error_message=str(e)
             )
@@ -437,37 +434,37 @@ class Block5Processor(IBlockProcessor):
     def process(self, retriever: IDocumentRetriever, extractor: ICharacteristicsExtractor) -> ExtractionResult:
         config = self.get_config()
         print("🔍 Retrieving documents for Block 5 (Lifecycle) characteristics...")
-        
         start_time = time.time()
         try:
-            retrieved_docs = retriever.retrieve_documents(
-                config.query, k=config.k
-            )
-            
+            retrieved_docs = retriever.retrieve_documents(config.query, k=config.k)
             print("🧠 Extracting Block 5 characteristics with enhanced reasoning...")
             output = extractor.extract(config.description, retrieved_docs, self.get_schema())
-            
             processing_time = time.time() - start_time
-            
             return ExtractionResult(
                 characteristics=output.model_dump(exclude_none=True),
                 metadata={
-                    "block5_docs_retrieved": len(retrieved_docs),
-                    "block5_processing_time": processing_time
+                    "block5_processing_time": processing_time,
+                    "block5_docs_retrieved": [getattr(doc, "page_content", str(doc)) for doc in retrieved_docs]
                 },
+                # docs_retrieved=retrieved_docs,
                 success=True
             )
         except Exception as e:
             processing_time = time.time() - start_time
             return ExtractionResult(
                 characteristics={},
-                metadata={"block5_processing_time": processing_time},
+                metadata={
+                    "block5_processing_time": processing_time,
+                    "block5_docs_retrieved": None
+                },
+                # docs_retrieved=None,
                 success=False,
                 error_message=str(e)
             )
 
 
 class Block6Processor(IBlockProcessor):
+
     """Processes Block 6: Governance characteristics."""
     
     def get_config(self) -> ExtractionConfig:
@@ -492,31 +489,69 @@ class Block6Processor(IBlockProcessor):
     def process(self, retriever: IDocumentRetriever, extractor: ICharacteristicsExtractor) -> ExtractionResult:
         config = self.get_config()
         print("🔍 Retrieving documents for Block 6 (Governance) characteristics...")
-        
         start_time = time.time()
         try:
-            retrieved_docs = retriever.retrieve_documents(
-                config.query, k=config.k
-            )
-            
+            retrieved_docs = retriever.retrieve_documents(config.query, k=config.k)
             print("🧠 Extracting Block 6 characteristics with enhanced reasoning...")
             output = extractor.extract(config.description, retrieved_docs, self.get_schema())
-            
             processing_time = time.time() - start_time
-            
             return ExtractionResult(
                 characteristics=output.model_dump(exclude_none=True),
                 metadata={
-                    "block6_docs_retrieved": len(retrieved_docs),
-                    "block6_processing_time": processing_time
+                    "block6_processing_time": processing_time,
+                    "block6_docs_retrieved": [getattr(doc, "page_content", str(doc)) for doc in retrieved_docs]
                 },
+                # docs_retrieved=retrieved_docs,
                 success=True
             )
         except Exception as e:
             processing_time = time.time() - start_time
             return ExtractionResult(
                 characteristics={},
-                metadata={"block6_processing_time": processing_time},
+                metadata={
+                    "block6_processing_time": processing_time,
+                    "block6_docs_retrieved": None
+                },
+                # docs_retrieved=None,
                 success=False,
                 error_message=str(e)
             )
+    
+    # def process(self, retriever: IDocumentRetriever, extractor: ICharacteristicsExtractor) -> ExtractionResult:
+    #     config = self.get_config()
+    #     print("🔍 Retrieving documents for Block 6 (Governance) characteristics...")
+        
+    #     start_time = time.time()
+    #     # mem_before = get_memory_usage_mb()
+    #     try:
+    #         retrieved_docs = retriever.retrieve_documents(
+    #             config.query, k=config.k
+    #         )
+            
+    #         print("🧠 Extracting Block 6 characteristics with enhanced reasoning...")
+    #         output = extractor.extract(config.description, retrieved_docs, self.get_schema())
+            
+    #         processing_time = time.time() - start_time
+    #         # mem_after = get_memory_usage_mb()
+            
+    #         return ExtractionResult(
+    #             characteristics=output.model_dump(exclude_none=True),
+    #             metadata={
+    #                 "block6_docs_retrieved": retrieved_docs,
+    #                 "block6_processing_time": processing_time,
+    #                 # "block6_memory_usage_mb": mem_after - mem_before
+    #             },
+    #             success=True
+    #         )
+    #     except Exception as e:
+    #         processing_time = time.time() - start_time
+    #         # mem_after = get_memory_usage_mb()
+    #         return ExtractionResult(
+    #             characteristics={},
+    #             metadata={
+    #                 "block6_processing_time": processing_time,
+    #                 # "block6_memory_usage_mb": mem_after - mem_before
+    #                 },
+    #             success=False,
+    #             error_message=str(e)
+    #         )

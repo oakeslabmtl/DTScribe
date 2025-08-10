@@ -48,12 +48,14 @@ class CharacteristicsExtractionResult:
     average_description_length: float
     
     # Performance metrics
-    total_docs_retrieved: int
+    # total_docs_retrieved: int
     total_chunks: int
     processing_time_seconds: float
     
     # Block-specific metrics
     block_processing_times: Dict[str, float]
+    block_docs_retrieved: Dict[str, int]
+    # block_memory_usages: Dict[str, float]
     block_success_rates: Dict[str, bool]
     
     # Error information
@@ -80,6 +82,7 @@ class OMLGenerationResult:
     
     # Performance metrics
     generation_time_seconds: float
+    # oml_memory_usage_mb: float
     
     # Error information
     errors: List[str]
@@ -168,7 +171,7 @@ class ResultsSaver:
             'extracted_count': result.extracted_count,
             'total_characteristics': result.total_characteristics,
             'average_description_length': result.average_description_length,
-            'total_docs_retrieved': result.total_docs_retrieved,
+            # 'total_docs_retrieved': result.total_docs_retrieved,
             'processing_time_seconds': result.processing_time_seconds,
             'error_count': len(result.errors),
             'warning_count': len(result.warnings)
@@ -194,6 +197,7 @@ class ResultsSaver:
             'oml_line_count': result.oml_line_count,
             'oml_instance_count': result.oml_instance_count,
             'generation_time_seconds': result.generation_time_seconds,
+            # 'oml_memory_usage_mb': result.oml_memory_usage_mb,
             'error_count': len(result.errors),
             'warning_count': len(result.warnings)
         }
