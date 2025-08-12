@@ -464,7 +464,6 @@ JSON:
                 
                 if not is_valid:
                     print(f"❌ Attempt {attempt + 1}: Written OML file validation with OpenCAESAR failed")
-                    print("🔧 Attempting to fix OML based on validation feedback...")
                     
                     # Try to fix the OML based on validation feedback
                     fixed_oml = self._fix_oml_with_feedback(
@@ -507,7 +506,6 @@ JSON:
                 is_combined_valid, combined_validation_output = self._validate_oml_with_opencaesar(catalog_parent_path)
                 if not is_combined_valid:
                     print(f"❌ Attempt {attempt + 1}: Combined OML validation with OpenCAESAR failed (⏱️ {elapsed:.2f}s)")
-
                     # Try to fix the combined OML based on validation feedback
                     all_characteristics = {**component_based_characteristics, **description_based_characteristics}
                     fixed_combined_oml = self._fix_oml_with_feedback(
@@ -535,6 +533,13 @@ JSON:
                 
                 elapsed = time.perf_counter() - attempt_start
                 print(f"✅ OML generation and validation successful! (Attempt {attempt + 1} ⏱️ {elapsed:.2f}s)")
+                # After successful validation, attempt to start Fuseki and load the OML
+                fuseki_ok, fuseki_output = self._load_oml_into_fuseki(catalog_parent_path)
+                if fuseki_ok:
+                    print("✅ Fuseki start & OML load successful")
+                else:
+                    print("⚠️ Fuseki load sequence failed (continuing):")
+                    print(fuseki_output)
                 return combined_oml
             except Exception as e:
                 # attempt_start may not be defined if exception occurs before set; guard against that
@@ -830,3 +835,61 @@ Generate ONLY the corrected OML code, no explanations:
             error_msg = f"Error during OpenCAESAR validation: {e}"
             print(error_msg)
             return False, error_msg
+
+    def _load_oml_into_fuseki(self, catalog_parent_path: Path, timeout: int = 300) -> tuple[bool, str]:
+        """Start Fuseki (triple store) and load OML using gradle tasks.
+
+        Sequence:
+          1. gradlew.bat startFuseki (or ./gradlew startFuseki on *nix)
+          2. gradlew.bat owlLoad
+
+        Returns: (success, combined_output)
+        """
+        try:
+            abs_catalog_path = catalog_parent_path.resolve()
+            if not abs_catalog_path.exists():
+                msg = f"Error: Directory {abs_catalog_path} does not exist"
+                print(msg)
+                return False, msg
+            gradlew_script = abs_catalog_path / ("gradlew.bat" if os.name == "nt" else "gradlew")
+            if not gradlew_script.exists():
+                msg = f"Error: {gradlew_script} not found (cannot start Fuseki / load OML)"
+                print(msg)
+                return False, msg
+
+            print("🚀 Starting Fuseki server via Gradle...")
+            start_cmd = [str(gradlew_script), "startFuseki"]
+            start_proc = subprocess.run(
+                start_cmd,
+                cwd=str(abs_catalog_path),
+                capture_output=True,
+                text=True,
+                timeout=timeout
+            )
+            start_output = f"StartFuseki Return code: {start_proc.returncode}\nSTDOUT:\n{start_proc.stdout}\nSTDERR:\n{start_proc.stderr}\n"
+            print(start_output)
+            if start_proc.returncode != 0:
+                return False, start_output
+
+            print("📥 Loading OML into Fuseki (owlLoad)...")
+            load_cmd = [str(gradlew_script), "owlLoad"]
+            load_proc = subprocess.run(
+                load_cmd,
+                cwd=str(abs_catalog_path),
+                capture_output=True,
+                text=True,
+                timeout=timeout
+            )
+            load_output = f"owlLoad Return code: {load_proc.returncode}\nSTDOUT:\n{load_proc.stdout}\nSTDERR:\n{load_proc.stderr}\n"
+            print(load_output)
+            success = start_proc.returncode == 0 and load_proc.returncode == 0
+            combined = start_output + "\n" + load_output
+            return success, combined
+        except subprocess.TimeoutExpired:
+            msg = f"Error: Fuseki start or load timed out ({timeout}s)"
+            print(msg)
+            return False, msg
+        except Exception as e:
+            msg = f"Error during Fuseki load sequence: {e}"
+            print(msg)
+            return False, msg
