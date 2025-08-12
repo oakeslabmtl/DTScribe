@@ -2,6 +2,8 @@
 Enhanced RAG Configuration with modern LLM techniques for improved Digital Twin characteristics extraction.
 """
 
+import subprocess
+import os
 from langchain_community.document_loaders import PyMuPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_chroma import Chroma
@@ -16,6 +18,9 @@ import pymupdf
 import re
 import json
 from pathlib import Path
+
+# Import OML Writer components
+from .oml_writer import IOMLWriter, OMLFileWriter
 
 
 class EnhancedRAGPipeline:
@@ -280,25 +285,25 @@ Remember: Be highly specific and technical. Include exact technologies, methods,
         
         # Strip whitespace
         response_text = response_text.strip()
-        
-        # Remove code block markers
-        if response_text.startswith('```json'):
-            response_text = response_text[7:]
-        elif response_text.startswith('```oml'):
-            response_text = response_text[6:]
-        elif response_text.startswith('```'):
-            response_text = response_text[3:]
-        if response_text.endswith('```'):
-            response_text = response_text[:-3]
-        
+
         # Remove thinking tags and their content completely
         response_text = re.sub(r'<think>.*?</think>', '', response_text, flags=re.DOTALL | re.IGNORECASE)
-        
+
         # Also handle unclosed thinking tags
         response_text = re.sub(r'<think>.*', '', response_text, flags=re.DOTALL | re.IGNORECASE)
         
         # Strip again after cleaning
         response_text = response_text.strip()
+        
+        # Remove code block markers
+        if response_text.startswith('```json'):
+            response_text = response_text[7:]
+        if response_text.startswith('```oml'):
+            response_text = response_text[6:]
+        if response_text.startswith('```'):
+            response_text = response_text[3:]
+        if response_text.endswith('```'):
+            response_text = response_text[:-3]
         
         # Extract JSON content - look for the first complete JSON object
         json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
@@ -395,10 +400,18 @@ JSON:
             return self._create_fallback_output(schema)
     
     def generate_oml(self, characteristics: Dict[str, Any], 
-                            vocab_files: Dict[str, str]) -> str:
+                        vocab_files: Dict[str, str],
+                        output_path: Path = Path(r"data\DTDF\src\oml\bentleyjoakes.github.io\LLM_described_DT\llm_dt.oml"),
+                        catalog_parent_path: Path = Path(r"data\DTDF\\"),
+                        writer: IOMLWriter = None,
+                        max_retries: int = 3) -> str:
         """
-        OML generation with better context and validation.
+        OML generation workflow with retries and validation.
         """
+        if writer is None:
+            writer = OMLFileWriter()
+
+        # Define description-based vocab mapping
         description_based_vocab_mapping = {
             "virtual_to_physical_interaction": "VirtualToPhysical",
             "twinning_time_scale": "TimeScale",
@@ -421,21 +434,107 @@ JSON:
         # Create component-based dictionary
         component_based_characteristics = {key: characteristics[key] for key in component_based_characteristics_keys if key in characteristics}
 
-        # Generate OML sections
         description_based_oml = self.generate_description_based_oml(description_based_characteristics, description_based_vocab_mapping)
-        component_based_oml = self.generate_component_based_oml(component_based_characteristics, vocab_files, comma_separated_description_based_vocab_mapping_keys)
 
-        # Combine both OML description-based and component-based characteristics
-        print("🏗️ Combining OML descriptions...")
-        combined_oml = f"{component_based_oml}\n\n{description_based_oml}"
-        # Clean the combined OML content
-        combined_oml = self._clean_llm_response(combined_oml)
-        # Validate the combined OML syntax
-        if not self._validate_oml_syntax(combined_oml):
-            print("Warning: Combined OML may have syntax issues")
-        if not self._validate_oml_with_opencaesar(combined_oml):
-            print("Warning: Combined OML may not meet OpenCAESAR standards")
-        return combined_oml
+        # Retry mechanism for component-based OML generation
+        print("🔄 Retrying component-based OML generation with multiple attempts...")
+        for attempt in range(max_retries + 1):
+            try:
+                print(f"📝 Attempt {attempt + 1}/{max_retries + 1}: Generating OML...")
+                component_based_oml = self.generate_component_based_oml(component_based_characteristics, vocab_files, comma_separated_description_based_vocab_mapping_keys)
+                # Validate the generated OML syntax
+                if not self._validate_oml_syntax(component_based_oml):
+                    print(f"❌ Attempt {attempt + 1}: Invalid OML syntax detected")
+                    continue
+                
+                # Write the OML content to file
+                print("💾 Writing OML to file...")
+                write_success = writer.write_oml(component_based_oml, output_path)
+                if not write_success:
+                    print(f"❌ Attempt {attempt + 1}: Failed to write OML to file")
+                    continue
+                
+                # Validate the written OML file with OpenCAESAR
+                print("⚙️ Validating written OML file with OpenCAESAR...")
+                is_valid, validation_output = self._validate_oml_with_opencaesar(catalog_parent_path)
+                
+                if not is_valid:
+                    print(f"❌ Attempt {attempt + 1}: Written OML file validation with OpenCAESAR failed")
+                    print("🔧 Attempting to fix OML based on validation feedback...")
+                    
+                    # Try to fix the OML based on validation feedback
+                    fixed_oml = self._fix_oml_with_feedback(
+                        component_based_oml, 
+                        validation_output, 
+                        component_based_characteristics, 
+                        vocab_files
+                    )
+                    
+                    # Write the fixed OML and validate again
+                    write_success = writer.write_oml(fixed_oml, output_path)
+                    if write_success:
+                        is_valid_fixed, _ = self._validate_oml_with_opencaesar(catalog_parent_path)
+                        if is_valid_fixed:
+                            print("✅ Fixed OML validation successful!")
+                            component_based_oml = fixed_oml
+                        else:
+                            print(f"❌ Attempt {attempt + 1}: Fixed OML still failed validation")
+                            continue
+                    else:
+                        print(f"❌ Attempt {attempt + 1}: Failed to write fixed OML to file")
+                        continue
+                
+                # Combine both OML description-based and component-based characteristics
+                print("🏗️ Combining OML descriptions...")
+                combined_oml = f"{component_based_oml}\n\n{description_based_oml}"
+                combined_oml = self._clean_llm_response(combined_oml)
+                # Write the OML content to file
+                print("💾 Writing combined OML to file...")
+                write_success = writer.write_oml(combined_oml, output_path)
+                # Validate the combined OML syntax
+                if not self._validate_oml_syntax(combined_oml):
+                    print(f"❌ Attempt {attempt + 1}: Combined OML syntax validation failed")
+                    continue
+                
+                # Validate combined OML with OpenCAESAR
+                is_combined_valid, combined_validation_output = self._validate_oml_with_opencaesar(catalog_parent_path)
+                if not is_combined_valid:
+                    print(f"❌ Attempt {attempt + 1}: Combined OML validation with OpenCAESAR failed")
+                    print("🔧 Attempting to fix combined OML based on validation feedback...")
+                    
+                    # Try to fix the combined OML based on validation feedback
+                    all_characteristics = {**component_based_characteristics, **description_based_characteristics}
+                    fixed_combined_oml = self._fix_oml_with_feedback(
+                        combined_oml, 
+                        combined_validation_output, 
+                        all_characteristics, 
+                        vocab_files
+                    )
+                    
+                    # Write the fixed combined OML and validate again
+                    write_success = writer.write_oml(fixed_combined_oml, output_path)
+                    if write_success:
+                        is_final_valid, _ = self._validate_oml_with_opencaesar(catalog_parent_path)
+                        if is_final_valid:
+                            print("✅ Fixed combined OML validation successful!")
+                            combined_oml = fixed_combined_oml
+                        else:
+                            print(f"❌ Attempt {attempt + 1}: Fixed combined OML still failed validation")
+                            continue
+                    else:
+                        print(f"❌ Attempt {attempt + 1}: Failed to write fixed combined OML to file")
+                        continue
+                
+                print("✅ OML generation and validation successful!")
+                return combined_oml
+            except Exception as e:
+                print(f"❌ Attempt {attempt + 1}: Unexpected error: {str(e)}")
+                if attempt < max_retries:
+                    print("🔄 Retrying due to unexpected error...")
+                    continue
+                else:
+                    print("❌ Failed due to persistent errors")
+                    return None
 
     def generate_description_based_oml(self, characteristics: Dict[str, Any], vocab_mapping: Dict[str, str]) -> str:
         """Generate OML based on characteristics description."""
@@ -488,12 +587,13 @@ instance <name_of_acting_component> : DTDFVocab:ActingComponent [
 ]
     
 // C3: Physical sensing components
-instance <name_of_sensing_component> : DTDFVocab:SensingComponent[
+instance <name_of_sensing_component> : DTDFVocab:SensingComponent [
     base:desc "<description of the sensing component>"
+    DTDFVocab:producedData <name_of_produced_data_transmitted>
 ]
 
 // C4: Physical-to-virtual interaction                                           
-instance <name_of_physical_to_virtual_interaction> : DTDFVocab:DataTransmitted [
+instance <name_of_produced_data_transmitted> : DTDFVocab:DataTransmitted [
     DTDFVocab:producedFrom <name_of_sensing_component1, name_of_sensing_component2, ...>
 ]
 
@@ -506,31 +606,30 @@ instance <name_of_action> : DTDFVocab:Action[
     base:desc "<description of the action>"
     DTDFVocab:IsAutomatic <true_or_false>
 ]
-                                                  
+
 // Services (C6)
 instance <name_of_service> : DTDFVocab:Service [
     base:desc "<description of the service>"
     DTDFVocab:provides <name_of_action_or_insight1, name_of_action_or_insight2, ...>
-    DTDFVocab:atStage baseDesc:<stage>
 ]
 
 // Enablers (C11)
 instance <name_of_enabler> : DTDFVocab:Enabler [
     base:desc "<description of the enabler>"
-    DTDFVocab:enables <name_of_service_enabled_1, name_of_service_enabled_2, ...>
+    DTDFVocab:enables <name_of_service1, name_of_service2, ...>
 ]
 
 // Models/Data (C10)
 instance <name_of_model> : DTDFVocab:Model [
     base:desc "<description of the model>"
-    DTDFVocab:inputTo <name_of_enabler_1, name_of_enabler_2, ...>
+    DTDFVocab:inputTo <name_of_enabler1, name_of_enabler2, ...>
     DTDFVocab:fromData <name_of_physical_to_virtual_interaction>
 ]
                                                   
 instance <name_of_data> : DTDFVocab:Data [
     base:desc "<description of the data>"
-    DTDFVocab:inputTo <name_of_enabler_1, name_of_enabler_2, ...>
-    DTDFVocab:fromData <name_of_physical_to_virtual_interaction>
+    DTDFVocab:inputTo <name_of_enabler1, name_of_enabler2, ...>
+    DTDFVocab:fromData <name_of_DTDFVocab:DataTransmitted>
 ]
 ```
                                                   
@@ -543,6 +642,7 @@ REQUIREMENTS:
 
 GUIDELINES:
 - For multiple components (sensors, actuators, services), create separate instances
+- DTDFVocab:SensingComponent generate DTDFVocab:producedData as DTDFVocab:DataTransmitted, used as DTDFVocab:fromData by a DTDFVocab:Model or a DTDFVocab:Data, which serve as DTDFVocab:inputTo DTDFVocab:Enabler that process them, and it DTDFVocab:enables DTDFVocab:Service which themselves create DTDFVocab:Insight or DTDFVocab:Action.
 - Certain characteristics (Physical acting components, Physical sensing components, Physical-to-virtual interaction, DT services, Twinning time-scale, DT models and data, Tooling and enablers, Insights and decision making) usually have multiple instances
 - Use base:desc for detailed descriptions of other characteristics
 - Establish proper relationships using DTDFVocab predicates
@@ -559,21 +659,7 @@ Generate ONLY the OML code, no explanations or comments outside the OML syntax:
         
         response = self.llm.invoke(formatted_prompt)
         oml_content = response.content if hasattr(response, 'content') else str(response)
-        # Clean the response to ensure valid OML syntax
         oml_content = self._clean_llm_response(oml_content)
-        
-        # Basic OML syntax validation
-        if self._validate_oml_syntax(oml_content):
-            print("Basic OML syntax validation passed")
-        else:
-            print("Warning: Generated OML may have syntax issues")
-            # TODO: Retry generation
-
-        # Advanced validation with OpenCAESAR OML validator
-        if not self._validate_oml_with_opencaesar(oml_content):
-            print("Warning: Generated OML may not meet OpenCAESAR standards")
-            # TODO: Retry generation
-
         return oml_content
 
     def _validate_oml_syntax(self, oml_content: str) -> bool:
@@ -585,7 +671,149 @@ Generate ONLY the OML code, no explanations or comments outside the OML syntax:
         
         return has_instances and has_proper_brackets and has_vocabulary_references
 
-    def _validate_oml_with_opencaesar(self, oml_content: str) -> bool:
-        """Validate OML content using OpenCAESAR's OML Validate."""
-        # TODO: Implement OpenCAESAR OML Validate service
-        return True  # Placeholder for actual validation result
+    def _fix_oml_with_feedback(self, oml_content: str, validation_output: str, 
+                              characteristics: Dict[str, Any], vocab_files: Dict[str, str]) -> str:
+        """
+        Fix OML content based on OpenCAESAR validation feedback.
+        """
+        print("🔧 Attempting to fix OML based on validation feedback...")
+        
+        # Load vocabulary context
+        vocab_context = ""
+        for name, path in vocab_files.items():
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    content = f.read()
+                    vocab_context += f"\n\n{name}:\n```oml\n{content}\n```"
+            except FileNotFoundError:
+                print(f"Warning: Could not find '{path}'")
+        
+        # Create fix prompt with validation feedback
+        fix_prompt = PromptTemplate.from_template("""
+You are an expert in OML (Ontological Modeling Language) debugging and fixing syntax errors.
+
+TASK: Fix the OML code based on the validation errors provided by OpenCAESAR.
+
+ORIGINAL OML CODE:
+```oml
+{original_oml}
+```
+
+VALIDATION ERRORS FROM OPENCAESAR:
+{validation_errors}
+
+CHARACTERISTICS TO REPRESENT:
+{characteristics}
+
+VOCABULARY REFERENCE:
+{vocab_context}
+
+INSTRUCTIONS:
+1. Analyze the validation errors carefully
+2. Identify specific syntax or semantic issues
+3. Fix the OML code while preserving the intent and content
+4. Ensure all instances and relationships are properly defined
+5. Follow OML syntax rules precisely
+6. Keep all meaningful information from the original code
+
+COMMON OML ISSUES TO FIX:
+- Missing or incorrect namespace declarations
+- Malformed instance definitions
+- Incorrect property references
+- Missing closing brackets or semicolons
+- Invalid vocabulary references
+- Circular dependencies or undefined references
+
+Generate ONLY the corrected OML code, no explanations:
+""")
+        
+        formatted_prompt = fix_prompt.format(
+            original_oml=oml_content,
+            validation_errors=validation_output,
+            characteristics=json.dumps(characteristics, indent=2),
+            vocab_context=vocab_context
+        )
+        
+        try:
+            response = self.llm.invoke(formatted_prompt)
+            fixed_oml = response.content if hasattr(response, 'content') else str(response)
+            fixed_oml = self._clean_llm_response(fixed_oml)
+            
+            print("🔧 Fixed OML generated based on validation feedback")
+            return fixed_oml
+            
+        except Exception as e:
+            print(f"❌ Error fixing OML with feedback: {e}")
+            return oml_content  # Return original if fixing fails
+
+    def _validate_oml_with_opencaesar(self, catalog_parent_path: Path, output_path: str = "report.txt") -> tuple[bool, str]:
+        """
+        Validate OML content using OpenCAESAR's OML Validate.
+        Returns: (is_valid, validation_output) where validation_output contains error details if validation fails
+        """
+        try:
+            # Convert to absolute path to avoid relative path issues
+            abs_catalog_path = catalog_parent_path.resolve()
+            
+            # Check if the directory exists
+            if not abs_catalog_path.exists():
+                error_msg = f"Error: Directory {abs_catalog_path} does not exist"
+                print(error_msg)
+                return False, error_msg
+            
+            # Check if gradlew.bat exists in the directory
+            gradlew_script = abs_catalog_path / ("gradlew.bat" if os.name == "nt" else "gradlew")
+            if not gradlew_script.exists():
+                error_msg = f"Error: {gradlew_script} not found"
+                print(error_msg)
+                print(f"Looking for gradlew in: {abs_catalog_path}")
+                # List files in directory for debugging
+                try:
+                    files = list(abs_catalog_path.iterdir())
+                    print(f"Files in directory: {[f.name for f in files[:10]]}")  # Show first 10 files
+                except Exception as e:
+                    print(f"Cannot list directory contents: {e}")
+                return False, error_msg
+            
+            # Run the validation
+            print("Running OpenCAESAR OML validation...")
+            print("Parameters:")
+            print(f" - Working Directory: {abs_catalog_path}")
+            print(f" - Gradlew Script: {gradlew_script}")
+            print(f" - Output Report: {output_path}")
+            
+            # Execute the command with absolute path
+            result = subprocess.run([
+                str(gradlew_script),
+                "owlReason"
+            ],
+            cwd=str(abs_catalog_path),
+            capture_output=True,
+            text=True,
+            timeout=300)
+
+            print("OpenCAESAR OML validation result:")
+            print(f"Return code: {result.returncode}")
+            print(f"Stdout: {result.stdout}")
+            print(f"Stderr: {result.stderr}")
+
+            # Prepare validation output for feedback
+            validation_output = f"Return code: {result.returncode}\n"
+            validation_output += f"Stdout:\n{result.stdout}\n"
+            if result.stderr:
+                validation_output += f"Stderr:\n{result.stderr}\n"
+
+            return result.returncode == 0, validation_output
+            
+        except subprocess.TimeoutExpired:
+            error_msg = "Error: OpenCAESAR validation timed out (300 seconds)"
+            print(error_msg)
+            return False, error_msg
+        except FileNotFoundError as e:
+            error_msg = f"Error: File not found - {e}. This usually means gradlew.bat is not in the expected location"
+            print(error_msg)
+            return False, error_msg
+        except Exception as e:
+            error_msg = f"Error during OpenCAESAR validation: {e}"
+            print(error_msg)
+            return False, error_msg
