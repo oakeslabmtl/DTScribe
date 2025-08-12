@@ -406,57 +406,6 @@ class ResultsAnalyzer:
         print(f"📄 Research summary saved to: {report_file}")
         
         return str(report_file)
-    
-    def validate_with_oml_tools(self, oml_tools_path: Path, catalog_path: Path, 
-                            output_path: Path) -> Dict[str, Any]:
-        """Use oml-tools directly for validation."""
-        
-        try:
-            # Run the validation
-            result = subprocess.run([
-                str(oml_tools_path / "gradlew.bat" if os.name == 'nt' else "gradlew"),
-                "oml-validate:run",
-                f"--args=-i {catalog_path} -o {output_path}"
-            ], 
-            cwd=oml_tools_path,
-            capture_output=True, 
-            text=True, 
-            timeout=300)
-            
-            # Read the report
-            report = ""
-            if output_path.exists():
-                with open(output_path, 'r') as f:
-                    report = f.read()
-            
-            return {
-                'success': result.returncode == 0,
-                'return_code': result.returncode,
-                'stdout': result.stdout,
-                'stderr': result.stderr,
-                'report': report
-            }
-            
-        except Exception as e:
-            return {'success': False, 'error': str(e)}
-    
-    def _analyze_oml_quality(self, oml_content: str) -> Dict[str, Any]:
-        """Updated method using OpenCAESAR validation."""
-        
-        # Use the new validator
-        validation_result = self.validate_with_oml_tools(
-            oml_tools_path=Path("../oml-tools"),
-            catalog_path=Path("../data/DTOnto/catalog.xml").resolve(),
-            output_path=Path("validation_report.txt")
-        )
-        
-        # Convert to expected format for backward compatibility
-        return {
-            'syntax_valid': validation_result.get('success', False),
-            'completeness_score': 1.0 if validation_result.get('success') else 0.0,
-            'line_count': oml_content.count('\n') + 1,
-            'instance_count': oml_content.count('instance ')
-        }
 
 
 def main():
