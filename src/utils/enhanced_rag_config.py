@@ -435,112 +435,57 @@ JSON:
         # Create component-based dictionary
         component_based_characteristics = {key: characteristics[key] for key in component_based_characteristics_keys if key in characteristics}
 
+        attempt_start = time.perf_counter()
+        print(f"📝 Attempt 1/{max_retries + 1}: Generating OML...")
         description_based_oml = self.generate_description_based_oml(description_based_characteristics, description_based_vocab_mapping)
+        component_based_oml = self.generate_component_based_oml(component_based_characteristics, vocab_files, comma_separated_description_based_vocab_mapping_keys)
 
         # Retry mechanism for component-based OML generation
         print("🔄 Retrying component-based OML generation with multiple attempts...")
         for attempt in range(max_retries + 1):
             try:
-                attempt_start = time.perf_counter()
-                print(f"📝 Attempt {attempt + 1}/{max_retries + 1}: Generating OML...")
-                component_based_oml = self.generate_component_based_oml(component_based_characteristics, vocab_files, comma_separated_description_based_vocab_mapping_keys)
                 # Validate the generated OML syntax
                 if not self._validate_oml_syntax(component_based_oml):
                     elapsed = time.perf_counter() - attempt_start
                     print(f"❌ Attempt {attempt + 1}: Invalid OML syntax detected (⏱️ {elapsed:.2f}s)")
+                    # Try to fix the OML based on validation feedback
+                    component_based_oml = self._fix_oml_with_feedback(
+                        oml_content=component_based_oml, 
+                        validation_output="There were OML syntax errors detected. Maybe the generation was incomplete.", 
+                        characteristics=component_based_characteristics, 
+                        vocab_files=vocab_files
+                    )
                     continue
+
+                # Combine both OML description-based and component-based characteristics
+                print("🏗️ Combining OML descriptions...")
+                combined_oml = f"{component_based_oml}\n\n{description_based_oml}"
+                combined_oml = self._clean_llm_response(combined_oml)
                 
                 # Write the OML content to file
-                print("💾 Writing OML to file...")
-                write_success = writer.write_oml(component_based_oml, output_path)
+                write_success = writer.write_oml(combined_oml, output_path)
                 if not write_success:
                     elapsed = time.perf_counter() - attempt_start
                     print(f"❌ Attempt {attempt + 1}: Failed to write OML to file (⏱️ {elapsed:.2f}s)")
                     continue
                 
                 # Validate the written OML file with OpenCAESAR
-                print("⚙️ Validating written OML file with OpenCAESAR...")
                 is_valid, validation_output = self._validate_oml_with_opencaesar(catalog_parent_path)
-                
-                if not is_valid:
+
+                if is_valid:
+                    elapsed = time.perf_counter() - attempt_start
+                    print(f"✅ Attempt {attempt + 1}: Written OML file validation with OpenCAESAR successful! (⏱️ {time.perf_counter() - attempt_start:.2f}s)")
+                    break  # Exit loop on successful validation
+                else:
                     print(f"❌ Attempt {attempt + 1}: Written OML file validation with OpenCAESAR failed")
-                    
                     # Try to fix the OML based on validation feedback
-                    fixed_oml = self._fix_oml_with_feedback(
+                    component_based_oml = self._fix_oml_with_feedback(
                         component_based_oml, 
                         validation_output, 
                         component_based_characteristics, 
                         vocab_files
                     )
-                    
-                    # Write the fixed OML and validate again
-                    write_success = writer.write_oml(fixed_oml, output_path)
-                    if write_success:
-                        is_valid_fixed, _ = self._validate_oml_with_opencaesar(catalog_parent_path)
-                        if is_valid_fixed:
-                            print("✅ Fixed OML validation successful!")
-                            component_based_oml = fixed_oml
-                        else:
-                            elapsed = time.perf_counter() - attempt_start
-                            print(f"❌ Attempt {attempt + 1}: Fixed OML still failed validation (⏱️ {elapsed:.2f}s)")
-                            continue
-                    else:
-                        elapsed = time.perf_counter() - attempt_start
-                        print(f"❌ Attempt {attempt + 1}: Failed to write fixed OML to file (⏱️ {elapsed:.2f}s)")
-                        continue
-                
-                # Combine both OML description-based and component-based characteristics
-                print("🏗️ Combining OML descriptions...")
-                combined_oml = f"{component_based_oml}\n\n{description_based_oml}"
-                combined_oml = self._clean_llm_response(combined_oml)
-                # Write the OML content to file
-                print("💾 Writing combined OML to file...")
-                write_success = writer.write_oml(combined_oml, output_path)
-                # Validate the combined OML syntax
-                if not self._validate_oml_syntax(combined_oml):
-                    elapsed = time.perf_counter() - attempt_start
-                    print(f"❌ Attempt {attempt + 1}: Combined OML syntax validation failed (⏱️ {elapsed:.2f}s)")
-                    continue
-                
-                # Validate combined OML with OpenCAESAR
-                is_combined_valid, combined_validation_output = self._validate_oml_with_opencaesar(catalog_parent_path)
-                if not is_combined_valid:
-                    print(f"❌ Attempt {attempt + 1}: Combined OML validation with OpenCAESAR failed (⏱️ {elapsed:.2f}s)")
-                    # Try to fix the combined OML based on validation feedback
-                    all_characteristics = {**component_based_characteristics, **description_based_characteristics}
-                    fixed_combined_oml = self._fix_oml_with_feedback(
-                        combined_oml, 
-                        combined_validation_output, 
-                        all_characteristics, 
-                        vocab_files
-                    )
-                    
-                    # Write the fixed combined OML and validate again
-                    write_success = writer.write_oml(fixed_combined_oml, output_path)
-                    if write_success:
-                        is_final_valid, _ = self._validate_oml_with_opencaesar(catalog_parent_path)
-                        if is_final_valid:
-                            print("✅ Fixed combined OML validation successful!")
-                            combined_oml = fixed_combined_oml
-                        else:
-                            elapsed = time.perf_counter() - attempt_start
-                            print(f"❌ Attempt {attempt + 1}: Fixed combined OML still failed validation (⏱️ {elapsed:.2f}s)")
-                            continue
-                    else:
-                        elapsed = time.perf_counter() - attempt_start
-                        print(f"❌ Attempt {attempt + 1}: Failed to write fixed combined OML to file (⏱️ {elapsed:.2f}s)")
-                        continue
-                
-                elapsed = time.perf_counter() - attempt_start
-                print(f"✅ OML generation and validation successful! (Attempt {attempt + 1} ⏱️ {elapsed:.2f}s)")
-                # After successful validation, attempt to start Fuseki and load the OML
-                fuseki_ok, fuseki_output = self._load_oml_into_fuseki(catalog_parent_path)
-                if fuseki_ok:
-                    print("✅ Fuseki start & OML load successful")
-                else:
-                    print("⚠️ Fuseki load sequence failed (continuing):")
-                    print(fuseki_output)
-                return combined_oml
+                    continue  # Retry with the fixed component-based OML
             except Exception as e:
                 # attempt_start may not be defined if exception occurs before set; guard against that
                 if 'attempt_start' in locals():
@@ -554,6 +499,14 @@ JSON:
                 else:
                     print("❌ Failed due to persistent errors")
                     return None
+        # After successful validation, attempt to start Fuseki and load the OML
+        fuseki_ok, fuseki_output = self._load_oml_into_fuseki(catalog_parent_path)
+        if fuseki_ok:
+            print("✅ Fuseki start & OML load successful")
+        else:
+            print("⚠️ Fuseki load sequence failed (continuing):")
+            print(fuseki_output)
+        return combined_oml
 
     def generate_description_based_oml(self, characteristics: Dict[str, Any], vocab_mapping: Dict[str, str]) -> str:
         """Generate OML based on characteristics description."""
@@ -599,7 +552,7 @@ LIST OF ALREADY GENERATED CHARACTERISTICS (do not generate again):
 
 Only generate OML code that's similar to the following syntax examples:
 SYNTAX EXAMPLES:
-```oml
+```oml                                          
 // C2: Acting Components
 instance <name_of_acting_component> : DTDFVocab:ActingComponent [
     base:desc "<description of the acting component>"
@@ -650,13 +603,14 @@ instance <name_of_data> : DTDFVocab:Data [
     DTDFVocab:fromData <name_of_DTDFVocab:DataTransmitted>
 ]
 ```
-                                                  
+
 REQUIREMENTS:
 1. Follow OML syntax precisely. Names between <> are placeholders for actual names.
 2. Create instances for each characteristic that has meaningful content (not "Not Found")
-3. Establish proper relationships between instances using the vocabulary predicates
-4. Use descriptive, technical names for instances based on the content
-5. Ensure all generated code is syntactically valid OML
+3. Two instances cannot have the same name.
+4. Establish proper relationships between instances using the vocabulary predicates
+5. Use descriptive, technical names for instances based on the content
+6. Ensure all generated code is syntactically valid OML
 
 GUIDELINES:
 - For multiple components (sensors, actuators, services), create separate instances
@@ -710,22 +664,80 @@ Generate ONLY the OML code, no explanations or comments outside the OML syntax:
         fix_prompt = PromptTemplate.from_template("""
 You are an expert in OML (Ontological Modeling Language) debugging and fixing syntax errors.
 
-TASK: Fix the OML code based on the validation errors provided by OpenCAESAR.
+TASK: Fix the OML code based on the validation errors provided, given the set of characteristics this ontology is based on.
 
 ORIGINAL OML CODE:
 ```oml
 {original_oml}
 ```
 
-VALIDATION ERRORS FROM OPENCAESAR:
+VALIDATION ERRORS:
 {validation_errors}
 
-CHARACTERISTICS TO REPRESENT:
+EXTRACTED CHARACTERISTICS:
 {characteristics}
+                                                  
+SYNTAX EXAMPLES:
+```oml                                           
+// C2: Acting Components
+instance <name_of_acting_component> : DTDFVocab:ActingComponent [
+    base:desc "<description of the acting component>"
+]
+    
+// C3: Physical sensing components
+instance <name_of_sensing_component> : DTDFVocab:SensingComponent [
+    base:desc "<description of the sensing component>"
+    DTDFVocab:producedData <name_of_produced_data_transmitted>
+]
 
-VOCABULARY REFERENCE:
-{vocab_context}
+// C4: Physical-to-virtual interaction                                           
+instance <name_of_produced_data_transmitted> : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom <name_of_sensing_component1, name_of_sensing_component2, ...>
+]
+                                                  
+instance <name_of_agent> : DTDFVocab:Agent [
+    base:desc "<description of the agent>"
+]
 
+instance <name_of_environment> : DTDFVocab:Environment [
+    base:contains <name_of_component1, name_of_component2, ...>
+]
+
+// Insights/Actions (C17)
+instance <name_of_insight> : DTDFVocab:Insight [
+    base:desc "<description of the insight>"
+]
+
+instance <name_of_action> : DTDFVocab:Action[
+    base:desc "<description of the action>"
+    DTDFVocab:IsAutomatic <true_or_false>
+]
+
+// Services (C6)
+instance <name_of_service> : DTDFVocab:Service [
+    base:desc "<description of the service>"
+    DTDFVocab:provides <name_of_action_or_insight1, name_of_action_or_insight2, ...>
+]
+
+// Enablers (C11)
+instance <name_of_enabler> : DTDFVocab:Enabler [
+    base:desc "<description of the enabler>"
+    DTDFVocab:enables <name_of_service1, name_of_service2, ...>
+]
+
+// Models/Data (C10)
+instance <name_of_model> : DTDFVocab:Model [
+    base:desc "<description of the model>"
+    DTDFVocab:inputTo <name_of_enabler1, name_of_enabler2, ...>
+]
+                                                  
+instance <name_of_data> : DTDFVocab:Data [
+    base:desc "<description of the data>"
+    DTDFVocab:inputTo <name_of_enabler1, name_of_enabler2, ...>
+    DTDFVocab:fromData <name_of_DTDFVocab:DataTransmitted>
+]
+```
+                                                  
 INSTRUCTIONS:
 1. Analyze the validation errors carefully
 2. Identify specific syntax or semantic issues
@@ -741,6 +753,8 @@ COMMON OML ISSUES TO FIX:
 - Missing closing brackets or semicolons
 - Invalid vocabulary references
 - Circular dependencies or undefined references
+
+NOTE: Usually, the generated OML code will be very similar to the original code, with minor adjustments made to fix the identified issues.
 
 Generate ONLY the corrected OML code, no explanations:
 """)
@@ -794,7 +808,7 @@ Generate ONLY the corrected OML code, no explanations:
                 return False, error_msg
             
             # Run the validation
-            print("Running OpenCAESAR OML validation...")
+            print("⚙️ Validating written OML file with OpenCAESAR...")
             print("Parameters:")
             print(f" - Working Directory: {abs_catalog_path}")
             print(f" - Gradlew Script: {gradlew_script}")
@@ -810,7 +824,7 @@ Generate ONLY the corrected OML code, no explanations:
             text=True,
             timeout=300)
 
-            print("OpenCAESAR OML validation result:")
+            print("📤 OpenCAESAR OML validation result:")
             print(f"Return code: {result.returncode}")
             print(f"Stdout: {result.stdout}")
             print(f"Stderr: {result.stderr}")
