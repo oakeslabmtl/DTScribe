@@ -34,36 +34,40 @@ from results_analyzer import ResultsAnalyzer
 class ExtractionOrchestrator:
     """Main orchestrator that coordinates the extraction pipeline."""
     
-    def __init__(self, 
-                 initializer: IPipelineInitializer,
-                 state_manager: IStateManager,
-                 oml_generator: IOMLGenerator,
-                 quality_analyzer: IQualityAnalyzer,
-                 block_processors: List[IBlockProcessor],
-                 experiment_tracker: ExperimentTracker = None):
-        
+    def __init__(
+        self,
+        initializer: IPipelineInitializer,
+        state_manager: IStateManager,
+        oml_generator: IOMLGenerator,
+        quality_analyzer: IQualityAnalyzer,
+        block_processors: List[IBlockProcessor],
+        experiment_tracker: ExperimentTracker = None,
+    ):
+        """Initialize orchestrator with its collaborating components."""
         self._initializer = initializer
         self._state_manager = state_manager
         self._oml_generator = oml_generator
         self._quality_analyzer = quality_analyzer
         self._block_processors = block_processors
         self._experiment_tracker = experiment_tracker
-        
+
         self._retriever: IDocumentRetriever = None
         self._extractor: ICharacteristicsExtractor = None
+        self.last_experiment_id: Optional[str] = None
     
-    def run_extraction(self, pdf_path: str, experiment_id: str = None, config: ExperimentConfig = None, save_results: bool = True) -> Dict[str, Any]:
+    def run_extraction(self, pdf_path: str, experiment_id: Optional[str] = None, config: Optional[ExperimentConfig] = None, save_results: bool = True) -> Dict[str, Any]:
         """Run the complete extraction pipeline with optional experiment tracking."""
         print("🚀 Starting Enhanced Digital Twin Characteristics Extraction")
         print("=" * 60)
 
         overall_start_time = time.time()
-        experiment_id = None
-
-        # Start experiment tracking if configured
-        if self._experiment_tracker and config:
+        # Start experiment only if not externally provided
+        if self._experiment_tracker and config and not experiment_id:
             experiment_id = self._experiment_tracker.start_experiment(config)
-            print(f"📊 Experiment ID: {experiment_id}")
+            print(f"📊 Experiment ID (started): {experiment_id}")
+        elif experiment_id:
+            print(f"📊 Using provided Experiment ID: {experiment_id}")
+        self.last_experiment_id = experiment_id
 
         # Only process PDF and create vector DB if it does not exist
 
@@ -162,8 +166,11 @@ class ExtractionOrchestrator:
 
             saved_path = self._experiment_tracker.results_saver.save_characteristics_results(characteristics_result)
             print(f"💾 Characteristics results saved to: {saved_path}")
-        
-        return self._state_manager.get_all_state()
+
+        # Include experiment_id in state for downstream consumers
+        state = self._state_manager.get_all_state()
+        state['experiment_id'] = experiment_id
+        return state
         
         
     def run_oml_generation(self, experiment_id: str = None, save_results: bool = True,
@@ -362,10 +369,8 @@ def main():
             temperature=args.temperature,
             custom_params={"cli": True}
         )
-        if orchestrator._experiment_tracker:
-            experiment_id = orchestrator._experiment_tracker.start_experiment(config)
-            print(f"📊 Experiment ID: {experiment_id}")
-        extraction_results = orchestrator.run_extraction(args.pdf, experiment_id=experiment_id, config=config, save_results=not args.no_save)
+        extraction_results = orchestrator.run_extraction(args.pdf, experiment_id=None, config=config, save_results=not args.no_save)
+        experiment_id = orchestrator.last_experiment_id
 
     if args.mode in ("oml", "both"):
         oml_results = orchestrator.run_oml_generation(experiment_id=experiment_id, save_results=not args.no_save, source_experiment_id=args.source_experiment_id)
