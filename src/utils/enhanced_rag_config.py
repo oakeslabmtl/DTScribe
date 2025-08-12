@@ -18,6 +18,7 @@ import pymupdf
 import re
 import json
 from pathlib import Path
+import time
 
 # Import OML Writer components
 from .oml_writer import IOMLWriter, OMLFileWriter
@@ -440,18 +441,21 @@ JSON:
         print("🔄 Retrying component-based OML generation with multiple attempts...")
         for attempt in range(max_retries + 1):
             try:
+                attempt_start = time.perf_counter()
                 print(f"📝 Attempt {attempt + 1}/{max_retries + 1}: Generating OML...")
                 component_based_oml = self.generate_component_based_oml(component_based_characteristics, vocab_files, comma_separated_description_based_vocab_mapping_keys)
                 # Validate the generated OML syntax
                 if not self._validate_oml_syntax(component_based_oml):
-                    print(f"❌ Attempt {attempt + 1}: Invalid OML syntax detected")
+                    elapsed = time.perf_counter() - attempt_start
+                    print(f"❌ Attempt {attempt + 1}: Invalid OML syntax detected (⏱️ {elapsed:.2f}s)")
                     continue
                 
                 # Write the OML content to file
                 print("💾 Writing OML to file...")
                 write_success = writer.write_oml(component_based_oml, output_path)
                 if not write_success:
-                    print(f"❌ Attempt {attempt + 1}: Failed to write OML to file")
+                    elapsed = time.perf_counter() - attempt_start
+                    print(f"❌ Attempt {attempt + 1}: Failed to write OML to file (⏱️ {elapsed:.2f}s)")
                     continue
                 
                 # Validate the written OML file with OpenCAESAR
@@ -478,10 +482,12 @@ JSON:
                             print("✅ Fixed OML validation successful!")
                             component_based_oml = fixed_oml
                         else:
-                            print(f"❌ Attempt {attempt + 1}: Fixed OML still failed validation")
+                            elapsed = time.perf_counter() - attempt_start
+                            print(f"❌ Attempt {attempt + 1}: Fixed OML still failed validation (⏱️ {elapsed:.2f}s)")
                             continue
                     else:
-                        print(f"❌ Attempt {attempt + 1}: Failed to write fixed OML to file")
+                        elapsed = time.perf_counter() - attempt_start
+                        print(f"❌ Attempt {attempt + 1}: Failed to write fixed OML to file (⏱️ {elapsed:.2f}s)")
                         continue
                 
                 # Combine both OML description-based and component-based characteristics
@@ -493,15 +499,15 @@ JSON:
                 write_success = writer.write_oml(combined_oml, output_path)
                 # Validate the combined OML syntax
                 if not self._validate_oml_syntax(combined_oml):
-                    print(f"❌ Attempt {attempt + 1}: Combined OML syntax validation failed")
+                    elapsed = time.perf_counter() - attempt_start
+                    print(f"❌ Attempt {attempt + 1}: Combined OML syntax validation failed (⏱️ {elapsed:.2f}s)")
                     continue
                 
                 # Validate combined OML with OpenCAESAR
                 is_combined_valid, combined_validation_output = self._validate_oml_with_opencaesar(catalog_parent_path)
                 if not is_combined_valid:
-                    print(f"❌ Attempt {attempt + 1}: Combined OML validation with OpenCAESAR failed")
-                    print("🔧 Attempting to fix combined OML based on validation feedback...")
-                    
+                    print(f"❌ Attempt {attempt + 1}: Combined OML validation with OpenCAESAR failed (⏱️ {elapsed:.2f}s)")
+
                     # Try to fix the combined OML based on validation feedback
                     all_characteristics = {**component_based_characteristics, **description_based_characteristics}
                     fixed_combined_oml = self._fix_oml_with_feedback(
@@ -519,16 +525,24 @@ JSON:
                             print("✅ Fixed combined OML validation successful!")
                             combined_oml = fixed_combined_oml
                         else:
-                            print(f"❌ Attempt {attempt + 1}: Fixed combined OML still failed validation")
+                            elapsed = time.perf_counter() - attempt_start
+                            print(f"❌ Attempt {attempt + 1}: Fixed combined OML still failed validation (⏱️ {elapsed:.2f}s)")
                             continue
                     else:
-                        print(f"❌ Attempt {attempt + 1}: Failed to write fixed combined OML to file")
+                        elapsed = time.perf_counter() - attempt_start
+                        print(f"❌ Attempt {attempt + 1}: Failed to write fixed combined OML to file (⏱️ {elapsed:.2f}s)")
                         continue
                 
-                print("✅ OML generation and validation successful!")
+                elapsed = time.perf_counter() - attempt_start
+                print(f"✅ OML generation and validation successful! (Attempt {attempt + 1} ⏱️ {elapsed:.2f}s)")
                 return combined_oml
             except Exception as e:
-                print(f"❌ Attempt {attempt + 1}: Unexpected error: {str(e)}")
+                # attempt_start may not be defined if exception occurs before set; guard against that
+                if 'attempt_start' in locals():
+                    elapsed = time.perf_counter() - attempt_start
+                else:
+                    elapsed = float('nan')
+                print(f"❌ Attempt {attempt + 1}: Unexpected error: {str(e)} (⏱️ {elapsed:.2f}s)")
                 if attempt < max_retries:
                     print("🔄 Retrying due to unexpected error...")
                     continue
@@ -623,7 +637,6 @@ instance <name_of_enabler> : DTDFVocab:Enabler [
 instance <name_of_model> : DTDFVocab:Model [
     base:desc "<description of the model>"
     DTDFVocab:inputTo <name_of_enabler1, name_of_enabler2, ...>
-    DTDFVocab:fromData <name_of_physical_to_virtual_interaction>
 ]
                                                   
 instance <name_of_data> : DTDFVocab:Data [
@@ -642,7 +655,7 @@ REQUIREMENTS:
 
 GUIDELINES:
 - For multiple components (sensors, actuators, services), create separate instances
-- DTDFVocab:SensingComponent generate DTDFVocab:producedData as DTDFVocab:DataTransmitted, used as DTDFVocab:fromData by a DTDFVocab:Model or a DTDFVocab:Data, which serve as DTDFVocab:inputTo DTDFVocab:Enabler that process them, and it DTDFVocab:enables DTDFVocab:Service which themselves create DTDFVocab:Insight or DTDFVocab:Action.
+- DTDFVocab:SensingComponent generate DTDFVocab:producedData as DTDFVocab:DataTransmitted, used as DTDFVocab:fromData by a DTDFVocab:Data. DTDFVocab:Model or a DTDFVocab:Data serve as DTDFVocab:inputTo DTDFVocab:Enabler that process them, and it DTDFVocab:enables DTDFVocab:Service which themselves create DTDFVocab:Insight or DTDFVocab:Action.
 - Certain characteristics (Physical acting components, Physical sensing components, Physical-to-virtual interaction, DT services, Twinning time-scale, DT models and data, Tooling and enablers, Insights and decision making) usually have multiple instances
 - Use base:desc for detailed descriptions of other characteristics
 - Establish proper relationships using DTDFVocab predicates

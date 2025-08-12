@@ -130,7 +130,7 @@ class ExtractionOrchestrator:
             quality_metrics = self.analyze_characteristic_extraction(results)
 
             print("==" * 60)
-            print(quality_metrics.get('extraction_rate', 0.0), "% characteristics extracted")
+            print(f"{quality_metrics.get('extraction_rate', 0.0):.2f}% characteristics extracted")
             print("==" * 60)
 
             characteristics_result = CharacteristicsExtractionResult(
