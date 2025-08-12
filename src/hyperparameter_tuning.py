@@ -31,8 +31,8 @@ class HyperparameterTuner:
         
         # Define parameter ranges
         param_grid = {
+            'model': ["llama 3.2", "qwen3:4b", "qwen3:8b"],
             'chunk_size': [2000, 2500, 3000],
-            'chunk_overlap': [250, 300, 350],
             'temperature': [0.1, 0.3],
         }
         
@@ -43,17 +43,19 @@ class HyperparameterTuner:
         
         return combinations
     
+     # def run_experiment_batch(self, max_experiments: int = 10, use_individual_extraction: bool = False) -> List[Dict[str, Any]]:
+     #     """Run a batch of experiments with different hyperparameters and extraction strategies."""
+
     def run_experiment_batch(self, max_experiments: int = 10) -> List[Dict[str, Any]]:
-        """Run a batch of experiments with different hyperparameters."""
-        
+        """Run a batch of experiments with different hyperparameters."""     
+   
         hyperparameter_combinations = self.define_hyperparameter_grid()
-        
         # Limit the number of experiments for demonstration
         if max_experiments > 0:
             hyperparameter_combinations = hyperparameter_combinations[:max_experiments]
         
         print(f"🧪 Running {len(hyperparameter_combinations)} experiments...")
-        
+
         experiment_results = []
         
         for i, params in enumerate(hyperparameter_combinations, 1):
@@ -61,23 +63,26 @@ class HyperparameterTuner:
             print(f"🔬 Experiment {i}/{len(hyperparameter_combinations)}")
             print(f"📊 Parameters: {params}")
             print(f"{'='*60}")
-            
+
             try:
                 # Create configuration
                 config = ExtractionPipelineFactory.create_config(
                     **params,
                     custom_params={
                         "experiment_batch": "hyperparameter_tuning",
-                        "experiment_number": i
+                        "experiment_number": i,
+                        # "extraction_strategy": "individual" if use_individual_extraction else "batch"
                     }
                 )
-                
+
                 # Run extraction
                 start_time = time.time()
+
                 results = self.orchestrator.run_extraction(
-                    self.pdf_path, 
-                    config=config, 
-                    save_results=True
+                    self.pdf_path,
+                    config=config,
+                    save_results=True,
+                    # use_individual_extraction=use_individual_extraction
                 )
                 experiment_time = time.time() - start_time
                 
@@ -91,7 +96,8 @@ class HyperparameterTuner:
                     **params,
                     **quality_metrics,
                     'success': True,
-                    'error': None
+                    'error': None,
+                    # 'extraction_strategy': "individual" if use_individual_extraction else "batch"
                 }
                 
                 experiment_results.append(experiment_result)
@@ -108,7 +114,8 @@ class HyperparameterTuner:
                     'success': False,
                     'error': str(e),
                     'extraction_rate': 0.0,
-                    'total_time': 0.0
+                    'total_time': 0.0,
+                    # 'extraction_strategy': "individual" if use_individual_extraction else "batch"
                 }
                 experiment_results.append(experiment_result)
         
@@ -145,12 +152,12 @@ class HyperparameterTuner:
         fastest_config = successful_df.loc[successful_df['total_time'].idxmin()]
         
         print(f"\n🏆 Best Extraction Rate Configuration:")
-        for param in ['chunk_size', 'chunk_overlap', 'temperature']:
+        for param in ['chunk_size', 'model', 'temperature']:
             print(f"   • {param}: {best_extraction[param]}")
         print(f"   • Extraction Rate: {best_extraction['extraction_rate']:.2f}%")
-        
+
         print(f"\n⚡ Fastest Configuration:")
-        for param in ['chunk_size', 'chunk_overlap', 'temperature']:
+        for param in ['chunk_size', 'model', 'temperature']:
             print(f"   • {param}: {fastest_config[param]}")
         print(f"   • Time: {fastest_config['total_time']:.2f}s")
         
@@ -198,8 +205,7 @@ class HyperparameterTuner:
         fig, ax = plt.subplots(1, 1, figsize=(10, 8))
         
         # Select numeric columns for correlation
-        numeric_cols = ['chunk_size', 'chunk_overlap',
-                       'temperature', 'extraction_rate', 'total_time', 'extracted_count']
+        numeric_cols = ['chunk_size', 'temperature', 'extraction_rate', 'total_time', 'extracted_count']
         corr_matrix = df[numeric_cols].corr()
         
         sns.heatmap(corr_matrix, annot=True, cmap='coolwarm', center=0, ax=ax)

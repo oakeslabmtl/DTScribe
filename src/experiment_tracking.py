@@ -8,7 +8,7 @@ import csv
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any, List, Optional
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, field
 import pandas as pd
 import hashlib
 
@@ -57,10 +57,14 @@ class CharacteristicsExtractionResult:
     block_docs_retrieved: Dict[str, int]
     # block_memory_usages: Dict[str, float]
     block_success_rates: Dict[str, bool]
-    
+
     # Error information
-    errors: List[str]
-    warnings: List[str]
+    errors: List[str] = field(default_factory=list)
+    warnings: List[str] = field(default_factory=list)
+    
+    # token usage
+    llm_input_tokens: Optional[Dict[str, int]] = None  # e.g., {"block1": 123, ...}
+    llm_output_tokens: Optional[Dict[str, int]] = None
 
 
 @dataclass
@@ -85,8 +89,8 @@ class OMLGenerationResult:
     # oml_memory_usage_mb: float
     
     # Error information
-    errors: List[str]
-    warnings: List[str]
+    errors: List[str] = field(default_factory=list)
+    warnings: List[str] = field(default_factory=list)
 
 
 class ResultsSaver:
@@ -156,7 +160,15 @@ class ResultsSaver:
     def _update_characteristics_summary(self, result: CharacteristicsExtractionResult):
         """Update the characteristics extraction summary CSV."""
         summary_file = self.analysis_dir / "characteristics_summary.csv"
-        
+
+        # Flatten token dicts for CSV (sum or join per block)
+        def flatten_token_dict(token_dict):
+            if not token_dict:
+                return 0
+            if isinstance(token_dict, dict):
+                return sum(token_dict.values())
+            return token_dict
+
         summary_data = {
             'experiment_id': result.experiment_id,
             'timestamp': result.timestamp.isoformat(),
@@ -173,10 +185,12 @@ class ResultsSaver:
             'average_description_length': result.average_description_length,
             # 'total_docs_retrieved': result.total_docs_retrieved,
             'processing_time_seconds': result.processing_time_seconds,
+            'llm_input_tokens': flatten_token_dict(result.llm_input_tokens),
+            'llm_output_tokens': flatten_token_dict(result.llm_output_tokens),
             'error_count': len(result.errors),
             'warning_count': len(result.warnings)
         }
-        
+
         # Append to CSV
         df = pd.DataFrame([summary_data])
         if summary_file.exists():

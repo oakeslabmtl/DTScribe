@@ -63,7 +63,7 @@ class CharacteristicsExtractor(ICharacteristicsExtractor):
     
     def __init__(self, rag_pipeline: EnhancedRAGPipeline):
         self._rag_pipeline = rag_pipeline
-    
+
     def extract(self, description: str, documents: List[Any], schema: Type[BaseModel]) -> BaseModel:
         try:
             return self._rag_pipeline.generate_with_cot_and_validation(
@@ -200,6 +200,8 @@ class Block1Processor(IBlockProcessor):
     def get_schema(self) -> Type[BaseModel]:
         return Block1Characteristics
     
+    # def process(self, retriever: IDocumentRetriever, extractor: ICharacteristicsExtractor, vectordb=None) -> ExtractionResult:
+
     def process(self, retriever: IDocumentRetriever, extractor: ICharacteristicsExtractor) -> ExtractionResult:
         config = self.get_config()
         print("🔍 Retrieving documents for Block 1 (Purpose) characteristics...")
@@ -207,13 +209,17 @@ class Block1Processor(IBlockProcessor):
         try:
             retrieved_docs = retriever.retrieve_documents(config.query, k=config.k)
             print("🧠 Extracting Block 1 characteristics with enhanced reasoning...")
-            output = extractor.extract(config.description, retrieved_docs, self.get_schema())
+            output, response_metadata = extractor.extract(config.description, retrieved_docs, self.get_schema())
+            input_tokens = response_metadata.get('prompt_eval_count', 0)
+            output_tokens = response_metadata.get('eval_count', 0)
             processing_time = time.time() - start_time
             return ExtractionResult(
                 characteristics=output.model_dump(exclude_none=True),
                 metadata={
                     "block1_processing_time": processing_time,
-                    "block1_docs_retrieved": [getattr(doc, "page_content", str(doc)) for doc in retrieved_docs]
+                    "block1_docs_retrieved": [getattr(doc, "page_content", str(doc)) for doc in retrieved_docs],
+                    "block1_llm_input_tokens": input_tokens,
+                    "block1_llm_output_tokens": output_tokens,
                 },
                 success=True
             )
@@ -223,9 +229,8 @@ class Block1Processor(IBlockProcessor):
                 characteristics={},
                 metadata={
                     "block1_processing_time": processing_time,
-                    "block1_docs_retrieved": None
+                    "block1_docs_retrieved": None,
                 },
-                # docs_retrieved=None,
                 success=False,
                 error_message=str(e)
             )
@@ -265,15 +270,18 @@ class Block2Processor(IBlockProcessor):
         try:
             retrieved_docs = retriever.retrieve_documents(config.query, k=config.k)
             print("🧠 Extracting Block 2 characteristics with enhanced reasoning...")
-            output = extractor.extract(config.description, retrieved_docs, self.get_schema())
+            output, response_metadata = extractor.extract(config.description, retrieved_docs, self.get_schema())
+            input_tokens = response_metadata.get('prompt_eval_count', 0)
+            output_tokens = response_metadata.get('eval_count', 0)
             processing_time = time.time() - start_time
             return ExtractionResult(
                 characteristics=output.model_dump(exclude_none=True),
                 metadata={
                     "block2_processing_time": processing_time,
-                    "block2_docs_retrieved": [getattr(doc, "page_content", str(doc)) for doc in retrieved_docs]
+                    "block2_docs_retrieved": [getattr(doc, "page_content", str(doc)) for doc in retrieved_docs],
+                    "block2_llm_input_tokens": input_tokens,
+                    "block2_llm_output_tokens": output_tokens,
                 },
-                # docs_retrieved=retrieved_docs,
                 success=True
             )
         except Exception as e:
@@ -282,9 +290,8 @@ class Block2Processor(IBlockProcessor):
                 characteristics={},
                 metadata={
                     "block2_processing_time": processing_time,
-                    "block2_docs_retrieved": None
+                    "block2_docs_retrieved": None,
                 },
-                # docs_retrieved=None,
                 success=False,
                 error_message=str(e)
             )
@@ -322,15 +329,18 @@ class Block3Processor(IBlockProcessor):
         try:
             retrieved_docs = retriever.retrieve_documents(config.query, k=config.k)
             print("🧠 Extracting Block 3 characteristics with enhanced reasoning...")
-            output = extractor.extract(config.description, retrieved_docs, self.get_schema())
+            output, response_metadata = extractor.extract(config.description, retrieved_docs, self.get_schema())
+            input_tokens = response_metadata.get('prompt_eval_count', 0)
+            output_tokens = response_metadata.get('eval_count', 0)
             processing_time = time.time() - start_time
             return ExtractionResult(
                 characteristics=output.model_dump(exclude_none=True),
                 metadata={
                     "block3_processing_time": processing_time,
-                    "block3_docs_retrieved": [getattr(doc, "page_content", str(doc)) for doc in retrieved_docs]
+                    "block3_docs_retrieved": [getattr(doc, "page_content", str(doc)) for doc in retrieved_docs],
+                    "block3_llm_input_tokens": input_tokens,
+                    "block3_llm_output_tokens": output_tokens,
                 },
-                # docs_retrieved=retrieved_docs,
                 success=True
             )
         except Exception as e:
@@ -339,9 +349,8 @@ class Block3Processor(IBlockProcessor):
                 characteristics={},
                 metadata={
                     "block3_processing_time": processing_time,
-                    "block3_docs_retrieved": None
+                    "block3_docs_retrieved": None,
                 },
-                # docs_retrieved=None,
                 success=False,
                 error_message=str(e)
             )
@@ -380,15 +389,18 @@ class Block4Processor(IBlockProcessor):
         try:
             retrieved_docs = retriever.retrieve_documents(config.query, k=config.k)
             print("🧠 Extracting Block 4 characteristics with enhanced reasoning...")
-            output = extractor.extract(config.description, retrieved_docs, self.get_schema())
+            output, response_metadata = extractor.extract(config.description, retrieved_docs, self.get_schema())
+            input_tokens = response_metadata.get('prompt_eval_count', 0)
+            output_tokens = response_metadata.get('eval_count', 0)
             processing_time = time.time() - start_time
             return ExtractionResult(
                 characteristics=output.model_dump(exclude_none=True),
                 metadata={
                     "block4_processing_time": processing_time,
-                    "block4_docs_retrieved": [getattr(doc, "page_content", str(doc)) for doc in retrieved_docs]
+                    "block4_docs_retrieved": [getattr(doc, "page_content", str(doc)) for doc in retrieved_docs],
+                    "block4_llm_input_tokens": input_tokens,
+                    "block4_llm_output_tokens": output_tokens,
                 },
-                # docs_retrieved=retrieved_docs,
                 success=True
             )
         except Exception as e:
@@ -397,9 +409,8 @@ class Block4Processor(IBlockProcessor):
                 characteristics={},
                 metadata={
                     "block4_processing_time": processing_time,
-                    "block4_docs_retrieved": None
+                    "block4_docs_retrieved": None,
                 },
-                # docs_retrieved=None,
                 success=False,
                 error_message=str(e)
             )
@@ -438,15 +449,18 @@ class Block5Processor(IBlockProcessor):
         try:
             retrieved_docs = retriever.retrieve_documents(config.query, k=config.k)
             print("🧠 Extracting Block 5 characteristics with enhanced reasoning...")
-            output = extractor.extract(config.description, retrieved_docs, self.get_schema())
+            output, response_metadata = extractor.extract(config.description, retrieved_docs, self.get_schema())
+            input_tokens = response_metadata.get('prompt_eval_count', 0)
+            output_tokens = response_metadata.get('eval_count', 0)
             processing_time = time.time() - start_time
             return ExtractionResult(
                 characteristics=output.model_dump(exclude_none=True),
                 metadata={
                     "block5_processing_time": processing_time,
-                    "block5_docs_retrieved": [getattr(doc, "page_content", str(doc)) for doc in retrieved_docs]
+                    "block5_docs_retrieved": [getattr(doc, "page_content", str(doc)) for doc in retrieved_docs],
+                    "block5_llm_input_tokens": input_tokens,
+                    "block5_llm_output_tokens": output_tokens,
                 },
-                # docs_retrieved=retrieved_docs,
                 success=True
             )
         except Exception as e:
@@ -455,9 +469,8 @@ class Block5Processor(IBlockProcessor):
                 characteristics={},
                 metadata={
                     "block5_processing_time": processing_time,
-                    "block5_docs_retrieved": None
+                    "block5_docs_retrieved": None,
                 },
-                # docs_retrieved=None,
                 success=False,
                 error_message=str(e)
             )
@@ -493,15 +506,18 @@ class Block6Processor(IBlockProcessor):
         try:
             retrieved_docs = retriever.retrieve_documents(config.query, k=config.k)
             print("🧠 Extracting Block 6 characteristics with enhanced reasoning...")
-            output = extractor.extract(config.description, retrieved_docs, self.get_schema())
+            output, response_metadata = extractor.extract(config.description, retrieved_docs, self.get_schema())
+            input_tokens = response_metadata.get('prompt_eval_count', 0)
+            output_tokens = response_metadata.get('eval_count', 0)
             processing_time = time.time() - start_time
             return ExtractionResult(
                 characteristics=output.model_dump(exclude_none=True),
                 metadata={
                     "block6_processing_time": processing_time,
-                    "block6_docs_retrieved": [getattr(doc, "page_content", str(doc)) for doc in retrieved_docs]
+                    "block6_docs_retrieved": [getattr(doc, "page_content", str(doc)) for doc in retrieved_docs],
+                    "block6_llm_input_tokens": input_tokens,
+                    "block6_llm_output_tokens": output_tokens,
                 },
-                # docs_retrieved=retrieved_docs,
                 success=True
             )
         except Exception as e:
@@ -510,9 +526,8 @@ class Block6Processor(IBlockProcessor):
                 characteristics={},
                 metadata={
                     "block6_processing_time": processing_time,
-                    "block6_docs_retrieved": None
+                    "block6_docs_retrieved": None,
                 },
-                # docs_retrieved=None,
                 success=False,
                 error_message=str(e)
             )

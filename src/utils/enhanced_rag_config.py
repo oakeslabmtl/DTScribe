@@ -19,6 +19,7 @@ from pathlib import Path
 
 
 class EnhancedRAGPipeline:
+
     """Enhanced RAG Pipeline with improved techniques for better generation quality."""
     
     def __init__(self, model_name: str = "qwen3:8b", embedding_model: str = "nomic-embed-text"):
@@ -26,9 +27,7 @@ class EnhancedRAGPipeline:
             model=model_name,
             temperature=0.1,
             top_p=0.9,
-            # Add more specific parameters for better control
             top_k=20,
-            # repeat_penalty=1.1,
         )
         
         self.embeddings = OllamaEmbeddings(model=embedding_model)
@@ -174,7 +173,72 @@ class EnhancedRAGPipeline:
         
         return sorted(docs, key=score_document, reverse=True)
 
-            
+
+#     def individual_characteristics_extractor(self, vectordb: Chroma, schema: Type[BaseModel], k: int = 5) -> BaseModel:
+#         """
+#         Extract each characteristic individually by performing retrieval for each field.
+#         prompts ofr each are taken from schema field descriptions.
+#         Returns a schema instance with all extracted characteristics
+#         """
+#         # Get all field names and descriptions from the schema
+#         field_info = schema.model_fields
+#         results = {}
+#         metadata = {}
+
+#         for field, info in field_info.items():
+#             description = info.description or f"Extract information about {field} in the context of Digital Twin systems."
+
+#             # Retrieve relevant docs for this characteristic
+#             retrieved_docs = self.enhanced_retrieval(vectordb, description, k=k)
+
+#             # COT prompt similar to generate_with_cot_and_validation, but for a single field
+#             docs_content = "\n\n".join([
+#                 f"Document {i+1}:\n{doc.page_content}" 
+#                 for i, doc in enumerate(retrieved_docs)
+#             ])
+#             prompt = f"""
+# You are an expert in Digital Twin systems and ontology modeling. Your task is to extract the following characteristic from technical documents.
+
+# CONTEXT DOCUMENTS:
+# {docs_content}
+
+# CHARACTERISTIC TO EXTRACT:
+# {description}
+
+# INSTRUCTIONS:
+# 1. REASONING PHASE: Analyze the documents step by step for relevant information.
+# 2. EXTRACTION PHASE: Provide a specific, detailed description based ONLY on the provided documents. Include concrete technical details, quantities, frequencies, and specifications when mentioned. If no evidence is found, state \"Not Found\".
+# 3. VALIDATION PHASE: Ensure all details come from the provided documents and check technical term usage.
+
+# IMPORTANT: You MUST respond with ONLY a valid JSON object for the characteristic. No explanations, tags, or extra text.
+
+# Example format:
+# {{ "{field}": "description here or Not Found" }}
+
+# JSON:
+# """
+#             try:
+#                 response = self.llm.invoke(prompt)
+#                 response_text = response.content if hasattr(response, 'content') else str(response)
+#                 response_metadata = getattr(response, 'response_metadata', {})
+
+#                 cleaned_text = self._clean_llm_response(response_text)
+#                 # parse json manually}
+#                 parsed = json.loads(cleaned_text)
+#                 value = parsed.get(field, "Not Found")
+#                 results[field] = value
+
+#                 metadata[field] = {
+#                     "docs_retrieved": len(retrieved_docs),
+#                 }
+#             except Exception as e:
+#                 print(f"Individual extraction failed for '{field}': {e}")
+#                 results[field] = "Not Found"
+#                 metadata[field] = {"error": str(e)}
+
+#         # Return schema instance
+#         return schema(**results), metadata
+    
     
     def generate_with_cot_and_validation(self, description: str, retrieved_docs: List, 
                                        schema: Type[BaseModel]) -> BaseModel:
@@ -242,14 +306,15 @@ Remember: Be highly specific and technical. Include exact technologies, methods,
                 # Generate with direct LLM call first, then clean and parse
                 response = self.llm.invoke(formatted_prompt)
                 response_text = response.content if hasattr(response, 'content') else str(response)
-                
+                response_metadata = getattr(response, 'response_metadata', {})
+
                 # Clean the response to remove thinking tags
                 cleaned_text = self._clean_llm_response(response_text)
                 
                 # Parse the cleaned response
                 output = parser.parse(cleaned_text)
 
-                return output
+                return output, response_metadata
                 
             except Exception as e:
                 print(f"Warning: Attempt {attempt + 1} failed: {str(e)}")
@@ -393,6 +458,7 @@ JSON:
         except Exception as e:
             print(f"Manual parsing failed: {e}")
             return self._create_fallback_output(schema)
+
     
     def generate_oml(self, characteristics: Dict[str, Any], 
                             vocab_files: Dict[str, str]) -> str:
@@ -589,3 +655,4 @@ Generate ONLY the OML code, no explanations or comments outside the OML syntax:
         """Validate OML content using OpenCAESAR's OML Validate."""
         # TODO: Implement OpenCAESAR OML Validate service
         return True  # Placeholder for actual validation result
+    
