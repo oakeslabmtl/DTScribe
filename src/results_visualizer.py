@@ -38,6 +38,10 @@ class ExperimentResultsVisualizer:
         else:
             # Assume all experiments are successful if no success column
             self.successful_df = self.df.copy()
+
+        # If experiment_id present, allow base hash extraction for grouping
+        if 'experiment_id' in self.successful_df.columns:
+            self.successful_df['experiment_base_hash'] = self.successful_df['experiment_id'].str.split('_').str[0]
         
         print(f"✅ Loaded {len(self.df)} total experiments")
         print(f"✅ {len(self.successful_df)} successful experiments")
