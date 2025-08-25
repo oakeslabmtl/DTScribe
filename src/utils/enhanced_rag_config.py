@@ -32,9 +32,10 @@ class EnhancedRAGPipeline:
             model=model_name,
             temperature=0.1,
             top_p=0.9,
-            # Add more specific parameters for better control
             top_k=20,
             # repeat_penalty=1.1,
+            num_ctx=8192,
+            num_predict=4096,
         )
         
         self.embeddings = OllamaEmbeddings(model=embedding_model)
@@ -550,77 +551,109 @@ VOCABULARY REFERENCE:
 LIST OF ALREADY GENERATED CHARACTERISTICS (do not generate again):
 {description_based_vocab_mapping}
 
-Only generate OML code that's similar to the following syntax examples:
-SYNTAX EXAMPLES:
+## STRICT NAMING CONVENTIONS:
+- Instance names must be CamelCase without spaces (e.g., TemperatureSensor, not Temperature_Sensor)
+- Use descriptive technical names based on actual content from characteristics
+- All instance names must be unique across the entire OML code
+- Avoid generic names like "sensor1", "data1" - use specific names like "PermafrostTemperatureSensor"
+
+## SYNTAX EXAMPLES:
 ```oml                                          
 // C2: Acting Components
-instance <name_of_acting_component> : DTDFVocab:ActingComponent [
-    base:desc "<description of the acting component>"
+instance <ActuatorName> : DTDFVocab:ActingComponent [
+    base:desc "<specific description from characteristics>"
 ]
     
 // C3: Physical sensing components
-instance <name_of_sensing_component> : DTDFVocab:SensingComponent [
-    base:desc "<description of the sensing component>"
-    DTDFVocab:producedData <name_of_produced_data_transmitted>
+instance <SensorName> : DTDFVocab:SensingComponent [
+    base:desc "<specific description from characteristics>"
+    DTDFVocab:producedData <SpecificDataTransmittedName>
 ]
 
 // C4: Physical-to-virtual interaction                                           
-instance <name_of_produced_data_transmitted> : DTDFVocab:DataTransmitted [
-    DTDFVocab:producedFrom <name_of_sensing_component1, name_of_sensing_component2, ...>
+instance <SpecificDataTransmittedName> : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom <SensorName1>, <SensorName2>
 ]
 
-// Insights/Actions (C17)
-instance <name_of_insight> : DTDFVocab:Insight [
-    base:desc "<description of the insight>"
-]
-
-instance <name_of_action> : DTDFVocab:Action[
-    base:desc "<description of the action>"
-    DTDFVocab:IsAutomatic <true_or_false>
-]
-
-// Services (C6)
-instance <name_of_service> : DTDFVocab:Service [
-    base:desc "<description of the service>"
-    DTDFVocab:provides <name_of_action_or_insight1, name_of_action_or_insight2, ...>
-]
-
-// Enablers (C11)
-instance <name_of_enabler> : DTDFVocab:Enabler [
-    base:desc "<description of the enabler>"
-    DTDFVocab:enables <name_of_service1, name_of_service2, ...>
-]
-
-// Models/Data (C10)
-instance <name_of_model> : DTDFVocab:Model [
-    base:desc "<description of the model>"
-    DTDFVocab:inputTo <name_of_enabler1, name_of_enabler2, ...>
+// C10: Models/Data
+instance <ModelName> : DTDFVocab:Model [
+    base:desc "<specific model description from characteristics>"
+    DTDFVocab:inputTo <EnablerName1>, <EnablerName2>
 ]
                                                   
-instance <name_of_data> : DTDFVocab:Data [
-    base:desc "<description of the data>"
-    DTDFVocab:inputTo <name_of_enabler1, name_of_enabler2, ...>
-    DTDFVocab:fromData <name_of_DTDFVocab:DataTransmitted>
+instance <DataName> : DTDFVocab:Data [
+    base:desc "<specific data description from characteristics>"
+    DTDFVocab:inputTo <EnablerName1>, <EnablerName2>
+    DTDFVocab:fromData <SpecificDataTransmittedName>
+]
+
+// C11: Enablers
+instance <EnablerName> : DTDFVocab:Enabler [
+    base:desc "<specific enabler description from characteristics>"
+    DTDFVocab:enables <ServiceName1>, <ServiceName2>
+]
+
+// C6: Services
+instance <ServiceName> : DTDFVocab:Service [
+    base:desc "<specific service description from characteristics>"
+    DTDFVocab:provides <InsightName1>, <ActionName2>
+]
+
+// C17: Insights/Actions
+instance <InsightName> : DTDFVocab:Insight [
+    base:desc "<specific insight description from characteristics>"
+]
+
+instance <ActionName> : DTDFVocab:Action [
+    base:desc "<specific action description from characteristics>"
+    DTDFVocab:IsAutomatic <true|false>
 ]
 ```
 
-REQUIREMENTS:
-1. Follow OML syntax precisely. Names between <> are placeholders for actual names.
-2. Create instances for each characteristic that has meaningful content (not "Not Found")
-3. Two instances cannot have the same name.
-4. Establish proper relationships between instances using the vocabulary predicates
-5. Use descriptive, technical names for instances based on the content
-6. Ensure all generated code is syntactically valid OML
+## PROCESSING RULES:
 
-GUIDELINES:
-- For multiple components (sensors, actuators, services), create separate instances
-- DTDFVocab:SensingComponent generate DTDFVocab:producedData as DTDFVocab:DataTransmitted, used as DTDFVocab:fromData by a DTDFVocab:Data. DTDFVocab:Model or a DTDFVocab:Data serve as DTDFVocab:inputTo DTDFVocab:Enabler that process them, and it DTDFVocab:enables DTDFVocab:Service which themselves create DTDFVocab:Insight or DTDFVocab:Action.
-- Certain characteristics (Physical acting components, Physical sensing components, Physical-to-virtual interaction, DT services, Twinning time-scale, DT models and data, Tooling and enablers, Insights and decision making) usually have multiple instances
-- Use base:desc for detailed descriptions of other characteristics
-- Establish proper relationships using DTDFVocab predicates
-- Name instances descriptively based on their function/content
+### 1. Characteristic Analysis:
+- Only generate instances for characteristics with meaningful content (ignore "Not Found")
+- For characteristics containing multiple items, create separate instances for each distinct item
+- Extract specific technical details from characteristic descriptions for instance names and descriptions
 
-Generate ONLY the OML code, no explanations or comments outside the OML syntax:
+### 2. Mandatory Data Flow Pattern:
+Follow this exact sequence for data flow:
+```
+SensingComponent → producedData → DataTransmitted → fromData → Data → inputTo → Enabler → enables → Service → provides → Insight/Action
+```
+
+### 3. Multiple Instance Guidelines:
+Create separate instances when characteristics mention:
+- Multiple sensors/components (e.g., "temperature sensors and pressure sensors")
+- Multiple services (e.g., "monitoring and visualization services")
+- Multiple models (e.g., "thermal model and structural model")
+- Multiple data types (e.g., "temperature data and historical data")
+- Multiple enablers/tools (e.g., "RabbitMQ, InfluxDB, Godot")
+
+### 4. Relationship Establishment:
+- Every DTDFVocab:SensingComponent MUST have DTDFVocab:producedData pointing to a DTDFVocab:DataTransmitted
+- Every DTDFVocab:DataTransmitted MUST have DTDFVocab:producedFrom pointing back to its source sensor(s)
+- Every DTDFVocab:Data MUST have DTDFVocab:fromData pointing to a DTDFVocab:DataTransmitted
+- Every DTDFVocab:Model and DTDFVocab:Data MUST have DTDFVocab:inputTo pointing to enabler(s)
+- Every DTDFVocab:Enabler MUST have DTDFVocab:enables pointing to service(s)
+- Every DTDFVocab:Service MUST have DTDFVocab:provides pointing to insight(s) or action(s)
+
+### 5. Description Quality:
+- Use direct quotes or paraphrases from the characteristics
+- Be specific about technical details (protocols, frequencies, capabilities)
+- Avoid generic descriptions like "provides monitoring"
+
+## VALIDATION CHECKLIST:
+Before generating, ensure:
+- [ ] All instance names are unique and CamelCase
+- [ ] All relationships follow the mandatory data flow pattern
+- [ ] Descriptions are specific and extracted from characteristics
+- [ ] No "Not Found" characteristics are included
+- [ ] Multiple items in characteristics are split into separate instances
+- [ ] All OML syntax is correct (brackets, colons, commas)
+
+Generate ONLY the OML code with no additional explanations:
 """)
         
         formatted_prompt = oml_prompt.format(
@@ -676,87 +709,154 @@ VALIDATION ERRORS:
 
 EXTRACTED CHARACTERISTICS:
 {characteristics}
-                                                  
-SYNTAX EXAMPLES:
+
+## ERROR ANALYSIS FRAMEWORK:
+
+### 1. Error Pattern Recognition:
+Analyze each error by:
+- **Line number and position**: Locate exact error location
+- **Error type**: Identify the specific issue (reference, syntax, semantic)
+- **Root cause**: Determine why the error occurred
+- **Impact scope**: Assess which parts of code are affected
+
+### 2. Common Error Types and Fixes:
+
+#### Reference Resolution Errors:
+- `Couldn't resolve reference to SemanticProperty 'DTDFVocab:X'`
+  - **Cause**: Invalid or non-existent vocabulary property
+  - **Fix**: Replace with correct DTDFVocab property or remove if invalid
+
+#### Syntax Errors:
+- Missing brackets, semicolons, or colons
+- Malformed instance declarations
+- Incorrect namespace usage
+
+#### Semantic Errors:
+- Circular dependencies
+- Type mismatches
+- Invalid relationships
+
+### 3. Valid DTDFVocab Properties Reference:
+```oml
+// Core Properties (use only these):
+DTDFVocab:producedData        // SensingComponent → DataTransmitted
+DTDFVocab:producedFrom        // DataTransmitted → SensingComponent(s)
+DTDFVocab:fromData           // Data → DataTransmitted
+DTDFVocab:inputTo            // Model/Data → Enabler
+DTDFVocab:enables            // Enabler → Service
+DTDFVocab:provides           // Service → Insight/Action
+DTDFVocab:IsAutomatic        // Action → boolean
+base:contains                // Environment → Components
+base:desc                    // Any instance → description string
+base:isContainedIn          // Component → Environment
+```
+
+### 4. Systematic Fixing Process:
+
+#### Step 1: Validate All Property References
+- Check each DTDFVocab property against valid properties list
+- Replace invalid properties with correct ones or remove entirely
+- Ensure namespace prefixes are correct
+
+#### Step 2: Fix Syntax Issues
+- Verify bracket matching: `[ ]` pairs
+- Check semicolon placement after property values
+- Confirm colon usage in instance declarations
+
+#### Step 3: Resolve Relationship Consistency
+- Ensure referenced instances exist
+- Validate relationship directions match vocabulary semantics
+- Fix any circular dependencies
+
+#### Step 4: Preserve Original Intent
+- Keep all meaningful instances from original code
+- Maintain descriptive content and relationships where valid
+- Only remove or modify elements that cause errors
+
+### 5. Validation Checklist:
+Before outputting fixed code, verify:
+- [ ] All DTDFVocab properties are from the valid list above
+- [ ] All referenced instances are defined in the code
+- [ ] All brackets and semicolons are properly placed
+- [ ] No circular references exist
+- [ ] Instance names are unique and properly formatted
+- [ ] Relationships follow correct vocabulary semantics
+
+## SYNTAX EXAMPLES:
 ```oml                                           
 // C2: Acting Components
-instance <name_of_acting_component> : DTDFVocab:ActingComponent [
-    base:desc "<description of the acting component>"
+instance ActuatorName : DTDFVocab:ActingComponent [
+    base:desc "description of the acting component"
 ]
     
 // C3: Physical sensing components
-instance <name_of_sensing_component> : DTDFVocab:SensingComponent [
-    base:desc "<description of the sensing component>"
-    DTDFVocab:producedData <name_of_produced_data_transmitted>
+instance SensorName : DTDFVocab:SensingComponent [
+    base:desc "description of the sensing component"
+    DTDFVocab:producedData DataTransmittedName
 ]
 
 // C4: Physical-to-virtual interaction                                           
-instance <name_of_produced_data_transmitted> : DTDFVocab:DataTransmitted [
-    DTDFVocab:producedFrom <name_of_sensing_component1, name_of_sensing_component2, ...>
+instance DataTransmittedName : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom SensorName1, SensorName2
 ]
                                                   
-instance <name_of_agent> : DTDFVocab:Agent [
-    base:desc "<description of the agent>"
+instance AgentName : DTDFVocab:Agent [
+    base:desc "description of the agent"
 ]
 
-instance <name_of_environment> : DTDFVocab:Environment [
-    base:contains <name_of_component1, name_of_component2, ...>
-]
-
-// Insights/Actions (C17)
-instance <name_of_insight> : DTDFVocab:Insight [
-    base:desc "<description of the insight>"
-]
-
-instance <name_of_action> : DTDFVocab:Action[
-    base:desc "<description of the action>"
-    DTDFVocab:IsAutomatic <true_or_false>
-]
-
-// Services (C6)
-instance <name_of_service> : DTDFVocab:Service [
-    base:desc "<description of the service>"
-    DTDFVocab:provides <name_of_action_or_insight1, name_of_action_or_insight2, ...>
-]
-
-// Enablers (C11)
-instance <name_of_enabler> : DTDFVocab:Enabler [
-    base:desc "<description of the enabler>"
-    DTDFVocab:enables <name_of_service1, name_of_service2, ...>
+instance EnvironmentName : DTDFVocab:Environment [
+    base:contains ComponentName1, ComponentName2
 ]
 
 // Models/Data (C10)
-instance <name_of_model> : DTDFVocab:Model [
-    base:desc "<description of the model>"
-    DTDFVocab:inputTo <name_of_enabler1, name_of_enabler2, ...>
+instance ModelName : DTDFVocab:Model [
+    base:desc "description of the model"
+    DTDFVocab:inputTo EnablerName1, EnablerName2
 ]
                                                   
-instance <name_of_data> : DTDFVocab:Data [
-    base:desc "<description of the data>"
-    DTDFVocab:inputTo <name_of_enabler1, name_of_enabler2, ...>
-    DTDFVocab:fromData <name_of_DTDFVocab:DataTransmitted>
+instance DataName : DTDFVocab:Data [
+    base:desc "description of the data"
+    DTDFVocab:inputTo EnablerName1, EnablerName2
+    DTDFVocab:fromData DataTransmittedName
+]
+
+// Enablers (C11)
+instance EnablerName : DTDFVocab:Enabler [
+    base:desc "description of the enabler"
+    DTDFVocab:enables ServiceName1, ServiceName2
+]
+
+// Services (C6)
+instance ServiceName : DTDFVocab:Service [
+    base:desc "description of the service"
+    DTDFVocab:provides InsightName1, ActionName2
+]
+
+// Insights/Actions (C17)
+instance InsightName : DTDFVocab:Insight [
+    base:desc "description of the insight"
+]
+
+instance ActionName : DTDFVocab:Action [
+    base:desc "description of the action"
+    DTDFVocab:IsAutomatic true
 ]
 ```
-                                                  
-INSTRUCTIONS:
-1. Analyze the validation errors carefully
-2. Identify specific syntax or semantic issues
-3. Fix the OML code while preserving the intent and content
-4. Ensure all instances and relationships are properly defined
-5. Follow OML syntax rules precisely
-6. Keep all meaningful information from the original code
 
-COMMON OML ISSUES TO FIX:
-- Missing or incorrect namespace declarations
-- Malformed instance definitions
-- Incorrect property references
-- Missing closing brackets or semicolons
-- Invalid vocabulary references
-- Circular dependencies or undefined references
+## FIXING STRATEGY:
+1. **Minimal Changes**: Make only necessary changes to fix errors
+2. **Preserve Intent**: Keep original structure and content where possible
+3. **Valid Properties Only**: Replace invalid properties with correct ones from the reference list
+4. **Complete Relationships**: Ensure all referenced instances exist
+5. **Proper Syntax**: Fix brackets, semicolons, and formatting issues
 
-NOTE: Usually, the generated OML code will be very similar to the original code, with minor adjustments made to fix the identified issues.
+## CRITICAL RULES:
+- NEVER invent new DTDFVocab properties - use only the valid ones listed above
+- ALWAYS preserve the original instance names unless they cause syntax errors
+- ONLY remove code if it's completely invalid and cannot be corrected
+- MAINTAIN all meaningful relationships and descriptions from the original
 
-Generate ONLY the corrected OML code, no explanations:
+Generate ONLY the corrected OML code with no explanations or comments:
 """)
         
         formatted_prompt = fix_prompt.format(
