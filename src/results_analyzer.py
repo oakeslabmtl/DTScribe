@@ -32,6 +32,8 @@ class ResultsAnalyzer:
         if char_file.exists():
             data['characteristics'] = pd.read_csv(char_file)
             data['characteristics']['timestamp'] = pd.to_datetime(data['characteristics']['timestamp'])
+            # Note: experiment_id now uses format <hash>_<YYYYMMDDHHMMSS>
+            # The base 12-char hash can be split for grouping purposes.
         
         # Load OML summary
         oml_file = self.analysis_dir / "oml_summary.csv"

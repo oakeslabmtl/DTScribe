@@ -18,10 +18,63 @@ import pymupdf
 import re
 import json
 from pathlib import Path
+import time
 
-# Import OML Writer components
 from .oml_writer import IOMLWriter, OMLFileWriter
 
+guiding_syntax = """
+```oml                                          
+// C2: Acting Components
+instance <ActuatorName> : DTDFVocab:ActingComponent [
+    base:desc "<specific description from characteristics>"
+]
+
+// C3: Physical sensing components
+instance <SensorName> : DTDFVocab:SensingComponent [
+    base:desc "<specific description from characteristics>"
+    DTDFVocab:producedData <DataTransmittedName>
+]
+
+// C4: Physical-to-virtual interaction                                           
+instance <DataTransmittedName> : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom <SensorName1>, <SensorName2>
+]
+
+// C10: Models/Data
+instance <ModelName> : DTDFVocab:Model [
+    base:desc "<specific model description from characteristics>"
+    DTDFVocab:inputTo <EnablerName1>, <EnablerName2>
+]
+
+instance <DataName> : DTDFVocab:Data [
+    base:desc "<specific data description from characteristics>"
+    DTDFVocab:inputTo <EnablerName1>, <EnablerName2>
+    DTDFVocab:fromData <DataTransmittedName>
+]
+
+// C11: Enablers
+instance <EnablerName> : DTDFVocab:Enabler [
+    base:desc "<specific enabler description from characteristics>"
+    DTDFVocab:enables <ServiceName1>, <ServiceName2>
+]
+
+// C6: Services
+instance <ServiceName> : DTDFVocab:Service [
+    base:desc "<specific service description from characteristics>"
+    DTDFVocab:provides <InsightName1>, <ActionName2>
+]
+
+// C17: Insights/Actions
+instance <InsightName> : DTDFVocab:Insight [
+    base:desc "<specific insight description from characteristics>"
+]
+
+instance <ActionName> : DTDFVocab:Action [
+    base:desc "<specific action description from characteristics>"
+    DTDFVocab:IsAutomatic <true|false>
+]
+```
+"""
 
 class EnhancedRAGPipeline:
 
@@ -33,6 +86,10 @@ class EnhancedRAGPipeline:
             temperature=0.1,
             top_p=0.9,
             top_k=20,
+            # repeat_penalty=1.1,
+            num_ctx=8192,
+            num_predict=4096,
+
         )
         
         self.embeddings = OllamaEmbeddings(model=embedding_model)
@@ -167,83 +224,8 @@ class EnhancedRAGPipeline:
             length_penalty = abs(len(content.split()) - 200) / 1000
 
             return relevance_score - length_penalty
-            
-            # # Basic relevance score
-            # relevance_score = sum(1 for word in query_lower.split() if word in content)
-            
-            # # Length penalty (prefer moderate length chunks)
-            # length_penalty = abs(len(content.split()) - 200) / 1000
-            
-            # return relevance_score - length_penalty
         
         return sorted(docs, key=score_document, reverse=True)
-
-
-#     def individual_characteristics_extractor(self, vectordb: Chroma, schema: Type[BaseModel], k: int = 5) -> BaseModel:
-#         """
-#         Extract each characteristic individually by performing retrieval for each field.
-#         prompts ofr each are taken from schema field descriptions.
-#         Returns a schema instance with all extracted characteristics
-#         """
-#         # Get all field names and descriptions from the schema
-#         field_info = schema.model_fields
-#         results = {}
-#         metadata = {}
-
-#         for field, info in field_info.items():
-#             description = info.description or f"Extract information about {field} in the context of Digital Twin systems."
-
-#             # Retrieve relevant docs for this characteristic
-#             retrieved_docs = self.enhanced_retrieval(vectordb, description, k=k)
-
-#             # COT prompt similar to generate_with_cot_and_validation, but for a single field
-#             docs_content = "\n\n".join([
-#                 f"Document {i+1}:\n{doc.page_content}" 
-#                 for i, doc in enumerate(retrieved_docs)
-#             ])
-#             prompt = f"""
-# You are an expert in Digital Twin systems and ontology modeling. Your task is to extract the following characteristic from technical documents.
-
-# CONTEXT DOCUMENTS:
-# {docs_content}
-
-# CHARACTERISTIC TO EXTRACT:
-# {description}
-
-# INSTRUCTIONS:
-# 1. REASONING PHASE: Analyze the documents step by step for relevant information.
-# 2. EXTRACTION PHASE: Provide a specific, detailed description based ONLY on the provided documents. Include concrete technical details, quantities, frequencies, and specifications when mentioned. If no evidence is found, state \"Not Found\".
-# 3. VALIDATION PHASE: Ensure all details come from the provided documents and check technical term usage.
-
-# IMPORTANT: You MUST respond with ONLY a valid JSON object for the characteristic. No explanations, tags, or extra text.
-
-# Example format:
-# {{ "{field}": "description here or Not Found" }}
-
-# JSON:
-# """
-#             try:
-#                 response = self.llm.invoke(prompt)
-#                 response_text = response.content if hasattr(response, 'content') else str(response)
-#                 response_metadata = getattr(response, 'response_metadata', {})
-
-#                 cleaned_text = self._clean_llm_response(response_text)
-#                 # parse json manually}
-#                 parsed = json.loads(cleaned_text)
-#                 value = parsed.get(field, "Not Found")
-#                 results[field] = value
-
-#                 metadata[field] = {
-#                     "docs_retrieved": len(retrieved_docs),
-#                 }
-#             except Exception as e:
-#                 print(f"Individual extraction failed for '{field}': {e}")
-#                 results[field] = "Not Found"
-#                 metadata[field] = {"error": str(e)}
-
-#         # Return schema instance
-#         return schema(**results), metadata
-    
     
     def generate_with_cot_and_validation(self, description: str, retrieved_docs: List, 
                                        schema: Type[BaseModel]) -> BaseModel:
@@ -500,107 +482,78 @@ JSON:
         # Create component-based dictionary
         component_based_characteristics = {key: characteristics[key] for key in component_based_characteristics_keys if key in characteristics}
 
+        attempt_start = time.perf_counter()
+        print(f"📝 Attempt 1/{max_retries + 1}: Generating OML...")
         description_based_oml = self.generate_description_based_oml(description_based_characteristics, description_based_vocab_mapping)
+        component_based_oml = self.generate_component_based_oml(component_based_characteristics, vocab_files, comma_separated_description_based_vocab_mapping_keys)
 
         # Retry mechanism for component-based OML generation
         print("🔄 Retrying component-based OML generation with multiple attempts...")
         for attempt in range(max_retries + 1):
             try:
-                print(f"📝 Attempt {attempt + 1}/{max_retries + 1}: Generating OML...")
-                component_based_oml = self.generate_component_based_oml(component_based_characteristics, vocab_files, comma_separated_description_based_vocab_mapping_keys)
                 # Validate the generated OML syntax
                 if not self._validate_oml_syntax(component_based_oml):
-                    print(f"❌ Attempt {attempt + 1}: Invalid OML syntax detected")
+                    elapsed = time.perf_counter() - attempt_start
+                    print(f"❌ Attempt {attempt + 1}: Invalid OML syntax detected (⏱️ {elapsed:.2f}s)")
+                    # Try to fix the OML based on validation feedback
+                    component_based_oml = self._fix_oml_with_feedback(
+                        oml_content=component_based_oml, 
+                        validation_output="There were OML syntax errors detected. Maybe the generation was incomplete.", 
+                        characteristics=component_based_characteristics, 
+                        vocab_files=vocab_files
+                    )
                     continue
+
+                # Combine both OML description-based and component-based characteristics
+                print("🏗️ Combining OML descriptions...")
+                combined_oml = f"{component_based_oml}\n\n{description_based_oml}"
+                combined_oml = self._clean_llm_response(combined_oml)
                 
                 # Write the OML content to file
-                print("💾 Writing OML to file...")
-                write_success = writer.write_oml(component_based_oml, output_path)
+                write_success = writer.write_oml(combined_oml, output_path)
                 if not write_success:
-                    print(f"❌ Attempt {attempt + 1}: Failed to write OML to file")
+                    elapsed = time.perf_counter() - attempt_start
+                    print(f"❌ Attempt {attempt + 1}: Failed to write OML to file (⏱️ {elapsed:.2f}s)")
                     continue
                 
                 # Validate the written OML file with OpenCAESAR
-                print("⚙️ Validating written OML file with OpenCAESAR...")
                 is_valid, validation_output = self._validate_oml_with_opencaesar(catalog_parent_path)
-                
-                if not is_valid:
+
+                if is_valid:
+                    elapsed = time.perf_counter() - attempt_start
+                    print(f"✅ Attempt {attempt + 1}: Written OML file validation with OpenCAESAR successful! (⏱️ {time.perf_counter() - attempt_start:.2f}s)")
+                    break  # Exit loop on successful validation
+                else:
                     print(f"❌ Attempt {attempt + 1}: Written OML file validation with OpenCAESAR failed")
-                    print("🔧 Attempting to fix OML based on validation feedback...")
-                    
                     # Try to fix the OML based on validation feedback
-                    fixed_oml = self._fix_oml_with_feedback(
+                    component_based_oml = self._fix_oml_with_feedback(
                         component_based_oml, 
                         validation_output, 
                         component_based_characteristics, 
                         vocab_files
                     )
-                    
-                    # Write the fixed OML and validate again
-                    write_success = writer.write_oml(fixed_oml, output_path)
-                    if write_success:
-                        is_valid_fixed, _ = self._validate_oml_with_opencaesar(catalog_parent_path)
-                        if is_valid_fixed:
-                            print("✅ Fixed OML validation successful!")
-                            component_based_oml = fixed_oml
-                        else:
-                            print(f"❌ Attempt {attempt + 1}: Fixed OML still failed validation")
-                            continue
-                    else:
-                        print(f"❌ Attempt {attempt + 1}: Failed to write fixed OML to file")
-                        continue
-                
-                # Combine both OML description-based and component-based characteristics
-                print("🏗️ Combining OML descriptions...")
-                combined_oml = f"{component_based_oml}\n\n{description_based_oml}"
-                combined_oml = self._clean_llm_response(combined_oml)
-                # Write the OML content to file
-                print("💾 Writing combined OML to file...")
-                write_success = writer.write_oml(combined_oml, output_path)
-                # Validate the combined OML syntax
-                if not self._validate_oml_syntax(combined_oml):
-                    print(f"❌ Attempt {attempt + 1}: Combined OML syntax validation failed")
-                    continue
-                
-                # Validate combined OML with OpenCAESAR
-                is_combined_valid, combined_validation_output = self._validate_oml_with_opencaesar(catalog_parent_path)
-                if not is_combined_valid:
-                    print(f"❌ Attempt {attempt + 1}: Combined OML validation with OpenCAESAR failed")
-                    print("🔧 Attempting to fix combined OML based on validation feedback...")
-                    
-                    # Try to fix the combined OML based on validation feedback
-                    all_characteristics = {**component_based_characteristics, **description_based_characteristics}
-                    fixed_combined_oml = self._fix_oml_with_feedback(
-                        combined_oml, 
-                        combined_validation_output, 
-                        all_characteristics, 
-                        vocab_files
-                    )
-                    
-                    # Write the fixed combined OML and validate again
-                    write_success = writer.write_oml(fixed_combined_oml, output_path)
-                    if write_success:
-                        is_final_valid, _ = self._validate_oml_with_opencaesar(catalog_parent_path)
-                        if is_final_valid:
-                            print("✅ Fixed combined OML validation successful!")
-                            combined_oml = fixed_combined_oml
-                        else:
-                            print(f"❌ Attempt {attempt + 1}: Fixed combined OML still failed validation")
-                            continue
-                    else:
-                        print(f"❌ Attempt {attempt + 1}: Failed to write fixed combined OML to file")
-                        continue
-                
-                print("✅ OML generation and validation successful!")
-                return combined_oml
+                    continue  # Retry with the fixed component-based OML
             except Exception as e:
-                print(f"❌ Attempt {attempt + 1}: Unexpected error: {str(e)}")
+                # attempt_start may not be defined if exception occurs before set; guard against that
+                if 'attempt_start' in locals():
+                    elapsed = time.perf_counter() - attempt_start
+                else:
+                    elapsed = float('nan')
+                print(f"❌ Attempt {attempt + 1}: Unexpected error: {str(e)} (⏱️ {elapsed:.2f}s)")
                 if attempt < max_retries:
                     print("🔄 Retrying due to unexpected error...")
                     continue
                 else:
                     print("❌ Failed due to persistent errors")
                     return None
+        # After successful validation, attempt to start Fuseki and load the OML
+        fuseki_ok, fuseki_output = self._load_oml_into_fuseki(catalog_parent_path)
+        if fuseki_ok:
+            print("✅ Fuseki start & OML load successful")
+        else:
+            print("⚠️ Fuseki load sequence failed (continuing):")
+            print(fuseki_output)
+        return combined_oml
 
     def generate_description_based_oml(self, characteristics: Dict[str, Any], vocab_mapping: Dict[str, str]) -> str:
         """Generate OML based on characteristics description."""
@@ -640,87 +593,70 @@ EXTRACTED CHARACTERISTICS:
 
 VOCABULARY REFERENCE:
 {vocab_context}
-                                                  
+
 LIST OF ALREADY GENERATED CHARACTERISTICS (do not generate again):
 {description_based_vocab_mapping}
 
-Only generate OML code that's similar to the following syntax examples:
-SYNTAX EXAMPLES:
-```oml
-// C2: Acting Components
-instance <name_of_acting_component> : DTDFVocab:ActingComponent [
-    base:desc "<description of the acting component>"
-]
-    
-// C3: Physical sensing components
-instance <name_of_sensing_component> : DTDFVocab:SensingComponent [
-    base:desc "<description of the sensing component>"
-    DTDFVocab:producedData <name_of_produced_data_transmitted>
-]
+## STRICT NAMING CONVENTIONS:
+- Instance names must be CamelCase without spaces (e.g., TemperatureSensor, not Temperature_Sensor)
+- Use descriptive technical names based on actual content from characteristics
+- All instance names must be unique across the entire OML code
+- Avoid generic names like "sensor1", "data1" - use specific names like "PermafrostTemperatureSensor"
 
-// C4: Physical-to-virtual interaction                                           
-instance <name_of_produced_data_transmitted> : DTDFVocab:DataTransmitted [
-    DTDFVocab:producedFrom <name_of_sensing_component1, name_of_sensing_component2, ...>
-]
+## SYNTAX EXAMPLES:
+{guiding_syntax}
 
-// Insights/Actions (C17)
-instance <name_of_insight> : DTDFVocab:Insight [
-    base:desc "<description of the insight>"
-]
+## PROCESSING RULES:
 
-instance <name_of_action> : DTDFVocab:Action[
-    base:desc "<description of the action>"
-    DTDFVocab:IsAutomatic <true_or_false>
-]
+### 1. Characteristic Analysis:
+- Only generate instances for characteristics with meaningful content (ignore "Not Found")
+- For characteristics containing multiple items, create separate instances for each distinct item
+- Extract specific technical details from characteristic descriptions for instance names and descriptions
 
-// Services (C6)
-instance <name_of_service> : DTDFVocab:Service [
-    base:desc "<description of the service>"
-    DTDFVocab:provides <name_of_action_or_insight1, name_of_action_or_insight2, ...>
-]
-
-// Enablers (C11)
-instance <name_of_enabler> : DTDFVocab:Enabler [
-    base:desc "<description of the enabler>"
-    DTDFVocab:enables <name_of_service1, name_of_service2, ...>
-]
-
-// Models/Data (C10)
-instance <name_of_model> : DTDFVocab:Model [
-    base:desc "<description of the model>"
-    DTDFVocab:inputTo <name_of_enabler1, name_of_enabler2, ...>
-    DTDFVocab:fromData <name_of_physical_to_virtual_interaction>
-]
-                                                  
-instance <name_of_data> : DTDFVocab:Data [
-    base:desc "<description of the data>"
-    DTDFVocab:inputTo <name_of_enabler1, name_of_enabler2, ...>
-    DTDFVocab:fromData <name_of_DTDFVocab:DataTransmitted>
-]
+### 2. Mandatory Data Flow Pattern:
+Follow this exact sequence for data flow:
 ```
-                                                  
-REQUIREMENTS:
-1. Follow OML syntax precisely. Names between <> are placeholders for actual names.
-2. Create instances for each characteristic that has meaningful content (not "Not Found")
-3. Establish proper relationships between instances using the vocabulary predicates
-4. Use descriptive, technical names for instances based on the content
-5. Ensure all generated code is syntactically valid OML
+SensingComponent → producedData → DataTransmitted → fromData → Data → inputTo → Enabler → enables → Service → provides → Insight/Action
+```
 
-GUIDELINES:
-- For multiple components (sensors, actuators, services), create separate instances
-- DTDFVocab:SensingComponent generate DTDFVocab:producedData as DTDFVocab:DataTransmitted, used as DTDFVocab:fromData by a DTDFVocab:Model or a DTDFVocab:Data, which serve as DTDFVocab:inputTo DTDFVocab:Enabler that process them, and it DTDFVocab:enables DTDFVocab:Service which themselves create DTDFVocab:Insight or DTDFVocab:Action.
-- Certain characteristics (Physical acting components, Physical sensing components, Physical-to-virtual interaction, DT services, Twinning time-scale, DT models and data, Tooling and enablers, Insights and decision making) usually have multiple instances
-- Use base:desc for detailed descriptions of other characteristics
-- Establish proper relationships using DTDFVocab predicates
-- Name instances descriptively based on their function/content
+### 3. Multiple Instance Guidelines:
+Create separate instances when characteristics mention:
+- Multiple sensors/components (e.g., "temperature sensors and pressure sensors")
+- Multiple services (e.g., "monitoring and visualization services")
+- Multiple models (e.g., "thermal model and structural model")
+- Multiple data types (e.g., "temperature data and historical data")
+- Multiple enablers/tools (e.g., "RabbitMQ, InfluxDB, Godot")
 
-Generate ONLY the OML code, no explanations or comments outside the OML syntax:
+### 4. Relationship Establishment:
+- Every DTDFVocab:SensingComponent MUST have DTDFVocab:producedData pointing to a DTDFVocab:DataTransmitted
+- Every DTDFVocab:DataTransmitted MUST have DTDFVocab:producedFrom pointing back to its source sensor(s)
+- Every DTDFVocab:Data MUST have DTDFVocab:fromData pointing to a DTDFVocab:DataTransmitted
+- Every DTDFVocab:Model and DTDFVocab:Data MUST have DTDFVocab:inputTo pointing to enabler(s)
+- Every DTDFVocab:Enabler MUST have DTDFVocab:enables pointing to service(s)
+- Every DTDFVocab:Service MUST have DTDFVocab:provides pointing to insight(s) or action(s)
+
+### 5. Description Quality:
+- Use direct quotes or paraphrases from the characteristics
+- Be specific about technical details (protocols, frequencies, capabilities)
+- Avoid generic descriptions like "provides monitoring"
+
+## VALIDATION CHECKLIST:
+Before generating, ensure:
+- [ ] All instance names are unique and CamelCase
+- [ ] All relationships follow the mandatory data flow pattern
+- [ ] Descriptions are specific and extracted from characteristics
+- [ ] No "Not Found" characteristics are included
+- [ ] Multiple items in characteristics are split into separate instances
+- [ ] All OML syntax is correct (brackets, colons, commas)
+
+Generate ONLY the OML code with no additional explanations:
 """)
         
         formatted_prompt = oml_prompt.format(
             characteristics=json.dumps(characteristics, indent=2),
             vocab_context=vocab_context,
-            description_based_vocab_mapping=description_based_vocab_mapping
+            description_based_vocab_mapping=description_based_vocab_mapping,
+            guiding_syntax=guiding_syntax
         )
         
         response = self.llm.invoke(formatted_prompt)
@@ -758,46 +694,116 @@ Generate ONLY the OML code, no explanations or comments outside the OML syntax:
         fix_prompt = PromptTemplate.from_template("""
 You are an expert in OML (Ontological Modeling Language) debugging and fixing syntax errors.
 
-TASK: Fix the OML code based on the validation errors provided by OpenCAESAR.
+TASK: Fix the OML code based on the validation errors provided, given the set of characteristics this ontology is based on.
 
 ORIGINAL OML CODE:
 ```oml
 {original_oml}
 ```
 
-VALIDATION ERRORS FROM OPENCAESAR:
+VALIDATION ERRORS:
 {validation_errors}
 
-CHARACTERISTICS TO REPRESENT:
+EXTRACTED CHARACTERISTICS:
 {characteristics}
 
-VOCABULARY REFERENCE:
-{vocab_context}
+## ERROR ANALYSIS FRAMEWORK:
 
-INSTRUCTIONS:
-1. Analyze the validation errors carefully
-2. Identify specific syntax or semantic issues
-3. Fix the OML code while preserving the intent and content
-4. Ensure all instances and relationships are properly defined
-5. Follow OML syntax rules precisely
-6. Keep all meaningful information from the original code
+### 1. Error Pattern Recognition:
+Analyze each error by:
+- **Line number and position**: Locate exact error location
+- **Error type**: Identify the specific issue (reference, syntax, semantic)
+- **Root cause**: Determine why the error occurred
+- **Impact scope**: Assess which parts of code are affected
 
-COMMON OML ISSUES TO FIX:
-- Missing or incorrect namespace declarations
-- Malformed instance definitions
-- Incorrect property references
-- Missing closing brackets or semicolons
-- Invalid vocabulary references
-- Circular dependencies or undefined references
+### 2. Common Error Types and Fixes:
 
-Generate ONLY the corrected OML code, no explanations:
+#### Reference Resolution Errors:
+- `Couldn't resolve reference to SemanticProperty 'DTDFVocab:X'`
+  - **Cause**: Invalid or non-existent vocabulary property
+  - **Fix**: Replace with correct DTDFVocab property or remove if invalid
+
+#### Syntax Errors:
+- Missing brackets, semicolons, or colons
+- Malformed instance declarations
+- Incorrect namespace usage
+
+#### Semantic Errors:
+- Circular dependencies
+- Type mismatches
+- Invalid relationships
+
+### 3. Valid DTDFVocab Properties Reference:
+```oml
+// Core Properties (use only these):
+DTDFVocab:producedData        // SensingComponent → DataTransmitted
+DTDFVocab:producedFrom        // DataTransmitted → SensingComponent(s)
+DTDFVocab:fromData           // Data → DataTransmitted
+DTDFVocab:inputTo            // Model/Data → Enabler
+DTDFVocab:enables            // Enabler → Service
+DTDFVocab:provides           // Service → Insight/Action
+DTDFVocab:IsAutomatic        // Action → boolean
+base:contains                // Environment → Components
+base:desc                    // Any instance → description string
+base:isContainedIn          // Component → Environment
+```
+
+### 4. Systematic Fixing Process:
+
+#### Step 1: Validate All Property References
+- Check each DTDFVocab property against valid properties list
+- Replace invalid properties with correct ones or remove entirely
+- Ensure namespace prefixes are correct
+
+#### Step 2: Fix Syntax Issues
+- Verify bracket matching: `[ ]` pairs
+- Check semicolon placement after property values
+- Confirm colon usage in instance declarations
+
+#### Step 3: Resolve Relationship Consistency
+- Ensure referenced instances exist
+- Validate relationship directions match vocabulary semantics
+- Fix any circular dependencies
+
+#### Step 4: Preserve Original Intent
+- Keep all meaningful instances from original code
+- Maintain descriptive content and relationships where valid
+- Only remove or modify elements that cause errors
+
+### 5. Validation Checklist:
+Before outputting fixed code, verify:
+- [ ] All DTDFVocab properties are from the valid list above
+- [ ] All referenced instances are defined in the code
+- [ ] All brackets and semicolons are properly placed
+- [ ] No circular references exist
+- [ ] Instance names are unique and properly formatted
+- [ ] Relationships follow correct vocabulary semantics
+
+## SYNTAX EXAMPLES:
+{guiding_syntax}
+
+## FIXING STRATEGY:
+1. **Minimal Changes**: Make only necessary changes to fix errors
+2. **Preserve Intent**: Keep original structure and content where possible
+3. **Valid Properties Only**: Replace invalid properties with correct ones from the reference list
+4. **Complete Relationships**: Ensure all referenced instances exist
+5. **Proper Syntax**: Fix brackets, semicolons, and formatting issues
+
+## CRITICAL RULES:
+- NEVER invent new DTDFVocab properties - use only the valid ones listed above
+- ALWAYS preserve the original instance names unless they cause syntax errors
+- ONLY remove code if it's completely invalid and cannot be corrected
+- MAINTAIN all meaningful relationships and descriptions from the original
+
+Generate ONLY the corrected OML code with no explanations or comments:
 """)
         
         formatted_prompt = fix_prompt.format(
             original_oml=oml_content,
             validation_errors=validation_output,
             characteristics=json.dumps(characteristics, indent=2),
-            vocab_context=vocab_context
+            vocab_context=vocab_context,
+            guiding_syntax=guiding_syntax,
         )
         
         try:
@@ -842,7 +848,7 @@ Generate ONLY the corrected OML code, no explanations:
                 return False, error_msg
             
             # Run the validation
-            print("Running OpenCAESAR OML validation...")
+            print("⚙️ Validating written OML file with OpenCAESAR...")
             print("Parameters:")
             print(f" - Working Directory: {abs_catalog_path}")
             print(f" - Gradlew Script: {gradlew_script}")
@@ -858,7 +864,7 @@ Generate ONLY the corrected OML code, no explanations:
             text=True,
             timeout=300)
 
-            print("OpenCAESAR OML validation result:")
+            print("📤 OpenCAESAR OML validation result:")
             print(f"Return code: {result.returncode}")
             print(f"Stdout: {result.stdout}")
             print(f"Stderr: {result.stderr}")
@@ -883,3 +889,61 @@ Generate ONLY the corrected OML code, no explanations:
             error_msg = f"Error during OpenCAESAR validation: {e}"
             print(error_msg)
             return False, error_msg
+
+    def _load_oml_into_fuseki(self, catalog_parent_path: Path, timeout: int = 300) -> tuple[bool, str]:
+        """Start Fuseki (triple store) and load OML using gradle tasks.
+
+        Sequence:
+          1. gradlew.bat startFuseki (or ./gradlew startFuseki on *nix)
+          2. gradlew.bat owlLoad
+
+        Returns: (success, combined_output)
+        """
+        try:
+            abs_catalog_path = catalog_parent_path.resolve()
+            if not abs_catalog_path.exists():
+                msg = f"Error: Directory {abs_catalog_path} does not exist"
+                print(msg)
+                return False, msg
+            gradlew_script = abs_catalog_path / ("gradlew.bat" if os.name == "nt" else "gradlew")
+            if not gradlew_script.exists():
+                msg = f"Error: {gradlew_script} not found (cannot start Fuseki / load OML)"
+                print(msg)
+                return False, msg
+
+            print("🚀 Starting Fuseki server via Gradle...")
+            start_cmd = [str(gradlew_script), "startFuseki"]
+            start_proc = subprocess.run(
+                start_cmd,
+                cwd=str(abs_catalog_path),
+                capture_output=True,
+                text=True,
+                timeout=timeout
+            )
+            start_output = f"StartFuseki Return code: {start_proc.returncode}\nSTDOUT:\n{start_proc.stdout}\nSTDERR:\n{start_proc.stderr}\n"
+            print(start_output)
+            if start_proc.returncode != 0:
+                return False, start_output
+
+            print("📥 Loading OML into Fuseki (owlLoad)...")
+            load_cmd = [str(gradlew_script), "owlLoad"]
+            load_proc = subprocess.run(
+                load_cmd,
+                cwd=str(abs_catalog_path),
+                capture_output=True,
+                text=True,
+                timeout=timeout
+            )
+            load_output = f"owlLoad Return code: {load_proc.returncode}\nSTDOUT:\n{load_proc.stdout}\nSTDERR:\n{load_proc.stderr}\n"
+            print(load_output)
+            success = start_proc.returncode == 0 and load_proc.returncode == 0
+            combined = start_output + "\n" + load_output
+            return success, combined
+        except subprocess.TimeoutExpired:
+            msg = f"Error: Fuseki start or load timed out ({timeout}s)"
+            print(msg)
+            return False, msg
+        except Exception as e:
+            msg = f"Error during Fuseki load sequence: {e}"
+            print(msg)
+            return False, msg

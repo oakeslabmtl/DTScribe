@@ -87,7 +87,7 @@ class HyperparameterTuner:
                 experiment_time = time.time() - start_time
                 
                 # Analyze results
-                quality_metrics = self.orchestrator.analyze_results(results)
+                quality_metrics = self.orchestrator.analyze_characteristic_extraction(results)
                 
                 # Store experiment result
                 experiment_result = {
@@ -101,11 +101,9 @@ class HyperparameterTuner:
                 }
                 
                 experiment_results.append(experiment_result)
-                
-                print(f"✅ Experiment {i} completed successfully")
+                print(f"✅ Experiment {i} completed successfully (id stored with hash_timestamp format)")
                 print(f"   📈 Extraction Rate: {quality_metrics['extraction_rate']:.1f}%")
                 print(f"   ⏱️  Total Time: {experiment_time:.2f}s")
-                
             except Exception as e:
                 print(f"❌ Experiment {i} failed: {str(e)}")
                 experiment_result = {
