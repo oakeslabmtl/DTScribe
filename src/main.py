@@ -86,6 +86,7 @@ class ExtractionOrchestrator:
         rag_pipeline = self._state_manager.get_state("rag_pipeline")
         vectordb = self._state_manager.get_state("vectordb")
 
+
         self._retriever = DocumentRetriever(rag_pipeline, vectordb)
         self._extractor = CharacteristicsExtractor(rag_pipeline)
 
@@ -102,6 +103,7 @@ class ExtractionOrchestrator:
         # Process all blocks
         for i, processor in enumerate(self._block_processors, 1):
             print(f"\n--- Processing Block {i} ---")
+
             result = processor.process(self._retriever, self._extractor)
 
             # Track block metrics
@@ -318,11 +320,9 @@ class ExtractionPipelineFactory:
         embedding_model: str = "nomic-embed-text",
         chunk_size: int = 1500,
         chunk_overlap: int = 200,
-        # retrieval_k: int = 6,
         temperature: float = 0.1,
         top_p: float = 0.9,
         top_k: int = 20,
-        # repeat_penalty: float = 1.1,
         max_pages: int = None,
         **custom_params
     ) -> ExperimentConfig:
@@ -332,11 +332,9 @@ class ExtractionPipelineFactory:
             embedding_model=embedding_model,
             chunk_size=chunk_size,
             chunk_overlap=chunk_overlap,
-            # retrieval_k=retrieval_k,
             temperature=temperature,
             top_p=top_p,
             top_k=top_k,
-            # repeat_penalty=repeat_penalty,
             max_pages=max_pages,
             custom_params=custom_params
         )

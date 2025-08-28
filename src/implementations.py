@@ -64,7 +64,7 @@ class CharacteristicsExtractor(ICharacteristicsExtractor):
     
     def __init__(self, rag_pipeline: EnhancedRAGPipeline):
         self._rag_pipeline = rag_pipeline
-    
+
     def extract(self, description: str, documents: List[Any], schema: Type[BaseModel]) -> BaseModel:
         try:
             return self._rag_pipeline.generate_with_cot_and_validation(

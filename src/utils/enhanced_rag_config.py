@@ -77,6 +77,7 @@ instance <ActionName> : DTDFVocab:Action [
 """
 
 class EnhancedRAGPipeline:
+
     """Enhanced RAG Pipeline with improved techniques for better generation quality."""
     
     def __init__(self, model_name: str = "qwen3:8b", embedding_model: str = "nomic-embed-text"):
@@ -88,6 +89,7 @@ class EnhancedRAGPipeline:
             # repeat_penalty=1.1,
             num_ctx=8192,
             num_predict=4096,
+
         )
         
         self.embeddings = OllamaEmbeddings(model=embedding_model)
@@ -224,7 +226,6 @@ class EnhancedRAGPipeline:
             return relevance_score - length_penalty
         
         return sorted(docs, key=score_document, reverse=True)
-            
     
     def generate_with_cot_and_validation(self, description: str, retrieved_docs: List, 
                                        schema: Type[BaseModel]) -> BaseModel:
@@ -292,14 +293,15 @@ Remember: Be highly specific and technical. Include exact technologies, methods,
                 # Generate with direct LLM call first, then clean and parse
                 response = self.llm.invoke(formatted_prompt)
                 response_text = response.content if hasattr(response, 'content') else str(response)
-                
+                response_metadata = getattr(response, 'response_metadata', {})
+
                 # Clean the response to remove thinking tags
                 cleaned_text = self._clean_llm_response(response_text)
                 
                 # Parse the cleaned response
                 output = parser.parse(cleaned_text)
 
-                return output
+                return output, response_metadata
                 
             except Exception as e:
                 print(f"Warning: Attempt {attempt + 1} failed: {str(e)}")
@@ -443,6 +445,7 @@ JSON:
         except Exception as e:
             print(f"Manual parsing failed: {e}")
             return self._create_fallback_output(schema)
+
     
     def generate_oml(self, characteristics: Dict[str, Any], 
                         vocab_files: Dict[str, str],
