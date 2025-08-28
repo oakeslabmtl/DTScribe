@@ -20,9 +20,61 @@ import json
 from pathlib import Path
 import time
 
-# Import OML Writer components
 from .oml_writer import IOMLWriter, OMLFileWriter
 
+guiding_syntax = """
+```oml                                          
+// C2: Acting Components
+instance <ActuatorName> : DTDFVocab:ActingComponent [
+    base:desc "<specific description from characteristics>"
+]
+
+// C3: Physical sensing components
+instance <SensorName> : DTDFVocab:SensingComponent [
+    base:desc "<specific description from characteristics>"
+    DTDFVocab:producedData <DataTransmittedName>
+]
+
+// C4: Physical-to-virtual interaction                                           
+instance <DataTransmittedName> : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom <SensorName1>, <SensorName2>
+]
+
+// C10: Models/Data
+instance <ModelName> : DTDFVocab:Model [
+    base:desc "<specific model description from characteristics>"
+    DTDFVocab:inputTo <EnablerName1>, <EnablerName2>
+]
+
+instance <DataName> : DTDFVocab:Data [
+    base:desc "<specific data description from characteristics>"
+    DTDFVocab:inputTo <EnablerName1>, <EnablerName2>
+    DTDFVocab:fromData <DataTransmittedName>
+]
+
+// C11: Enablers
+instance <EnablerName> : DTDFVocab:Enabler [
+    base:desc "<specific enabler description from characteristics>"
+    DTDFVocab:enables <ServiceName1>, <ServiceName2>
+]
+
+// C6: Services
+instance <ServiceName> : DTDFVocab:Service [
+    base:desc "<specific service description from characteristics>"
+    DTDFVocab:provides <InsightName1>, <ActionName2>
+]
+
+// C17: Insights/Actions
+instance <InsightName> : DTDFVocab:Insight [
+    base:desc "<specific insight description from characteristics>"
+]
+
+instance <ActionName> : DTDFVocab:Action [
+    base:desc "<specific action description from characteristics>"
+    DTDFVocab:IsAutomatic <true|false>
+]
+```
+"""
 
 class EnhancedRAGPipeline:
     """Enhanced RAG Pipeline with improved techniques for better generation quality."""
@@ -170,17 +222,8 @@ class EnhancedRAGPipeline:
             length_penalty = abs(len(content.split()) - 200) / 1000
 
             return relevance_score - length_penalty
-            
-            # # Basic relevance score
-            # relevance_score = sum(1 for word in query_lower.split() if word in content)
-            
-            # # Length penalty (prefer moderate length chunks)
-            # length_penalty = abs(len(content.split()) - 200) / 1000
-            
-            # return relevance_score - length_penalty
         
         return sorted(docs, key=score_document, reverse=True)
-
             
     
     def generate_with_cot_and_validation(self, description: str, retrieved_docs: List, 
@@ -547,7 +590,7 @@ EXTRACTED CHARACTERISTICS:
 
 VOCABULARY REFERENCE:
 {vocab_context}
-                                                  
+
 LIST OF ALREADY GENERATED CHARACTERISTICS (do not generate again):
 {description_based_vocab_mapping}
 
@@ -558,57 +601,7 @@ LIST OF ALREADY GENERATED CHARACTERISTICS (do not generate again):
 - Avoid generic names like "sensor1", "data1" - use specific names like "PermafrostTemperatureSensor"
 
 ## SYNTAX EXAMPLES:
-```oml                                          
-// C2: Acting Components
-instance <ActuatorName> : DTDFVocab:ActingComponent [
-    base:desc "<specific description from characteristics>"
-]
-    
-// C3: Physical sensing components
-instance <SensorName> : DTDFVocab:SensingComponent [
-    base:desc "<specific description from characteristics>"
-    DTDFVocab:producedData <SpecificDataTransmittedName>
-]
-
-// C4: Physical-to-virtual interaction                                           
-instance <SpecificDataTransmittedName> : DTDFVocab:DataTransmitted [
-    DTDFVocab:producedFrom <SensorName1>, <SensorName2>
-]
-
-// C10: Models/Data
-instance <ModelName> : DTDFVocab:Model [
-    base:desc "<specific model description from characteristics>"
-    DTDFVocab:inputTo <EnablerName1>, <EnablerName2>
-]
-                                                  
-instance <DataName> : DTDFVocab:Data [
-    base:desc "<specific data description from characteristics>"
-    DTDFVocab:inputTo <EnablerName1>, <EnablerName2>
-    DTDFVocab:fromData <SpecificDataTransmittedName>
-]
-
-// C11: Enablers
-instance <EnablerName> : DTDFVocab:Enabler [
-    base:desc "<specific enabler description from characteristics>"
-    DTDFVocab:enables <ServiceName1>, <ServiceName2>
-]
-
-// C6: Services
-instance <ServiceName> : DTDFVocab:Service [
-    base:desc "<specific service description from characteristics>"
-    DTDFVocab:provides <InsightName1>, <ActionName2>
-]
-
-// C17: Insights/Actions
-instance <InsightName> : DTDFVocab:Insight [
-    base:desc "<specific insight description from characteristics>"
-]
-
-instance <ActionName> : DTDFVocab:Action [
-    base:desc "<specific action description from characteristics>"
-    DTDFVocab:IsAutomatic <true|false>
-]
-```
+{guiding_syntax}
 
 ## PROCESSING RULES:
 
@@ -659,7 +652,8 @@ Generate ONLY the OML code with no additional explanations:
         formatted_prompt = oml_prompt.format(
             characteristics=json.dumps(characteristics, indent=2),
             vocab_context=vocab_context,
-            description_based_vocab_mapping=description_based_vocab_mapping
+            description_based_vocab_mapping=description_based_vocab_mapping,
+            guiding_syntax=guiding_syntax
         )
         
         response = self.llm.invoke(formatted_prompt)
@@ -783,65 +777,7 @@ Before outputting fixed code, verify:
 - [ ] Relationships follow correct vocabulary semantics
 
 ## SYNTAX EXAMPLES:
-```oml                                           
-// C2: Acting Components
-instance ActuatorName : DTDFVocab:ActingComponent [
-    base:desc "description of the acting component"
-]
-    
-// C3: Physical sensing components
-instance SensorName : DTDFVocab:SensingComponent [
-    base:desc "description of the sensing component"
-    DTDFVocab:producedData DataTransmittedName
-]
-
-// C4: Physical-to-virtual interaction                                           
-instance DataTransmittedName : DTDFVocab:DataTransmitted [
-    DTDFVocab:producedFrom SensorName1, SensorName2
-]
-                                                  
-instance AgentName : DTDFVocab:Agent [
-    base:desc "description of the agent"
-]
-
-instance EnvironmentName : DTDFVocab:Environment [
-    base:contains ComponentName1, ComponentName2
-]
-
-// Models/Data (C10)
-instance ModelName : DTDFVocab:Model [
-    base:desc "description of the model"
-    DTDFVocab:inputTo EnablerName1, EnablerName2
-]
-                                                  
-instance DataName : DTDFVocab:Data [
-    base:desc "description of the data"
-    DTDFVocab:inputTo EnablerName1, EnablerName2
-    DTDFVocab:fromData DataTransmittedName
-]
-
-// Enablers (C11)
-instance EnablerName : DTDFVocab:Enabler [
-    base:desc "description of the enabler"
-    DTDFVocab:enables ServiceName1, ServiceName2
-]
-
-// Services (C6)
-instance ServiceName : DTDFVocab:Service [
-    base:desc "description of the service"
-    DTDFVocab:provides InsightName1, ActionName2
-]
-
-// Insights/Actions (C17)
-instance InsightName : DTDFVocab:Insight [
-    base:desc "description of the insight"
-]
-
-instance ActionName : DTDFVocab:Action [
-    base:desc "description of the action"
-    DTDFVocab:IsAutomatic true
-]
-```
+{guiding_syntax}
 
 ## FIXING STRATEGY:
 1. **Minimal Changes**: Make only necessary changes to fix errors
@@ -863,7 +799,8 @@ Generate ONLY the corrected OML code with no explanations or comments:
             original_oml=oml_content,
             validation_errors=validation_output,
             characteristics=json.dumps(characteristics, indent=2),
-            vocab_context=vocab_context
+            vocab_context=vocab_context,
+            guiding_syntax=guiding_syntax,
         )
         
         try:

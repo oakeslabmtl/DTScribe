@@ -51,7 +51,7 @@ class OMLFileWriter(IOMLWriter):
         indented_content = '\n'.join(f"    {line}" if line.strip() else line 
                                     for line in oml_content.split('\n'))
         
-        return f"""description <https://bentleyjoakes.github.io/LLM_described_DT/llm_dt#> as incubator {{
+        return f"""description <https://bentleyjoakes.github.io/LLM_described_DT/llm_dt#> as llm_dt {{
 
 	uses <https://bentleyjoakes.github.io/DTDF/vocab/DTDFVocab#> as DTDFVocab
 	
