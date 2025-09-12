@@ -73,6 +73,14 @@ instance <ActionName> : DTDFVocab:Action [
     base:desc "<specific action description from characteristics>"
     DTDFVocab:IsAutomatic <true|false>
 ]
+
+instance <EnvironmentName> : DTDFVocab:Environment [
+    base:contains <ComponentName1>, <ComponentName2>
+]
+
+instance <ComponentName> : DTDFVocab:Component [
+    base:desc "<specific component description>"
+]
 ```
 """
 
@@ -662,6 +670,7 @@ Generate ONLY the OML code with no additional explanations:
         response = self.llm.invoke(formatted_prompt)
         oml_content = response.content if hasattr(response, 'content') else str(response)
         oml_content = self._clean_llm_response(oml_content)
+        oml_content = oml_content.replace("<", "").replace(">", "")  # Remove any stray angle brackets for components
         return oml_content
 
     def _validate_oml_syntax(self, oml_content: str) -> bool:
@@ -810,7 +819,8 @@ Generate ONLY the corrected OML code with no explanations or comments:
             response = self.llm.invoke(formatted_prompt)
             fixed_oml = response.content if hasattr(response, 'content') else str(response)
             fixed_oml = self._clean_llm_response(fixed_oml)
-            
+            fixed_oml = fixed_oml.replace("<", "").replace(">", "").replace(";", "")  # Remove any stray characters
+
             print("🔧 Fixed OML generated based on validation feedback")
             return fixed_oml
             
@@ -866,14 +876,19 @@ Generate ONLY the corrected OML code with no explanations or comments:
 
             print("📤 OpenCAESAR OML validation result:")
             print(f"Return code: {result.returncode}")
-            print(f"Stdout: {result.stdout}")
+            # print(f"Stdout: {result.stdout}")
             print(f"Stderr: {result.stderr}")
 
             # Prepare validation output for feedback
             validation_output = f"Return code: {result.returncode}\n"
-            validation_output += f"Stdout:\n{result.stdout}\n"
+            # validation_output += f"Stdout:\n{result.stdout}\n"
             if result.stderr:
-                validation_output += f"Stderr:\n{result.stderr}\n"
+                # regex to match the diagnostic lines with line/col and unresolved reference
+                pattern = re.compile(r"\[\d+,\s*\d+\]: Couldn't resolve reference to .*")
+                relevant = pattern.findall(result.stderr)
+                relevant = "\n".join(relevant)
+                print(f"Relevant stderr lines:\n{relevant}")
+                validation_output += f"Stderr:\n{relevant}\n"
 
             return result.returncode == 0, validation_output
             

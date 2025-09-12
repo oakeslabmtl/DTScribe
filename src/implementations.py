@@ -143,7 +143,7 @@ class OMLGenerator(IOMLGenerator):
         print("🏗️ Generating OML description...")
         oml_output = self._rag_pipeline.generate_oml(characteristics, vocab_files)
         if oml_output and oml_output.strip() != "":
-            print("✅ OML generation completed")
+            print("OML generation completed")
         else:
             print("⚠️ OML generation failed or produced empty output")
         return oml_output

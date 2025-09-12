@@ -27,7 +27,6 @@ from experiment_tracking import (
     ExperimentConfig, ResultsSaver, ExperimentTracker,
     CharacteristicsExtractionResult, OMLGenerationResult
 )
-from results_analyzer import ResultsAnalyzer
 # from utils.memory import get_memory_usage_mb
 
 
@@ -54,8 +53,8 @@ class ExtractionOrchestrator:
         self._retriever: IDocumentRetriever = None
         self._extractor: ICharacteristicsExtractor = None
         self.last_experiment_id: Optional[str] = None
-    
-    def run_extraction(self, pdf_path: str, experiment_id: Optional[str] = None, config: Optional[ExperimentConfig] = None, save_results: bool = True) -> Dict[str, Any]:
+
+    def run_extraction(self, pdf_path: str, experiment_id: Optional[str] = None, config: Optional[ExperimentConfig] = None, save_results: bool = True, regenerate_db: bool = False) -> Dict[str, Any]:
         """Run the complete extraction pipeline with optional experiment tracking."""
         print("🚀 Starting Enhanced Digital Twin Characteristics Extraction")
         print("=" * 60)
@@ -70,9 +69,8 @@ class ExtractionOrchestrator:
         self.last_experiment_id = experiment_id
 
         # Only process PDF and create vector DB if it does not exist
-
         vector_db_path = Path("vector_db")
-        if not vector_db_path.exists() or not any(vector_db_path.iterdir()):
+        if regenerate_db or not vector_db_path.exists() or not any(vector_db_path.iterdir()):
             print("📁 Vector DB not found, processing PDF and creating vector DB...")
             init_result = self._initializer.initialize(pdf_path)
             self._state_manager.update_state(init_result)
@@ -316,7 +314,7 @@ class ExtractionPipelineFactory:
     
     @staticmethod
     def create_config(
-        model_name: str = "qwen3:4b",
+        model_name: str = "qwen3:8b",
         embedding_model: str = "nomic-embed-text",
         chunk_size: int = 1500,
         chunk_overlap: int = 200,
@@ -347,10 +345,11 @@ def main():
     parser.add_argument("--chunk-size", type=int, default=1500)
     parser.add_argument("--chunk-overlap", type=int, default=200)
     parser.add_argument("--temperature", type=float, default=0.1)
-    parser.add_argument("--model-name", default="qwen3:4b")
+    parser.add_argument("--model-name", default="qwen3:8b")
     parser.add_argument("--embedding-model", default="nomic-embed-text")
     parser.add_argument("--source-experiment-id", help="Existing experiment id (hash_timestamp or just hash for latest) containing characteristics for standalone OML generation")
     parser.add_argument("--no-save", action="store_true", help="Do not persist results")
+    parser.add_argument("--regenerate-db", action="store_true", help="Regenerate the vector database even if it exists")
     args = parser.parse_args()
 
     orchestrator = ExtractionPipelineFactory.create_orchestrator(with_experiment_tracking=True)
@@ -367,18 +366,13 @@ def main():
             temperature=args.temperature,
             custom_params={"cli": True}
         )
-        extraction_results = orchestrator.run_extraction(args.pdf, experiment_id=None, config=config, save_results=not args.no_save)
+        extraction_results = orchestrator.run_extraction(args.pdf, experiment_id=None, config=config, save_results=not args.no_save, regenerate_db=args.regenerate_db)
         experiment_id = orchestrator.last_experiment_id
 
     if args.mode in ("oml", "both"):
         oml_results = orchestrator.run_oml_generation(experiment_id=experiment_id, save_results=not args.no_save, source_experiment_id=args.source_experiment_id)
         oml_output = oml_results.get("oml_output")
-        if oml_output:
-            print("\n🏗️ Generated OML (first 40 lines):")
-            print("-" * 40)
-            for i, line in enumerate(oml_output.splitlines()[:40], 1):
-                print(f"{i:03}: {line}")
-        else:
+        if not oml_output:
             print("No OML generated.")
 
     if extraction_results.get("extracted_characteristics"):
@@ -387,7 +381,7 @@ def main():
         print(f" - Extraction Rate: {quality_metrics['extraction_rate']:.2f}%")
         print(f" - Extracted: {quality_metrics['extracted_count']}/{quality_metrics['total_characteristics']}")
 
-    print("\n✅ Completed mode:", args.mode)
+    print("\nCompleted mode:", args.mode)
     print("💡 For standalone OML: python -m src.main --mode oml --source-experiment-id <hash_timestamp | hash>")
     print("   - Provide full ID (e.g. a1b2c3d4e5f6_20250812143055) to target an exact run")
     print("   - Or just the 12-char hash to use the latest run with that configuration")
