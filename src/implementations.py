@@ -214,13 +214,17 @@ class BaseBlockProcessor(IBlockProcessor, ABC):
         try:
             retrieved_docs = retriever.retrieve_documents(config.query, k=config.k)
             print(f"🧠 Extracting {label} characteristics...")
-            output = extractor.extract(config.description, retrieved_docs, self.get_schema())
+            output, response_metadata = extractor.extract(config.description, retrieved_docs, self.get_schema())
+            input_tokens = response_metadata.get('prompt_eval_count', 0)
+            output_tokens = response_metadata.get('eval_count', 0)
             processing_time = time.time() - start_time
             return ExtractionResult(
                 characteristics=output.model_dump(exclude_none=True),
                 metadata={
                     f"{meta_prefix}_processing_time": processing_time,
-                    f"{meta_prefix}_docs_retrieved": [getattr(doc, "page_content", str(doc)) for doc in retrieved_docs]
+                    f"{meta_prefix}_docs_retrieved": [getattr(doc, "page_content", str(doc)) for doc in retrieved_docs],
+                    f"{meta_prefix}_input_tokens": input_tokens,
+                    f"{meta_prefix}_output_tokens": output_tokens,
                 },
                 success=True
             )

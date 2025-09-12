@@ -307,7 +307,7 @@ Remember: Be highly specific and technical. Include exact technologies, methods,
                 # Generate with direct LLM call first, then clean and parse
                 response = self.llm.invoke(formatted_prompt)
                 response_text = response.content if hasattr(response, 'content') else str(response)
-                # response_metadata = getattr(response, 'response_metadata', {})
+                response_metadata = getattr(response, 'response_metadata', {})
 
                 # Clean the response to remove thinking tags
                 cleaned_text = self._clean_llm_response(response_text)
@@ -315,7 +315,7 @@ Remember: Be highly specific and technical. Include exact technologies, methods,
                 # Parse the cleaned response
                 output = parser.parse(cleaned_text)
 
-                return output
+                return output, response_metadata
                 
             except Exception as e:
                 print(f"Warning: Attempt {attempt + 1} failed: {str(e)}")

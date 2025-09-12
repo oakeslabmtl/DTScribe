@@ -106,6 +106,8 @@ class ExtractionOrchestrator:
 
             result = processor.process(self._retriever, self._extractor)
 
+            # print(f"Block {i} Result: {result}")
+
             # Track block metrics
             block_name = f"block_{i}"
             block_metrics['success_rates'][block_name] = result.success
@@ -115,8 +117,14 @@ class ExtractionOrchestrator:
             if f"{block_name}_docs_retrieved" in result.metadata:
                 block_metrics['docs_retrieved'][block_name] = [
                     doc.page_content if hasattr(doc, 'page_content') else str(doc)
-                    for doc in result.metadata[f"{block_name}_docs_retrieved"]
+                    for doc in result.metadata.get(f"{block_name}_docs_retrieved") or []
                 ]
+            
+            if f"{block_name}_input_tokens" in result.metadata:
+                total_input_tokens += result.metadata.get(f"block_{i}_input_tokens", 3)
+
+            if f"{block_name}_output_tokens" in result.metadata:
+                total_output_tokens += result.metadata.get(f"block_{i}_output_tokens", 3)
             
             # if f"{block_name}_memory_usage_mb" in result.metadata:
             #     block_metrics['memory_usages'][block_name] = result.metadata[f"{block_name}_memory_usage_mb"]
@@ -126,14 +134,14 @@ class ExtractionOrchestrator:
 
                 # Update metadata
                 existing_metadata = self._state_manager.get_state("extraction_metadata") or {}
-                block_metadata = result.metadata
+                # block_metadata = result.metadata
                 existing_metadata.update(result.metadata)
                 self._state_manager.update_state({"extraction_metadata": existing_metadata})
 
-                input_key = f"block{i}_input_tokens"
-                output_key = f"block{i}_output_tokens"
-                total_input_tokens += block_metadata.get(input_key, 1)
-                total_output_tokens += block_metadata.get(output_key, 1)
+                # input_key = f"block{i}_input_tokens"
+                # output_key = f"block{i}_output_tokens"
+                # total_input_tokens += block_metadata.get(input_key, 3)
+                # total_output_tokens += block_metadata.get(output_key, 3)
 
             else:
                 error_msg = f"Block {i} processing failed: {result.error_message}"
@@ -293,7 +301,7 @@ class ExtractionPipelineFactory:
         # Create block processors
         block_processors = [
             Block1Processor(),
-            Block2Processor(),
+            # Block2Processor(),
             # Block3Processor(),
             # Block4Processor(),
             # Block5Processor(),
@@ -328,7 +336,7 @@ class ExtractionPipelineFactory:
     
     @staticmethod
     def create_config(
-        model_name: str = "qwen3:8b",
+        model_name: str = "qwen3:4b",
         embedding_model: str = "nomic-embed-text",
         chunk_size: int = 1500,
         chunk_overlap: int = 200,
@@ -353,37 +361,13 @@ class ExtractionPipelineFactory:
 
 
 def main():
-<<<<<<< HEAD
-    """Main function demonstrating SOLID principles with experiment tracking."""
-    
-    # Configuration
-    pdf_path = "data/papers/The Incubator Case Study for Digital Twin Engineering.pdf"
-    
-    # Create experiment configuration
-    # config = ExtractionPipelineFactory.create_config(
-    #     model_name="qwen3:4b",
-    #     embedding_model="nomic-embed-text",
-    #     chunk_size=1500,
-    #     chunk_overlap=200,
-    #     temperature=0.1,
-    #     custom_params={"experiment_name": "baseline_run"}
-    # )
-    
-    # Create orchestrator with experiment tracking
-    orchestrator = ExtractionPipelineFactory.create_orchestrator(with_experiment_tracking=True)
-
-    # Define experimental conditions
-    experiments = [
-        {"model_name":"llama3.2:latest","chunk_size": 250, "temperature": 0.1},
-    ]
-=======
     parser = argparse.ArgumentParser(description="Extraction / OML generation pipeline")
     parser.add_argument("--mode", choices=["both", "extraction", "oml"], default="both", help="Run extraction, OML generation, or both")
     parser.add_argument("--pdf", default="data/papers/The Incubator Case Study for Digital Twin Engineering.pdf", help="PDF path for extraction")
     parser.add_argument("--chunk-size", type=int, default=1500)
     parser.add_argument("--chunk-overlap", type=int, default=200)
     parser.add_argument("--temperature", type=float, default=0.1)
-    parser.add_argument("--model-name", default="qwen3:8b")
+    parser.add_argument("--model-name", default="qwen3:4b")
     parser.add_argument("--embedding-model", default="nomic-embed-text")
     parser.add_argument("--source-experiment-id", help="Existing experiment id (hash_timestamp or just hash for latest) containing characteristics for standalone OML generation")
     parser.add_argument("--no-save", action="store_true", help="Do not persist results")
@@ -394,7 +378,6 @@ def main():
 
     extraction_results: Dict[str, Any] = {}
     experiment_id = None
->>>>>>> 6e5079e93e4ae23178bb4610fba0525380744d24
 
     if args.mode in ("extraction", "both"):
         config = ExtractionPipelineFactory.create_config(
@@ -408,41 +391,11 @@ def main():
         extraction_results = orchestrator.run_extraction(args.pdf, experiment_id=None, config=config, save_results=not args.no_save, regenerate_db=args.regenerate_db)
         experiment_id = orchestrator.last_experiment_id
 
-<<<<<<< HEAD
-        print(f"\n🔬 Running experiment with parameters: {exp_params}")
-
-        experiment_id = None
-        # Start experiment tracking if configured
-        if orchestrator._experiment_tracker and config:
-            # Only create one experiment per unique configuration
-            experiment_id = orchestrator._experiment_tracker.start_experiment(config)
-            print(f"📊 Experiment ID: {experiment_id}")
-
-        extraction_results = orchestrator.run_extraction(pdf_path, experiment_id=experiment_id, config=config, save_results=True)
-        oml_results = orchestrator.run_oml_generation(experiment_id=experiment_id, save_results=True)
-        
-        # Detailed results
-        print(f"\n📋 Extracted Characteristics:")
-        df = pd.DataFrame(list(extraction_results["extracted_characteristics"].items()), 
-                        columns=['Characteristic', 'Description'])
-        print(df.to_markdown(index=False, tablefmt="grid"))
-        
-        print(f"\n🏗️ Generated OML:")
-        print("-" * 40)
-        oml_output = oml_results.get("oml_output", "Not generated")
-        print(oml_output)
-
-        # Analyze and display results
-        print("\n" + "=" * 60)
-        print("📊 EXTRACTION RESULTS")
-        print("=" * 60)
-=======
     if args.mode in ("oml", "both"):
         oml_results = orchestrator.run_oml_generation(experiment_id=experiment_id, save_results=not args.no_save, source_experiment_id=args.source_experiment_id)
         oml_output = oml_results.get("oml_output")
         if not oml_output:
             print("No OML generated.")
->>>>>>> 6e5079e93e4ae23178bb4610fba0525380744d24
 
     if extraction_results.get("extracted_characteristics"):
         quality_metrics = orchestrator.analyze_characteristic_extraction(extraction_results)
