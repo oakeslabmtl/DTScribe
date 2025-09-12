@@ -24,6 +24,7 @@ class OMLFileWriter(IOMLWriter):
         Returns:
             bool: True if successful, False otherwise
         """
+        print("💾 Writing OML to file...")
         try:
             # Ensure directory exists
             output_file = Path(output_path)
@@ -35,7 +36,6 @@ class OMLFileWriter(IOMLWriter):
             # Write OML content
             with open(output_file, 'w', encoding='utf-8') as f:
                 f.write(wrapped_oml)
-            
             print(f"📝 OML output written to: {output_path}")
             return True
             
@@ -51,7 +51,7 @@ class OMLFileWriter(IOMLWriter):
         indented_content = '\n'.join(f"    {line}" if line.strip() else line 
                                     for line in oml_content.split('\n'))
         
-        return f"""description <https://bentleyjoakes.github.io/LLM_described_DT/llm_dt#> as incubator {{
+        return f"""description <https://bentleyjoakes.github.io/LLM_described_DT/llm_dt#> as llm_dt {{
 
 	uses <https://bentleyjoakes.github.io/DTDF/vocab/DTDFVocab#> as DTDFVocab
 	

@@ -12,6 +12,10 @@ from dataclasses import dataclass, asdict, field
 import pandas as pd
 import hashlib
 
+# New experiment id format: <12-char config hash>_<YYYYMMDDHHMMSS>
+# This keeps a stable portion for grouping while ensuring each run
+# (even with identical config) has a unique readable suffix.
+
 
 @dataclass
 class ExperimentConfig:
@@ -112,10 +116,17 @@ class ResultsSaver:
             dir_path.mkdir(exist_ok=True)
     
     def generate_experiment_id(self, config: ExperimentConfig, pdf_path: str) -> str:
-        """Generate a unique experiment ID based on config and inputs."""
+        """Generate a readable, unique experiment ID.
+
+        Format: <12hexhash>_<YYYYMMDDHHMMSS>
+        - 12hexhash: stable hash of (pdf_path + config) enabling grouping
+        - timestamp: ensures uniqueness per run even if config unchanged
+        """
         config_str = json.dumps(asdict(config), sort_keys=True)
         input_str = f"{pdf_path}_{config_str}"
-        return hashlib.md5(input_str.encode()).hexdigest()[:12]
+        base_hash = hashlib.md5(input_str.encode()).hexdigest()[:12]
+        ts = datetime.utcnow().strftime("%Y%m%d%H%M%S")
+        return f"{base_hash}_{ts}"
     
     def save_characteristics_results(self, result: CharacteristicsExtractionResult) -> Path:
         """Save characteristics extraction results."""
@@ -225,13 +236,40 @@ class ResultsSaver:
             df.to_csv(summary_file, index=False)
     
     def load_characteristics_results(self, experiment_id: str) -> Optional[CharacteristicsExtractionResult]:
-        """Load characteristics results by experiment ID."""
-        for file_path in self.characteristics_dir.glob(f"*{experiment_id}_characteristics.json"):
+        """Load characteristics results by experiment ID.
+
+        Backward compatible:
+        - If full new-format ID (hash_timestamp) supplied, exact match.
+        - If only the 12-char hash supplied, return the latest run (by filename timestamp prefix).
+        - If old style (just 12-char hash) files exist, still matched.
+        """
+        # Full id if it contains an underscore and length > 13
+        if '_' in experiment_id and len(experiment_id) > 13:
+            pattern = f"*{experiment_id}_characteristics.json"
+            candidates = list(self.characteristics_dir.glob(pattern))
+        else:
+            # Base hash only: collect all runs whose experiment_id starts with that hash
+            # Filenames: <filets>_<experiment_id>_characteristics.json
+            # We look for _<hash>_ pattern to reduce false positives.
+            candidates = list(self.characteristics_dir.glob(f"*_{experiment_id}_*_characteristics.json"))
+            if not candidates:
+                # Fallback for legacy files where experiment_id was only the hash
+                candidates = list(self.characteristics_dir.glob(f"*{experiment_id}_characteristics.json"))
+
+        if not candidates:
+            return None
+
+        # Sort by filename (timestamp prefix at start ensures chronological order)
+        candidates.sort()
+        # If base hash only, pick latest; if full id, also last (only one usually)
+        file_path = candidates[-1]
+        try:
             with open(file_path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
-                data['timestamp'] = datetime.fromisoformat(data['timestamp'])
-                return CharacteristicsExtractionResult(**data)
-        return None
+            data['timestamp'] = datetime.fromisoformat(data['timestamp'])
+            return CharacteristicsExtractionResult(**data)
+        except Exception:
+            return None
     
     def get_characteristics_summary(self) -> pd.DataFrame:
         """Get characteristics extraction summary for analysis."""
@@ -259,11 +297,13 @@ class ExperimentTracker:
         """Start a new experiment with given configuration."""
         self.current_config = config
         experiment_id = self.results_saver.generate_experiment_id(config, "")
-        
-        # Log experiment start
+
+        # Log experiment start (include separation of hash/timestamp parts for clarity)
         log_file = self.results_saver.logs_dir / f"{experiment_id}_experiment.log"
-        with open(log_file, 'w') as f:
+        with open(log_file, 'w', encoding='utf-8') as f:
             f.write(f"Experiment {experiment_id} started at {datetime.now().isoformat()}\n")
+            base_part = experiment_id.split('_')[0]
+            f.write(f"Base config hash: {base_part}\n")
             f.write(f"Configuration: {json.dumps(asdict(config), indent=2)}\n")
-        
+
         return experiment_id

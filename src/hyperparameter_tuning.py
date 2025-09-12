@@ -31,9 +31,11 @@ class HyperparameterTuner:
         
         # Define parameter ranges
         param_grid = {
-            'model': ["llama 3.2", "qwen3:4b", "qwen3:8b"],
-            'chunk_size': [2000, 2500, 3000],
-            'temperature': [0.1, 0.3],
+            'model_name': ["qwen3:8b"],
+            'chunk_size': [1000, 1500, 2000, 2500, 3000, 3500],
+            'temperature': [0.1, 0.15, 0.2, 0.25, 0.3],
+            "embedding_model": "nomic-embed-text",
+            "chunk_overlap": [200, 300, 400],
         }
         
         # Generate all combinations
@@ -78,28 +80,32 @@ class HyperparameterTuner:
                     self.pdf_path,
                     config=config,
                     save_results=True,
+                    experiment_id=None,
                 )
                 experiment_time = time.time() - start_time
-                
+
                 # Analyze results
-                quality_metrics = self.orchestrator.analyze_results(results)
-                
-                # Store experiment result
-                experiment_result = {
-                    'experiment_number': i,
-                    'total_time': experiment_time,
-                    **params,
-                    **quality_metrics,
-                    'success': True,
-                    'error': None,
-                }
-                
-                experiment_results.append(experiment_result)
-                
-                print(f"✅ Experiment {i} completed successfully")
-                print(f"   📈 Extraction Rate: {quality_metrics['extraction_rate']:.1f}%")
-                print(f"   ⏱️  Total Time: {experiment_time:.2f}s")
-                
+                if results.get("extracted_characteristics"):
+                    quality_metrics = self.orchestrator.analyze_characteristic_extraction(results)
+                    print("\n📈 Extraction Quality:")
+                    print(f" - Extraction Rate: {quality_metrics['extraction_rate']:.2f}%")
+                    print(f" - Extracted: {quality_metrics['extracted_count']}/{quality_metrics['total_characteristics']}")
+                                
+                    # Store experiment result
+                    experiment_result = {
+                        'experiment_number': i,
+                        'total_time': experiment_time,
+                        **params,
+                        **quality_metrics,
+                        'success': True,
+                        'error': None,
+                        # 'extraction_strategy': "individual" if use_individual_extraction else "batch"
+                    }
+                    
+                    experiment_results.append(experiment_result)
+                    print(f"✅ Experiment {i} completed successfully (id stored with hash_timestamp format)")
+                    print(f"   📈 Extraction Rate: {quality_metrics['extraction_rate']:.1f}%")
+                    print(f"   ⏱️  Total Time: {experiment_time:.2f}s")
             except Exception as e:
                 print(f"❌ Experiment {i} failed: {str(e)}")
                 experiment_result = {
