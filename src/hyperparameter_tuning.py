@@ -42,9 +42,6 @@ class HyperparameterTuner:
         combinations = [dict(zip(keys, v)) for v in itertools.product(*values)]
         
         return combinations
-    
-     # def run_experiment_batch(self, max_experiments: int = 10, use_individual_extraction: bool = False) -> List[Dict[str, Any]]:
-     #     """Run a batch of experiments with different hyperparameters and extraction strategies."""
 
     def run_experiment_batch(self, max_experiments: int = 10) -> List[Dict[str, Any]]:
         """Run a batch of experiments with different hyperparameters."""     
@@ -71,7 +68,6 @@ class HyperparameterTuner:
                     custom_params={
                         "experiment_batch": "hyperparameter_tuning",
                         "experiment_number": i,
-                        # "extraction_strategy": "individual" if use_individual_extraction else "batch"
                     }
                 )
 
@@ -82,7 +78,6 @@ class HyperparameterTuner:
                     self.pdf_path,
                     config=config,
                     save_results=True,
-                    # use_individual_extraction=use_individual_extraction
                 )
                 experiment_time = time.time() - start_time
                 
@@ -97,7 +92,6 @@ class HyperparameterTuner:
                     **quality_metrics,
                     'success': True,
                     'error': None,
-                    # 'extraction_strategy': "individual" if use_individual_extraction else "batch"
                 }
                 
                 experiment_results.append(experiment_result)
@@ -115,7 +109,6 @@ class HyperparameterTuner:
                     'error': str(e),
                     'extraction_rate': 0.0,
                     'total_time': 0.0,
-                    # 'extraction_strategy': "individual" if use_individual_extraction else "batch"
                 }
                 experiment_results.append(experiment_result)
         
@@ -188,9 +181,6 @@ class HyperparameterTuner:
         axes[0, 1].set_xlabel('Chunk Size')
         axes[0, 1].set_ylabel('Extraction Rate (%)')
         axes[0, 1].set_title('Extraction Rate by Chunk Size')
-        
-        # Box plot: Processing Time by Retrieval K
-        # Removed box plot for Retrieval K since retrieval_k is no longer a parameter
         
         plt.tight_layout()
         

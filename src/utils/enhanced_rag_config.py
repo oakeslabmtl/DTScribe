@@ -80,6 +80,12 @@ class EnhancedRAGPipeline:
             # Extract markdown with specified pages
             pages_list = list(range(pages_to_process))
             md_text = pymupdf4llm.to_markdown(pdf_path, pages=pages_list)
+
+            # Remove the references section and anything after if found # NOTE: make more robust for other pdfs
+            ref_marker = "### **References**"
+            ref_index = md_text.find(ref_marker)
+            if ref_index != -1:
+                md_text = md_text[:ref_index]
             
         except Exception as e:
             print(f"Error processing PDF: {e}")

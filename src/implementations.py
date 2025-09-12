@@ -158,6 +158,8 @@ class QualityAnalyzer(IQualityAnalyzer):
         total_characteristics = len(characteristics)
         valid_extractions = 0
         total_length = 0
+        # total_input_tokens = 0
+        # total_output_tokens = 0
 
         for v in characteristics.values():
             if v and v != "Not Found" and v.strip() != "":
@@ -166,6 +168,13 @@ class QualityAnalyzer(IQualityAnalyzer):
 
         avg_length = total_length / valid_extractions if valid_extractions > 0 else 0
 
+        # # aggregate token counts from the metadata dictionaries (per block)
+        # for v in metadata.values():
+        #     if isinstance(v, dict):
+        #         if "prompt_eval_count" in v:
+        #             total_input_tokens += v["prompt_eval_count"]
+        #         if "eval_count" in v:
+        #             total_output_tokens += v["eval_count"]
 
         return {
             "total_characteristics": total_characteristics,
@@ -173,6 +182,8 @@ class QualityAnalyzer(IQualityAnalyzer):
             "not_found_count": total_characteristics - valid_extractions,
             "extraction_rate": (valid_extractions / total_characteristics * 100) if total_characteristics > 0 else 0,
             "average_description_length": avg_length,
+            # "total_input_tokens": total_input_tokens,
+            # "total_output_tokens": total_output_tokens,
             # "total_docs_retrieved": sum(v for k, v in metadata.items() if k.endswith("_docs_retrieved")),
             "total_chunks": metadata.get("total_chunks", 0)
         }
@@ -221,8 +232,8 @@ class Block1Processor(IBlockProcessor):
                 metadata={
                     "block1_processing_time": processing_time,
                     "block1_docs_retrieved": [getattr(doc, "page_content", str(doc)) for doc in retrieved_docs],
-                    "block1_llm_input_tokens": input_tokens,
-                    "block1_llm_output_tokens": output_tokens,
+                    "block1_input_tokens": input_tokens,
+                    "block1_output_tokens": output_tokens,
                 },
                 success=True
             )
@@ -282,8 +293,8 @@ class Block2Processor(IBlockProcessor):
                 metadata={
                     "block2_processing_time": processing_time,
                     "block2_docs_retrieved": [getattr(doc, "page_content", str(doc)) for doc in retrieved_docs],
-                    "block2_llm_input_tokens": input_tokens,
-                    "block2_llm_output_tokens": output_tokens,
+                    "block2_input_tokens": input_tokens,
+                    "block2_output_tokens": output_tokens,
                 },
                 success=True
             )
@@ -341,8 +352,8 @@ class Block3Processor(IBlockProcessor):
                 metadata={
                     "block3_processing_time": processing_time,
                     "block3_docs_retrieved": [getattr(doc, "page_content", str(doc)) for doc in retrieved_docs],
-                    "block3_llm_input_tokens": input_tokens,
-                    "block3_llm_output_tokens": output_tokens,
+                    "block3_input_tokens": input_tokens,
+                    "block3_output_tokens": output_tokens,
                 },
                 success=True
             )
@@ -401,8 +412,8 @@ class Block4Processor(IBlockProcessor):
                 metadata={
                     "block4_processing_time": processing_time,
                     "block4_docs_retrieved": [getattr(doc, "page_content", str(doc)) for doc in retrieved_docs],
-                    "block4_llm_input_tokens": input_tokens,
-                    "block4_llm_output_tokens": output_tokens,
+                    "block4_input_tokens": input_tokens,
+                    "block4_output_tokens": output_tokens,
                 },
                 success=True
             )
@@ -461,8 +472,8 @@ class Block5Processor(IBlockProcessor):
                 metadata={
                     "block5_processing_time": processing_time,
                     "block5_docs_retrieved": [getattr(doc, "page_content", str(doc)) for doc in retrieved_docs],
-                    "block5_llm_input_tokens": input_tokens,
-                    "block5_llm_output_tokens": output_tokens,
+                    "block5_input_tokens": input_tokens,
+                    "block5_output_tokens": output_tokens,
                 },
                 success=True
             )
@@ -518,8 +529,8 @@ class Block6Processor(IBlockProcessor):
                 metadata={
                     "block6_processing_time": processing_time,
                     "block6_docs_retrieved": [getattr(doc, "page_content", str(doc)) for doc in retrieved_docs],
-                    "block6_llm_input_tokens": input_tokens,
-                    "block6_llm_output_tokens": output_tokens,
+                    "block6_input_tokens": input_tokens,
+                    "block6_output_tokens": output_tokens,
                 },
                 success=True
             )

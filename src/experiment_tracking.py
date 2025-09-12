@@ -58,13 +58,15 @@ class CharacteristicsExtractionResult:
     # block_memory_usages: Dict[str, float]
     block_success_rates: Dict[str, bool]
 
+    # token usage
+    total_input_tokens: int
+    total_output_tokens: int #Optional[Dict[str, int]] = None
+    
     # Error information
     errors: List[str] = field(default_factory=list)
     warnings: List[str] = field(default_factory=list)
     
-    # token usage
-    llm_input_tokens: Optional[Dict[str, int]] = None  # e.g., {"block1": 123, ...}
-    llm_output_tokens: Optional[Dict[str, int]] = None
+
 
 
 @dataclass
@@ -177,7 +179,6 @@ class ResultsSaver:
             'embedding_model': result.config.embedding_model,
             'chunk_size': result.config.chunk_size,
             'chunk_overlap': result.config.chunk_overlap,
-            # 'retrieval_k' removed
             'temperature': result.config.temperature,
             'extraction_rate': result.extraction_rate,
             'extracted_count': result.extracted_count,
@@ -185,8 +186,8 @@ class ResultsSaver:
             'average_description_length': result.average_description_length,
             # 'total_docs_retrieved': result.total_docs_retrieved,
             'processing_time_seconds': result.processing_time_seconds,
-            'llm_input_tokens': flatten_token_dict(result.llm_input_tokens),
-            'llm_output_tokens': flatten_token_dict(result.llm_output_tokens),
+            'total_input_tokens': result.total_input_tokens,
+            'total_output_tokens': result.total_output_tokens,
             'error_count': len(result.errors),
             'warning_count': len(result.warnings)
         }

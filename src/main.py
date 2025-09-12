@@ -91,6 +91,8 @@ class ExtractionOrchestrator:
         }
         errors = []
         warnings = []
+        total_input_tokens = 0
+        total_output_tokens = 0
 
         # Process all blocks
         for i, processor in enumerate(self._block_processors, 1):
@@ -104,8 +106,11 @@ class ExtractionOrchestrator:
             if f"{block_name}_processing_time" in result.metadata:
                 block_metrics['processing_times'][block_name] = result.metadata[f"{block_name}_processing_time"]
 
-            if  f"{block_name}_docs_retrieved" in result.metadata:
-                block_metrics['docs_retrieved'][block_name] = [doc.page_content if hasattr(doc, 'page_content') else str(doc) for doc in result.metadata[f"{block_name}_docs_retrieved"]]
+            if f"{block_name}_docs_retrieved" in result.metadata:
+                block_metrics['docs_retrieved'][block_name] = [
+                    doc.page_content if hasattr(doc, 'page_content') else str(doc)
+                    for doc in result.metadata[f"{block_name}_docs_retrieved"]
+                ]
             
             # if f"{block_name}_memory_usage_mb" in result.metadata:
             #     block_metrics['memory_usages'][block_name] = result.metadata[f"{block_name}_memory_usage_mb"]
@@ -115,8 +120,15 @@ class ExtractionOrchestrator:
 
                 # Update metadata
                 existing_metadata = self._state_manager.get_state("extraction_metadata") or {}
+                block_metadata = result.metadata
                 existing_metadata.update(result.metadata)
                 self._state_manager.update_state({"extraction_metadata": existing_metadata})
+
+                input_key = f"block{i}_input_tokens"
+                output_key = f"block{i}_output_tokens"
+                total_input_tokens += block_metadata.get(input_key, 1)
+                total_output_tokens += block_metadata.get(output_key, 1)
+
             else:
                 error_msg = f"Block {i} processing failed: {result.error_message}"
                 print(f"❌ {error_msg}")
@@ -156,6 +168,8 @@ class ExtractionOrchestrator:
                 block_processing_times=block_metrics.get('processing_times', {}),
                 # block_memory_usages=block_metrics.get('memory_usages', {}),
                 block_success_rates=block_metrics.get('success_rates', {}),
+                total_input_tokens=total_input_tokens,
+                total_output_tokens=total_output_tokens
             )
 
             saved_path = self._experiment_tracker.results_saver.save_characteristics_results(characteristics_result)
@@ -241,10 +255,10 @@ class ExtractionPipelineFactory:
         block_processors = [
             Block1Processor(),
             Block2Processor(),
-            Block3Processor(),
-            Block4Processor(),
-            Block5Processor(),
-            Block6Processor()
+            # Block3Processor(),
+            # Block4Processor(),
+            # Block5Processor(),
+            # Block6Processor()
         ]
         
         # Create a wrapper that handles the OML generator creation
@@ -303,22 +317,21 @@ def main():
     pdf_path = "data/papers/The Incubator Case Study for Digital Twin Engineering.pdf"
     
     # Create experiment configuration
-    config = ExtractionPipelineFactory.create_config(
-        model_name="qwen3:4b",
-        embedding_model="nomic-embed-text",
-        chunk_size=1500,
-        chunk_overlap=200,
-        # retrieval_k=6,
-        temperature=0.1,
-        custom_params={"experiment_name": "baseline_run"}
-    )
+    # config = ExtractionPipelineFactory.create_config(
+    #     model_name="qwen3:4b",
+    #     embedding_model="nomic-embed-text",
+    #     chunk_size=1500,
+    #     chunk_overlap=200,
+    #     temperature=0.1,
+    #     custom_params={"experiment_name": "baseline_run"}
+    # )
     
     # Create orchestrator with experiment tracking
     orchestrator = ExtractionPipelineFactory.create_orchestrator(with_experiment_tracking=True)
 
     # Define experimental conditions
     experiments = [
-        {"model_name":"llama3.2:latest","chunk_size": 2500, "temperature": 0.1},
+        {"model_name":"llama3.2:latest","chunk_size": 250, "temperature": 0.1},
     ]
 
     # Run systematic experiments
@@ -335,7 +348,7 @@ def main():
             experiment_id = orchestrator._experiment_tracker.start_experiment(config)
             print(f"📊 Experiment ID: {experiment_id}")
 
-        extraction_results = orchestrator.run_extraction(pdf_path, experiment_id=experiment_id, config=config, save_results=True, use_individual_extraction=True)
+        extraction_results = orchestrator.run_extraction(pdf_path, experiment_id=experiment_id, config=config, save_results=True)
         oml_results = orchestrator.run_oml_generation(experiment_id=experiment_id, save_results=True)
         
         # Detailed results
