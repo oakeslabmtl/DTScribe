@@ -247,7 +247,7 @@ class EnhancedRAGPipeline:
         Enhanced generation with Chain of Thought reasoning and self-validation.
         """
         docs_content = "\n\n".join([
-            f"Document {i+1}:\n{doc.page_content}" 
+            f"# Document {i+1}:\n{getattr(doc, 'page_content', str(doc))}" 
             for i, doc in enumerate(retrieved_docs)
         ])
         
@@ -414,7 +414,7 @@ JSON OUTPUT:
         Alternative generation method with manual JSON parsing as fallback.
         """
         docs_content = "\n\n".join([
-            f"Document {i+1}:\n{doc.page_content}" 
+            f"Document {i+1}:\n{getattr(doc, 'page_content', str(doc))}" 
             for i, doc in enumerate(retrieved_docs)
         ])
         

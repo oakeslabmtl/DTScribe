@@ -28,6 +28,7 @@ from experiment_tracking import (
     CharacteristicsExtractionResult, OMLGenerationResult
 )
 # from utils.memory import get_memory_usage_mb
+from judge_evaluator import JudgeEvaluator
 
 
 class ExtractionOrchestrator:
@@ -87,13 +88,15 @@ class ExtractionOrchestrator:
 
         self._retriever = DocumentRetriever(rag_pipeline, vectordb)
         self._extractor = CharacteristicsExtractor(rag_pipeline)
+        judge = JudgeEvaluator(rag_pipeline.llm)
 
         # Track block processing
         block_metrics = {
             'processing_times': {},
             'docs_retrieved': {},
-            # 'memory_usages': {},
             'success_rates': {},
+            'retries': {},
+            'judge': {},
         }
         errors = []
         warnings = []
@@ -104,13 +107,12 @@ class ExtractionOrchestrator:
         for i, processor in enumerate(self._block_processors, 1):
             print(f"\n--- Processing Block {i} ---")
 
-            result = processor.process(self._retriever, self._extractor)
-
-            # print(f"Block {i} Result: {result}")
+            result = processor.process(self._retriever, self._extractor, judge=judge, max_retries=2)
 
             # Track block metrics
             block_name = f"block_{i}"
             block_metrics['success_rates'][block_name] = result.success
+
             if f"{block_name}_processing_time" in result.metadata:
                 block_metrics['processing_times'][block_name] = result.metadata[f"{block_name}_processing_time"]
 
@@ -121,28 +123,23 @@ class ExtractionOrchestrator:
                 ]
             
             if f"{block_name}_input_tokens" in result.metadata:
-                total_input_tokens += result.metadata.get(f"block_{i}_input_tokens", 3)
+                total_input_tokens += result.metadata.get(f"{block_name}_input_tokens", 0)
 
             if f"{block_name}_output_tokens" in result.metadata:
-                total_output_tokens += result.metadata.get(f"block_{i}_output_tokens", 3)
+                total_output_tokens += result.metadata.get(f"{block_name}_output_tokens", 0)
             
-            # if f"{block_name}_memory_usage_mb" in result.metadata:
-            #     block_metrics['memory_usages'][block_name] = result.metadata[f"{block_name}_memory_usage_mb"]
-
+            if f"{block_name}_retries" in result.metadata:
+                block_metrics['retries'][block_name] = result.metadata[f"{block_name}_retries"]
+            
+            if f"{block_name}_judge" in result.metadata:
+                block_metrics['judge'][block_name] = result.metadata[f"{block_name}_judge"]
+         
             if result.success:
                 self._state_manager.merge_characteristics(result.characteristics)
-
                 # Update metadata
                 existing_metadata = self._state_manager.get_state("extraction_metadata") or {}
-                # block_metadata = result.metadata
                 existing_metadata.update(result.metadata)
                 self._state_manager.update_state({"extraction_metadata": existing_metadata})
-
-                # input_key = f"block{i}_input_tokens"
-                # output_key = f"block{i}_output_tokens"
-                # total_input_tokens += block_metadata.get(input_key, 3)
-                # total_output_tokens += block_metadata.get(output_key, 3)
-
             else:
                 error_msg = f"Block {i} processing failed: {result.error_message}"
                 print(f"❌ {error_msg}")
@@ -301,8 +298,8 @@ class ExtractionPipelineFactory:
         # Create block processors
         block_processors = [
             Block1Processor(),
-            # Block2Processor(),
-            # Block3Processor(),
+            Block2Processor(),
+            Block3Processor(),
             # Block4Processor(),
             # Block5Processor(),
             # Block6Processor()

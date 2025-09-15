@@ -22,7 +22,7 @@ from models.schemas import (
     Block1Characteristics, Block2Characteristics, Block3Characteristics,
     Block4Characteristics, Block5Characteristics, Block6Characteristics
 )
-
+from judge_evaluator import JudgeEvaluator
 
 class StateManager(IStateManager):
     """Manages pipeline state following SRP."""
@@ -159,8 +159,6 @@ class QualityAnalyzer(IQualityAnalyzer):
         total_characteristics = len(characteristics)
         valid_extractions = 0
         total_length = 0
-        # total_input_tokens = 0
-        # total_output_tokens = 0
 
         for v in characteristics.values():
             if v and v != "Not Found" and v.strip() != "":
@@ -169,22 +167,12 @@ class QualityAnalyzer(IQualityAnalyzer):
 
         avg_length = total_length / valid_extractions if valid_extractions > 0 else 0
 
-        # # aggregate token counts from the metadata dictionaries (per block)
-        # for v in metadata.values():
-        #     if isinstance(v, dict):
-        #         if "prompt_eval_count" in v:
-        #             total_input_tokens += v["prompt_eval_count"]
-        #         if "eval_count" in v:
-        #             total_output_tokens += v["eval_count"]
-
         return {
             "total_characteristics": total_characteristics,
             "extracted_count": valid_extractions,
             "not_found_count": total_characteristics - valid_extractions,
             "extraction_rate": (valid_extractions / total_characteristics * 100) if total_characteristics > 0 else 0,
             "average_description_length": avg_length,
-            # "total_input_tokens": total_input_tokens,
-            # "total_output_tokens": total_output_tokens,
             # "total_docs_retrieved": sum(v for k, v in metadata.items() if k.endswith("_docs_retrieved")),
             "total_chunks": metadata.get("total_chunks", 0)
         }
@@ -205,30 +193,67 @@ class BaseBlockProcessor(IBlockProcessor, ABC):
     def get_schema(self) -> Type[BaseModel]:  # pragma: no cover - abstract
         ...
 
-    def process(self, retriever: IDocumentRetriever, extractor: ICharacteristicsExtractor) -> ExtractionResult:
+    def process(self, retriever: IDocumentRetriever, extractor: ICharacteristicsExtractor,
+                judge: "JudgeEvaluator" = None, max_retries: int = 2) -> ExtractionResult:
+        
         config = self.get_config()
         label = self.block_label or f"Block {self.block_index}"
+
         print(f"🔍 Retrieving documents for {label} characteristics...")
+
         start_time = time.time()
-        meta_prefix = f"block_{self.block_index}"  # standardized underscore naming
+        meta_prefix = f"block_{self.block_index}"
+
         try:
             retrieved_docs = retriever.retrieve_documents(config.query, k=config.k)
-            print(f"🧠 Extracting {label} characteristics...")
-            output, response_metadata = extractor.extract(config.description, retrieved_docs, self.get_schema())
-            input_tokens = response_metadata.get('prompt_eval_count', 0)
-            output_tokens = response_metadata.get('eval_count', 0)
+            retries = 0
+            last_output = None
+            last_metadata = {}
+            judge_results = []
+
+            while True:
+                print(f"🧠 Extracting {label} (attempt {retries+1})...")
+                output, response_metadata = extractor.extract(config.description, retrieved_docs, self.get_schema())
+                last_output = output
+                last_metadata = response_metadata
+
+                # Judge step (optional)
+                low_quality = False
+                if judge is not None:
+
+                    extracted_dict = output.model_dump(exclude_none=True)
+                    judge_results = judge.evaluate(extracted_dict, retrieved_docs)
+
+                    # print(f"judge results in process:implementations.py:237: {type(judge_results),judge_results}")
+
+                    # Determine if any characteristic <= 3
+                    low_quality = any((r.get("score", 0) or 0) <= 3 for r in judge_results)
+
+                    if low_quality and retries < max_retries:
+                        print(f"⚠️ Low judge score detected in {label}. Retrying extraction...")
+                        retries += 1
+                        continue
+                break # could be no judge or acceptable quality or retries exhausted
+
             processing_time = time.time() - start_time
+            meta = {
+                f"{meta_prefix}_processing_time": processing_time,
+                f"{meta_prefix}_docs_retrieved": [getattr(doc, "page_content", str(doc)) for doc in retrieved_docs],
+                f"{meta_prefix}_input_tokens": last_metadata.get('prompt_eval_count', 0),
+                f"{meta_prefix}_output_tokens": last_metadata.get('eval_count', 0),
+                f"{meta_prefix}_retries": retries,
+            }
+            if judge_results:
+                meta[f"{meta_prefix}_judge"] = judge_results
+
             return ExtractionResult(
-                characteristics=output.model_dump(exclude_none=True),
-                metadata={
-                    f"{meta_prefix}_processing_time": processing_time,
-                    f"{meta_prefix}_docs_retrieved": [getattr(doc, "page_content", str(doc)) for doc in retrieved_docs],
-                    f"{meta_prefix}_input_tokens": input_tokens,
-                    f"{meta_prefix}_output_tokens": output_tokens,
-                },
+                characteristics=last_output.model_dump(exclude_none=True),
+                metadata=meta,
                 success=True
             )
-        except Exception as e:  # keep granular error inside block
+            
+        except Exception as e:
+            
             processing_time = time.time() - start_time
             return ExtractionResult(
                 characteristics={},
