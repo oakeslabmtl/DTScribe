@@ -29,6 +29,8 @@ class ExperimentConfig:
     top_k: int
     # repeat_penalty: float
     max_pages: Optional[int] = None
+    llm_judge: bool = False
+    oml_feedback_loop: bool = False
     custom_params: Optional[Dict[str, Any]] = None
 
 

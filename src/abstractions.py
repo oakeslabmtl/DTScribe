@@ -74,7 +74,7 @@ class IOMLGenerator(ABC):
     """Interface for OML generation."""
     
     @abstractmethod
-    def generate(self, characteristics: Dict[str, Any], vocab_files: Dict[str, str]) -> str:
+    def generate(self, characteristics: Dict[str, Any], vocab_files: Dict[str, str], no_validation: bool = False) -> str:
         """Generate OML from characteristics."""
         pass
 

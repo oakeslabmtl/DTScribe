@@ -466,7 +466,9 @@ JSON:
                         output_path: Path = Path(r"data\DTDF\src\oml\bentleyjoakes.github.io\LLM_described_DT\llm_dt.oml"),
                         catalog_parent_path: Path = Path(r"data\DTDF\\"),
                         writer: IOMLWriter = None,
-                        max_retries: int = 3) -> str:
+                        max_retries: int = 3,
+                        no_validation: bool = False
+                        ) -> str:
         """
         OML generation workflow with retries and validation.
         """
@@ -496,32 +498,38 @@ JSON:
         # Create component-based dictionary
         component_based_characteristics = {key: characteristics[key] for key in component_based_characteristics_keys if key in characteristics}
 
-        attempt_start = time.perf_counter()
-        print(f"📝 Attempt 1/{max_retries + 1}: Generating OML...")
-        description_based_oml = self.generate_description_based_oml(description_based_characteristics, description_based_vocab_mapping)
-        component_based_oml = self.generate_component_based_oml(component_based_characteristics, vocab_files, comma_separated_description_based_vocab_mapping_keys)
+        # Skip validation if specified
+        if no_validation:
+            print("🏗️ Generating OML without validation step...")
+            description_based_oml = self.generate_description_based_oml(description_based_characteristics, description_based_vocab_mapping)
+            component_based_oml = self.generate_component_based_oml(component_based_characteristics, vocab_files, comma_separated_description_based_vocab_mapping_keys)
+            print("⚠️ Skipping validation as per no_validation=True")
+            combined_oml = f"{component_based_oml}\n\n{description_based_oml}"
+            combined_oml = self._clean_llm_response(combined_oml)
+            write_success = writer.write_oml(combined_oml, output_path)
+            if not write_success:
+                print("❌ Failed to write OML to file")
+                return None
+            return combined_oml
+        else:
+            attempt_start = time.perf_counter()
+            print(f"📝 Attempt 1/{max_retries + 1}: Generating OML...")
+            description_based_oml = self.generate_description_based_oml(description_based_characteristics, description_based_vocab_mapping)
+            component_based_oml = self.generate_component_based_oml(component_based_characteristics, vocab_files, comma_separated_description_based_vocab_mapping_keys)
 
         # Retry mechanism for component-based OML generation
         print("🔄 Retrying component-based OML generation with multiple attempts...")
         for attempt in range(max_retries + 1):
             try:
-                # Validate the generated OML syntax
-                if not self._validate_oml_syntax(component_based_oml):
-                    elapsed = time.perf_counter() - attempt_start
-                    print(f"❌ Attempt {attempt + 1}: Invalid OML syntax detected (⏱️ {elapsed:.2f}s)")
-                    # Try to fix the OML based on validation feedback
-                    component_based_oml = self._fix_oml_with_feedback(
-                        oml_content=component_based_oml, 
-                        validation_output="There were OML syntax errors detected. Maybe the generation was incomplete.", 
-                        characteristics=component_based_characteristics, 
-                        vocab_files=vocab_files
-                    )
-                    continue
-
                 # Combine both OML description-based and component-based characteristics
                 print("🏗️ Combining OML descriptions...")
                 combined_oml = f"{component_based_oml}\n\n{description_based_oml}"
                 combined_oml = self._clean_llm_response(combined_oml)
+
+                has_proper_brackets = combined_oml.count('[') == combined_oml.count(']')
+                if not has_proper_brackets:
+                    print(f"❌ Attempt {attempt + 1}: OML syntax error - mismatched brackets")
+                    continue  # Retry with the fixed component-based OML
                 
                 # Write the OML content to file
                 write_success = writer.write_oml(combined_oml, output_path)
@@ -544,7 +552,8 @@ JSON:
                         component_based_oml, 
                         validation_output, 
                         component_based_characteristics, 
-                        vocab_files
+                        vocab_files,
+                        writer=writer
                     )
                     continue  # Retry with the fixed component-based OML
             except Exception as e:
@@ -679,17 +688,8 @@ Generate ONLY the OML code with no additional explanations:
         oml_content = oml_content.replace("<", "").replace(">", "")  # Remove any stray angle brackets for components
         return oml_content
 
-    def _validate_oml_syntax(self, oml_content: str) -> bool:
-        """Basic OML syntax validation."""
-        # Check for basic OML patterns
-        has_instances = "instance" in oml_content
-        has_proper_brackets = oml_content.count('[') == oml_content.count(']')
-        has_vocabulary_references = "DTDFVocab:" in oml_content or "base:" in oml_content
-        
-        return has_instances and has_proper_brackets and has_vocabulary_references
-
     def _fix_oml_with_feedback(self, oml_content: str, validation_output: str, 
-                              characteristics: Dict[str, Any], vocab_files: Dict[str, str]) -> str:
+                              characteristics: Dict[str, Any], vocab_files: Dict[str, str], writer: IOMLWriter = None,) -> str:
         """
         Fix OML content based on OpenCAESAR validation feedback.
         """
@@ -704,29 +704,30 @@ Generate ONLY the OML code with no additional explanations:
                     vocab_context += f"\n\n{name}:\n```oml\n{content}\n```"
             except FileNotFoundError:
                 print(f"Warning: Could not find '{path}'")
-        
+
+        # Combine OML content and validation output
+        oml_content = writer._combine_oml_with_validation_errors(oml_content, validation_output)
+        print("🔍 Validation errors integrated into OML content for context")
+        print(oml_content)
+
         # Create fix prompt with validation feedback
         fix_prompt = PromptTemplate.from_template("""
 You are an expert in OML (Ontological Modeling Language) debugging and fixing syntax errors.
 
 TASK: Fix the OML code based on the validation errors provided, given the set of characteristics this ontology is based on.
 
-ORIGINAL OML CODE:
+OML CODE WITH CONTEXTUAL VALIDATION ERRORS TO FIX MARKED AS 'TODO':
 ```oml
-{original_oml}
+{oml_content}
 ```
 
-VALIDATION ERRORS:
-{validation_errors}
-
-EXTRACTED CHARACTERISTICS:
+EXTRACTED CHARACTERISTICS FOR CONTEXT:
 {characteristics}
 
 ## ERROR ANALYSIS FRAMEWORK:
 
 ### 1. Error Pattern Recognition:
 Analyze each error by:
-- **Line number and position**: Locate exact error location
 - **Error type**: Identify the specific issue (reference, syntax, semantic)
 - **Root cause**: Determine why the error occurred
 - **Impact scope**: Assess which parts of code are affected
@@ -739,7 +740,7 @@ Analyze each error by:
   - **Fix**: Replace with correct DTDFVocab property or remove if invalid
 
 #### Syntax Errors:
-- Missing brackets, semicolons, or colons
+- Missing brackets, commas, or colons
 - Malformed instance declarations
 - Incorrect namespace usage
 
@@ -761,6 +762,7 @@ DTDFVocab:IsAutomatic        // Action → boolean
 base:contains                // Environment → Components
 base:desc                    // Any instance → description string
 base:isContainedIn          // Component → Environment
+DTDFVocab:hasEnvironment       // SystemUnderStudy → Environment
 ```
 
 ### 4. Systematic Fixing Process:
@@ -769,10 +771,10 @@ base:isContainedIn          // Component → Environment
 - Check each DTDFVocab property against valid properties list
 - Replace invalid properties with correct ones or remove entirely
 - Ensure namespace prefixes are correct
+- Make sure the capitalization matches exactly
 
 #### Step 2: Fix Syntax Issues
 - Verify bracket matching: `[ ]` pairs
-- Check semicolon placement after property values
 - Confirm colon usage in instance declarations
 
 #### Step 3: Resolve Relationship Consistency
@@ -789,10 +791,11 @@ base:isContainedIn          // Component → Environment
 Before outputting fixed code, verify:
 - [ ] All DTDFVocab properties are from the valid list above
 - [ ] All referenced instances are defined in the code
-- [ ] All brackets and semicolons are properly placed
+- [ ] All brackets and colons are properly placed
 - [ ] No circular references exist
 - [ ] Instance names are unique and properly formatted
 - [ ] Relationships follow correct vocabulary semantics
+- [ ] Capitalization and spelling of properties are exact
 
 ## SYNTAX EXAMPLES:
 {guiding_syntax}
@@ -802,10 +805,10 @@ Before outputting fixed code, verify:
 2. **Preserve Intent**: Keep original structure and content where possible
 3. **Valid Properties Only**: Replace invalid properties with correct ones from the reference list
 4. **Complete Relationships**: Ensure all referenced instances exist
-5. **Proper Syntax**: Fix brackets, semicolons, and formatting issues
+5. **Proper Syntax**: Fix brackets, capitalization, and formatting issues
 
 ## CRITICAL RULES:
-- NEVER invent new DTDFVocab properties - use only the valid ones listed above
+- NEVER invent new DTDFVocab properties - use only the valid ones listed above exactly
 - ALWAYS preserve the original instance names unless they cause syntax errors
 - ONLY remove code if it's completely invalid and cannot be corrected
 - MAINTAIN all meaningful relationships and descriptions from the original
@@ -814,7 +817,7 @@ Generate ONLY the corrected OML code with no explanations or comments:
 """)
         
         formatted_prompt = fix_prompt.format(
-            original_oml=oml_content,
+            oml_content=oml_content,
             validation_errors=validation_output,
             characteristics=json.dumps(characteristics, indent=2),
             vocab_context=vocab_context,
