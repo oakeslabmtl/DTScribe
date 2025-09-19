@@ -119,7 +119,7 @@ class EnhancedRAGPipeline:
         except Exception as e:
             return {"error": str(e), "total_pages": 0}
         
-    def enhanced_pdf_processing(self, pdf_path: str, chunk_size: int = 1500, overlap: int = 200, max_pages: int = None) -> Chroma:
+    def enhanced_pdf_processing(self, pdf_path: str, chunk_size: int, overlap: int, max_pages: int = None) -> Chroma:
         """
         Enhanced PDF processing with better chunking strategy and metadata preservation.
         
@@ -193,53 +193,52 @@ class EnhancedRAGPipeline:
     def enhanced_retrieval(self, vectordb: Chroma, query: str, k: int = 5) -> List:
         """
         Enhanced retrieval with multiple strategies and query expansion.
-        """      
-        all_docs = []
+        """ 
 
         # Standard similarity search
-        docs = vectordb.similarity_search(query=query, k=k)
-            
-        all_docs.extend(docs)
+        docs = vectordb.similarity_search_with_relevance_scores(query=query, k=k) # output relevance scores, they are already ranked by relevance
+        # print(f"\n\nsimilarity_search_with_relevance_scores. \ntype(docs):{type(docs)} \n\nDOCS:{docs}\n\n") # debug print
         
         # 3. Re-rank documents based on relevance and technical content
-        ranked_docs = self._rerank_documents(all_docs, query)
+        # ranked_docs = self._rerank_documents(all_docs, query)
         
         # 4. Remove duplicates while preserving order
         seen_content = set()
         unique_docs = []
-        for doc in ranked_docs:
-            content_hash = hash(doc.page_content)
+        # for doc in ranked_docs:
+        for doc in docs:
+            content_hash = hash(doc[0].page_content) # first element is the document, second is the score
             if content_hash not in seen_content:
                 seen_content.add(content_hash)
                 unique_docs.append(doc)
         
         return unique_docs[:k]
     
-    def _rerank_documents(self, docs: List, original_query: str) -> List:
-        """Re-rank documents based on multiple factors."""
-        def score_document(doc):
-            # content = doc.page_content.lower()
-            # query_lower = original_query.lower()
+    # def _rerank_documents(self, docs: List, original_query: str) -> List:
+    #     """Re-rank documents based on multiple factors."""
+    #     def score_document(doc):
+    #         # content = doc.page_content.lower()
+    #         # query_lower = original_query.lower()
 
-            content = doc.page_content
-            query_embedding = self.embeddings.embed_query(original_query)
-            doc_embedding = self.embeddings.embed_documents([content])[0]
+    #         content = doc.page_content
+    #         query_embedding = self.embeddings.embed_query(original_query)
+    #         doc_embedding = self.embeddings.embed_documents([content])[0]
 
-            # Compute cosine similarity
-            def cosine_similarity(a, b):
-                dot_product = sum(x * y for x, y in zip(a, b))
-                norm_a = sum(x * x for x in a) ** 0.5
-                norm_b = sum(y * y for y in b) ** 0.5
-                return dot_product / (norm_a * norm_b + 1e-8)
+    #         # Compute cosine similarity
+    #         def cosine_similarity(a, b):
+    #             dot_product = sum(x * y for x, y in zip(a, b))
+    #             norm_a = sum(x * x for x in a) ** 0.5
+    #             norm_b = sum(y * y for y in b) ** 0.5
+    #             return dot_product / (norm_a * norm_b + 1e-8)
             
-            relevance_score = cosine_similarity(query_embedding, doc_embedding)
+    #         relevance_score = cosine_similarity(query_embedding, doc_embedding)
 
-            # Length penalty (prefer moderate length chunks)
-            length_penalty = abs(len(content.split()) - 200) / 1000
+    #         # Length penalty (prefer moderate length chunks)
+    #         length_penalty = abs(len(content.split()) - 200) / 1000
 
-            return relevance_score - length_penalty
+    #         return relevance_score - length_penalty
         
-        return sorted(docs, key=score_document, reverse=True)
+    #     return sorted(docs, key=score_document, reverse=True)
     
     def generate_with_cot_and_validation(self, description: str, retrieved_docs: List, 
                                        schema: Type[BaseModel]) -> BaseModel:

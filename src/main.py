@@ -73,7 +73,7 @@ class ExtractionOrchestrator:
         vector_db_path = Path("vector_db")
         if regenerate_db or not vector_db_path.exists() or not any(vector_db_path.iterdir()):
             print("📁 Vector DB not found, processing PDF and creating vector DB...")
-            init_result = self._initializer.initialize(pdf_path)
+            init_result = self._initializer.initialize(pdf_path, config)
             self._state_manager.update_state(init_result)
         else:
             print("📂 Vector DB found, loading existing vector DB...")

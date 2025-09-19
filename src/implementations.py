@@ -83,7 +83,9 @@ class PipelineInitializer(IPipelineInitializer):
     def __init__(self):
         self._rag_pipeline = None
     
-    def initialize(self, pdf_path: str) -> Dict[str, Any]:
+    # def initialize(self, pdf_path: str) -> Dict[str, Any]: # NOTE: old vversion, didn't pass config, so chunk size and overlap were fixed
+
+    def initialize(self, pdf_path: str, config: ExtractionConfig) -> Dict[str, Any]:
         if not Path(pdf_path).exists():
             raise FileNotFoundError(f"PDF file not found: {pdf_path}")
         
@@ -99,7 +101,7 @@ class PipelineInitializer(IPipelineInitializer):
             print(f"   📝 Title: {pdf_info.get('title', 'Unknown')}")
         
         print("📄 Processing PDF with enhanced chunking...")
-        vectordb = self._rag_pipeline.enhanced_pdf_processing(pdf_path)
+        vectordb = self._rag_pipeline.enhanced_pdf_processing(pdf_path, chunk_size=config.chunk_size, overlap=config.chunk_overlap)
         
         print("✅ Pipeline initialized successfully")
         return {
