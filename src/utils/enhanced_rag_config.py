@@ -213,31 +213,7 @@ class EnhancedRAGPipeline:
                 unique_docs.append(doc)
         
         return unique_docs[:k]
-    
-    # def _rerank_documents(self, docs: List, original_query: str) -> List:
-    #     """Re-rank documents based on multiple factors."""
-    #     def score_document(doc):
-    #         # content = doc.page_content.lower()
-    #         # query_lower = original_query.lower()
 
-    #         content = doc.page_content
-    #         query_embedding = self.embeddings.embed_query(original_query)
-    #         doc_embedding = self.embeddings.embed_documents([content])[0]
-
-    #         # Compute cosine similarity
-    #         def cosine_similarity(a, b):
-    #             dot_product = sum(x * y for x, y in zip(a, b))
-    #             norm_a = sum(x * x for x in a) ** 0.5
-    #             norm_b = sum(y * y for y in b) ** 0.5
-    #             return dot_product / (norm_a * norm_b + 1e-8)
-            
-    #         relevance_score = cosine_similarity(query_embedding, doc_embedding)
-
-    #         # Length penalty (prefer moderate length chunks)
-    #         length_penalty = abs(len(content.split()) - 200) / 1000
-
-    #         return relevance_score - length_penalty
-        
     #     return sorted(docs, key=score_document, reverse=True)
     
     def generate_with_cot_and_validation(self, description: str, retrieved_docs: List, 
@@ -273,7 +249,7 @@ INSTRUCTIONS:
    - Provide specific, detailed descriptions based ONLY on the provided documents
    - Include concrete technical details (tools, technologies, protocols, methods)
    - Be precise about quantities, frequencies, and specifications when mentioned
-   - If no evidence is found, state "Not Found"
+   - If no evidence is found, state "Not in Document"
 
 3. VALIDATION PHASE: Review your extracted information:
    - Ensure all details come from the provided documents
@@ -387,7 +363,7 @@ DOCUMENTS:
 TASK: Extract the following characteristics and return as valid JSON only:
 {description}
 
-For each characteristic, provide a detailed description based on the documents, or "Not Found" if no information exists.
+For each characteristic, provide a detailed description based on the documents, or "Not in Document" if no information exists.
 
 RETURN ONLY VALID JSON IN THIS FORMAT:
 {parser.get_format_instructions()}
@@ -402,7 +378,7 @@ JSON OUTPUT:
         field_names = list(schema.model_fields.keys())
         
         # Create a dict with "Not Found" for all fields
-        fallback_data = {field: "Not Found" for field in field_names}
+        fallback_data = {field: "Not in Document" for field in field_names}
         
         # Create and return the schema instance
         return schema(**fallback_data)
@@ -427,15 +403,15 @@ DOCUMENTS:
 EXTRACT THESE CHARACTERISTICS:
 {description}
 
-For each characteristic, provide a detailed description based ONLY on the documents, or "Not Found" if no information exists.
+For each characteristic, provide a detailed description based ONLY on the documents, or "Not in Document" if no information exists.
 
 IMPORTANT: Respond with ONLY a valid JSON object. No additional text, explanations, or formatting.
 
 Example format:
 {{
-    "system_under_study": "description here or Not Found",
-    "dt_services": "description here or Not Found",
-    "tooling_and_enablers": "description here or Not Found"
+    "system_under_study": "description here or Not in Document",
+    "dt_services": "description here or Not in Document",
+    "tooling_and_enablers": "description here or Not in Document"
 }}
 
 JSON:
@@ -576,7 +552,7 @@ JSON:
         oml_parts = []
         for key in characteristics:
             value = characteristics.get(key)
-            if value and value != "Not Found":
+            if value and value != "Not in Document":
                 oml_parts.append(f"instance {key} : DTDFVocab:{vocab_mapping.get(key, 'Unknown')} [\n    base:desc \"{value}\"\n]")
         joined_parts = "\n\n".join(oml_parts)
         return self._clean_llm_response(joined_parts)
@@ -622,7 +598,7 @@ LIST OF ALREADY GENERATED CHARACTERISTICS (do not generate again):
 ## PROCESSING RULES:
 
 ### 1. Characteristic Analysis:
-- Only generate instances for characteristics with meaningful content (ignore "Not Found")
+- Only generate instances for characteristics with meaningful content (ignore "Not in Document")
 - For characteristics containing multiple items, create separate instances for each distinct item
 - Extract specific technical details from characteristic descriptions for instance names and descriptions
 
@@ -658,7 +634,7 @@ Before generating, ensure:
 - [ ] All instance names are unique and CamelCase
 - [ ] All relationships follow the mandatory data flow pattern
 - [ ] Descriptions are specific and extracted from characteristics
-- [ ] No "Not Found" characteristics are included
+- [ ] No "Not in Document" characteristics are included
 - [ ] Multiple items in characteristics are split into separate instances
 - [ ] All OML syntax is correct (brackets, colons, commas)
 

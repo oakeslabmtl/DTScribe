@@ -163,7 +163,7 @@ class QualityAnalyzer(IQualityAnalyzer):
         total_length = 0
 
         for v in characteristics.values():
-            if v and v != "Not Found" and v.strip() != "":
+            if v and v != "Not in Document" and v.strip() != "":
                 valid_extractions += 1
                 total_length += len(v)
 
@@ -224,9 +224,12 @@ class BaseBlockProcessor(IBlockProcessor, ABC):
                 if judge is not None:
 
                     extracted_dict = output.model_dump(exclude_none=True)
-                    judge_results = judge.evaluate(extracted_dict, retrieved_docs)
 
-                    # print(f"judge results in process:implementations.py:237: {type(judge_results),judge_results}")
+                    print(f"🔬 Performing LLM evaluation of {label} (attempt {retries+1})...")
+
+                    judge_results = judge.evaluate(extracted_dict, retrieved_docs, config.description)
+
+                    # print(f"\n\njudge results in process:implementations.py:237: {type(judge_results),judge_results}\n\n")
 
                     # Determine if any characteristic <= 3
                     low_quality = any((r.get("score", 0) or 0) <= 3 for r in judge_results)
@@ -237,10 +240,14 @@ class BaseBlockProcessor(IBlockProcessor, ABC):
                         continue
                 break # could be no judge or acceptable quality or retries exhausted
 
+            print(f"LLM evaluation results for {label}: \n{judge_results}\n")
+
+
             processing_time = time.time() - start_time
             meta = {
                 f"{meta_prefix}_processing_time": processing_time,
-                f"{meta_prefix}_docs_retrieved": [getattr(doc, "page_content", str(doc)) for doc in retrieved_docs],
+                # f"{meta_prefix}_docs_retrieved": [getattr(doc, "page_content", str(doc)) for doc in retrieved_docs], # TODO: adjust to new doc format
+                f"{meta_prefix}_docs_retrieved": [str(doc[0].page_content) for doc in retrieved_docs],
                 f"{meta_prefix}_input_tokens": last_metadata.get('prompt_eval_count', 0),
                 f"{meta_prefix}_output_tokens": last_metadata.get('eval_count', 0),
                 f"{meta_prefix}_retries": retries,

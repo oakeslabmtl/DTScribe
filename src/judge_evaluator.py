@@ -34,21 +34,21 @@ You must:
 
 
 1 – Very poor
-- “Not found” or states the characteristic is missing.
+- “Not in Document” or states the characteristic is missing when the source documents DO mention relevant information.
 - Vague or generic information.
 - Uses speculative language such as “likely”, “possibly” instead of directly using the text.
-- No relevance to the specific system in the sources.
+- No relevance to the specific system mentioned in the Source Documents.
 
 
 2 – Poor
 - Very general definition.
-- Not specific to the system mentioned in the source documents.
+- Not specific to the system mentioned in the Source Documents.
 - Lacks technical content.
 
 
 3 – Fair
 - Relevant to the specific system.
-- Some correct context, but missing key technical details.
+- Some correct context, but missing key technical details that are present in the Source Documents.
 
 
 4 – Good
@@ -58,6 +58,7 @@ You must:
 
 
 5 – Very good
+- “Not in Document” or states the characteristic is missing and the Source Documents DO NOT contain relevant information.
 - Highly specific and detailed.
 - Provides in-depth technical explanation of the characteristic’s behavior within the system.
 - Strongly grounded in the provided sources.
@@ -67,10 +68,13 @@ You must:
 
 
 ## Instructions to the Evaluator LLM
-- Only use the provided source text snippets to determine accuracy.
+- Only use the provided Source Documents and the Characteristics Description to determine accuracy of the Extracted Characteristics.
 - If the extraction includes unsupported claims or speculation, reduce the score accordingly.
-- If no evidence supports the extraction or the extraction is "Not Found", assign a 1.
+- If no evidence supports the extraction, assign a 1.
+- If "Not in Document" is stated but evidence exists in the sources, assign a 1.
+- If "Not in Document" is stated and no evidence exists in the sources, assign a 5.
 - Always explain your reasoning before giving the score.
+- 
 
 
 ---
@@ -104,9 +108,11 @@ Example:
 ---
 
 
-Extracted Characteristic:
+Extracted Characteristics:
 {characteristics}
 
+Characteristics Description:
+{characteristics_description}
 
 Source Evidence:
 {retrieved_docs}
@@ -136,7 +142,7 @@ Source Evidence:
         return txt
     
 
-    def evaluate(self, extracted: Dict[str, Any], docs: List[Any]) -> List[Dict[str, Any]]:
+    def evaluate(self, extracted: Dict[str, Any], docs: List[Any], description: str) -> List[Dict[str, Any]]:
     
         docs_content = "\n\n".join([
             f"# Document {i+1}:\n{getattr(doc, 'page_content', str(doc))}" 
@@ -144,16 +150,18 @@ Source Evidence:
         ])
         
         characteristics_text = json.dumps(extracted, indent=2)
+        characteristics_description = description
 
         # print(f"JudgeEvaluator.evaluate(): Characteristics to evaluate: {characteristics_text}")
 
         prompt = self.prompt.format(
             characteristics=characteristics_text,
+            characteristics_description=characteristics_description,
             retrieved_docs=docs_content
         )
 
-        # print(f"JudgeEvaluator.evaluate(): Generated prompt for LLM:\n{prompt}")
-        
+        print(f"JudgeEvaluator.evaluate(): Generated prompt for LLM:\n{prompt}")
+    
         response = self.llm.invoke(prompt)
         # print(f"JudgeEvaluator.evaluate(): LLM raw response: {response}")
 

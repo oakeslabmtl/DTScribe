@@ -223,18 +223,19 @@ class ExtractionOrchestrator:
             print("❌ No characteristics available to generate OML. Run extraction first or specify --source-experiment-id.")
             return self._state_manager.get_all_state()
 
-        # Ensure RAG pipeline is available (load existing DB if necessary for standalone mode)
-        if self._state_manager.get_state("rag_pipeline") is None:
-            vector_db_path = Path("vector_db")
-            if vector_db_path.exists() and any(vector_db_path.iterdir()):
-                print("📂 RAG pipeline missing. Loading existing vector DB for OML generation...")
-                try:
-                    init_result = self._initializer.load_existing_vector_db(str(vector_db_path))
-                    self._state_manager.update_state(init_result)
-                except Exception as e:
-                    print(f"⚠️ Failed to load existing vector DB (continuing): {e}")
-            else:
-                print("⚠️ No vector DB directory found; proceeding without RAG context (may reduce OML quality).")
+        # TODO: remove this part, ensure functionality
+        # # Ensure RAG pipeline is available (load existing DB if necessary for standalone mode)
+        # if self._state_manager.get_state("rag_pipeline") is None:
+        #     vector_db_path = Path("vector_db")
+        #     if vector_db_path.exists() and any(vector_db_path.iterdir()):
+        #         print("📂 RAG pipeline missing. Loading existing vector DB for OML generation...")
+        #         try:
+        #             init_result = self._initializer.load_existing_vector_db(str(vector_db_path))
+        #             self._state_manager.update_state(init_result)
+        #         except Exception as e:
+        #             print(f"⚠️ Failed to load existing vector DB (continuing): {e}")
+        #     else:
+        #         print("⚠️ No vector DB directory found; proceeding without RAG context (may reduce OML quality).")
 
         try:
             vocab_files = {
