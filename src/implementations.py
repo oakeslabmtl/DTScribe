@@ -140,10 +140,10 @@ class OMLGenerator(IOMLGenerator):
     
     def __init__(self, rag_pipeline: EnhancedRAGPipeline):
         self._rag_pipeline = rag_pipeline
-    
-    def generate(self, characteristics: Dict[str, Any], vocab_files: Dict[str, str]) -> str:
+
+    def generate(self, characteristics: Dict[str, Any], vocab_files: Dict[str, str], no_validation: bool = False) -> str:
         print("🏗️ Generating OML description...")
-        oml_output = self._rag_pipeline.generate_oml(characteristics, vocab_files)
+        oml_output = self._rag_pipeline.generate_oml(characteristics, vocab_files, no_validation=no_validation)
         if oml_output and oml_output.strip() != "":
             print("OML generation completed")
         else:

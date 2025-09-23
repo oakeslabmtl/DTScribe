@@ -51,8 +51,10 @@ parser.add_argument("--chunk-overlap", type=int, default=200)
 parser.add_argument("--temperature", type=float, default=0.1)
 parser.add_argument("--model-name", default="qwen3:4b")
 parser.add_argument("--embedding-model", default="nomic-embed-text")
-parser.add_argument("--source-experiment-id", help="Existing experiment id (hash_timestamp or just hash for latest) containing characteristics for standalone OML generation")
+parser.add_argument("--exp-id", help="Existing experiment id (hash_timestamp or just hash for latest) containing characteristics for standalone OML generation")
 parser.add_argument("--no-save", action="store_true", help="Do not persist results")
+parser.add_argument("--no-regenerate-db", action="store_true", help="Do not regenerate the vector database even if it exists")
+parser.add_argument("--no-oml-validation", action="store_true", help="Skip OML validation step")
 ```
 
 ## Analyzing results
