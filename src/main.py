@@ -56,7 +56,7 @@ class ExtractionOrchestrator:
         self._extractor: ICharacteristicsExtractor = None
         self.last_experiment_id: Optional[str] = None
 
-    def run_extraction(self, pdf_path: str, experiment_id: Optional[str] = None, config: Optional[ExperimentConfig] = None, save_results: bool = True, no_regenerate_db: bool = True) -> Dict[str, Any]:
+    def run_extraction(self, pdf_path: str, experiment_id: Optional[str] = None, config: Optional[ExperimentConfig] = None, save_results: bool = True, no_regenerate_db: bool = True, no_llm_judge: bool = False) -> Dict[str, Any]:
         """Run the complete extraction pipeline with optional experiment tracking."""
         print("🚀 Starting Enhanced Digital Twin Characteristics Extraction")
         print("=" * 60)
@@ -88,10 +88,13 @@ class ExtractionOrchestrator:
         rag_pipeline = self._state_manager.get_state("rag_pipeline")
         vectordb = self._state_manager.get_state("vectordb")
 
-
         self._retriever = DocumentRetriever(rag_pipeline, vectordb)
         self._extractor = CharacteristicsExtractor(rag_pipeline)
-        judge = JudgeEvaluator(rag_pipeline.llm)
+        if no_llm_judge:
+            print("⚠️ Skipping LLM judge step as per --no-llm-judge.")
+            judge = None
+        else:
+            judge = JudgeEvaluator(rag_pipeline.llm)
 
         # Track block processing
         block_metrics = {
@@ -374,6 +377,7 @@ def main():
     parser.add_argument("--no-save", action="store_true", help="Do not persist results")
     parser.add_argument("--no-regenerate-db", action="store_true", help="Do not regenerate the vector database even if it exists")
     parser.add_argument("--no-oml-validation", action="store_true", help="Skip OML validation step")
+    parser.add_argument("--no-llm-judge", action="store_true", help="Skip LLM judge step")
     args = parser.parse_args()
 
     orchestrator = ExtractionPipelineFactory.create_orchestrator(with_experiment_tracking=True)
@@ -390,7 +394,7 @@ def main():
             temperature=args.temperature,
             custom_params={"cli": True}
         )
-        extraction_results = orchestrator.run_extraction(args.pdf, experiment_id=None, config=config, save_results=not args.no_save, no_regenerate_db=args.no_regenerate_db)
+        extraction_results = orchestrator.run_extraction(args.pdf, experiment_id=None, config=config, save_results=not args.no_save, no_regenerate_db=args.no_regenerate_db, no_llm_judge=args.no_llm_judge)
         experiment_id = orchestrator.last_experiment_id
 
     if args.mode in ("oml", "both"):

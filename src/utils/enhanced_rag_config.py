@@ -529,6 +529,8 @@ JSON:
                 has_proper_brackets = combined_oml.count('[') == combined_oml.count(']')
                 if not has_proper_brackets:
                     print(f"❌ Attempt {attempt + 1}: OML syntax error - mismatched brackets")
+                    description_based_oml = self.generate_description_based_oml(description_based_characteristics, description_based_vocab_mapping)
+                    component_based_oml = self.generate_component_based_oml(component_based_characteristics, vocab_files, comma_separated_description_based_vocab_mapping_keys)
                     continue  # Retry with the fixed component-based OML
                 
                 # Write the OML content to file
@@ -594,7 +596,7 @@ JSON:
     def generate_component_based_oml(self, characteristics: Dict[str, Any], 
                                     vocab_files: Dict[str, str], description_based_vocab_mapping: str) -> str:
         """Generate OML based on components and vocabulary files."""
-        print("🏗️ Generating component-based OML description...")
+        print("🏗️ Generating component-based OML...")
         # Load vocabulary files
         vocab_context = ""
         for name, path in vocab_files.items():
@@ -613,9 +615,6 @@ TASK: Generate complete, syntactically correct OML code for a Digital Twin based
 
 EXTRACTED CHARACTERISTICS:
 {characteristics}
-
-VOCABULARY REFERENCE:
-{vocab_context}
 
 LIST OF ALREADY GENERATED CHARACTERISTICS (do not generate again):
 {description_based_vocab_mapping}

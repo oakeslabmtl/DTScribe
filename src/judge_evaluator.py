@@ -33,33 +33,29 @@ You must:
 ## Scoring Scale
 
 
-1 – Very poor
-- “Not found” or states the characteristic is missing.
+1. Very poor
+- "Not found" or states the characteristic is missing.
 - Vague or generic information.
-- Uses speculative language such as “likely”, “possibly” instead of directly using the text.
+- Uses speculative language such as "likely", "possibly" instead of directly using the text.
 - No relevance to the specific system in the sources.
 
-
-2 – Poor
+2. Poor
 - Very general definition.
 - Not specific to the system mentioned in the source documents.
 - Lacks technical content.
 
-
-3 – Fair
+3. Fair
 - Relevant to the specific system.
 - Some correct context, but missing key technical details.
 
-
-4 – Good
+4. Good
 - Correct and specific.
 - Contains relevant technical details.
 - Could still be expanded with more depth.
 
-
-5 – Very good
+5. Very good
 - Highly specific and detailed.
-- Provides in-depth technical explanation of the characteristic’s behavior within the system.
+- Provides in-depth technical explanation of the characteristic's behavior within the system.
 - Strongly grounded in the provided sources.
 
 
