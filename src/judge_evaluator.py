@@ -33,10 +33,10 @@ You must:
 ## Scoring Scale
 
 
-1 – Very poor
-- “Not in Document” or states the characteristic is missing when the source documents DO mention relevant information.
+1. Very poor
+- "Not in Document" or states the characteristic is missing when the source documents DO mention relevant information.
 - Vague or generic information.
-- Uses speculative language such as “likely”, “possibly” instead of directly using the text.
+- Uses speculative language such as "likely", "possibly" instead of directly using the text.
 - No relevance to the specific system mentioned in the Source Documents.
 
 2. Poor
@@ -54,8 +54,8 @@ You must:
 - Could still be expanded with more depth.
 
 
-5 – Very good
-- “Not in Document” or states the characteristic is missing and the Source Documents DO NOT contain relevant information.
+5. Very good
+- "Not in Document" or states the characteristic is missing and the Source Documents DO NOT contain relevant information.
 - Highly specific and detailed.
 - Provides in-depth technical explanation of the characteristic's behavior within the system.
 - Strongly grounded in the provided sources.
@@ -105,13 +105,13 @@ Example:
 ---
 
 
-Extracted Characteristics:
+## Extracted Characteristics:
 {characteristics}
 
-Characteristics Description:
+## Characteristics Description:
 {characteristics_description}
 
-Source Evidence:
+## Source Evidence:
 {retrieved_docs}
 ---
 """
@@ -142,7 +142,7 @@ Source Evidence:
     def evaluate(self, extracted: Dict[str, Any], docs: List[Any], description: str) -> List[Dict[str, Any]]:
     
         docs_content = "\n\n".join([
-            f"# Document {i+1}:\n{getattr(doc, 'page_content', str(doc))}" 
+            f"## Document {i+1}:\n{str(doc[0].page_content)}" 
             for i, doc in enumerate(docs)
         ])
         
@@ -157,7 +157,7 @@ Source Evidence:
             retrieved_docs=docs_content
         )
 
-        print(f"JudgeEvaluator.evaluate(): Generated prompt for LLM:\n{prompt}")
+        # print(f"JudgeEvaluator.evaluate(): Generated prompt for LLM:\n{prompt}")
     
         response = self.llm.invoke(prompt)
         # print(f"JudgeEvaluator.evaluate(): LLM raw response: {response}")

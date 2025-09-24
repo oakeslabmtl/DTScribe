@@ -221,8 +221,9 @@ class EnhancedRAGPipeline:
         """
         Enhanced generation with Chain of Thought reasoning and self-validation.
         """
+        
         docs_content = "\n\n".join([
-            f"# Document {i+1}:\n{getattr(doc, 'page_content', str(doc))}" 
+            f"## Document {i+1}:\n{str(doc[0].page_content)}" 
             for i, doc in enumerate(retrieved_docs)
         ])
         

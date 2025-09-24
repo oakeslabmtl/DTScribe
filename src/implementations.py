@@ -240,13 +240,17 @@ class BaseBlockProcessor(IBlockProcessor, ABC):
                         continue
                 break # could be no judge or acceptable quality or retries exhausted
 
-            print(f"LLM evaluation results for {label}: \n{judge_results}\n")
+            if judge_results:
+                print(f"💡 LLM evaluation results for {label}:")
+                for res in judge_results:
+                    print(f"  - Characteristic: {res.get('characteristic')}")
+                    print(f"    Score: {res.get('score')}")
+                    print(f"    Reasoning: {res.get('reasoning')}\n")
 
 
             processing_time = time.time() - start_time
             meta = {
                 f"{meta_prefix}_processing_time": processing_time,
-                # f"{meta_prefix}_docs_retrieved": [getattr(doc, "page_content", str(doc)) for doc in retrieved_docs], # TODO: adjust to new doc format
                 f"{meta_prefix}_docs_retrieved": [str(doc[0].page_content) for doc in retrieved_docs],
                 f"{meta_prefix}_input_tokens": last_metadata.get('prompt_eval_count', 0),
                 f"{meta_prefix}_output_tokens": last_metadata.get('eval_count', 0),
@@ -282,17 +286,17 @@ class Block1Processor(BaseBlockProcessor):
     def get_config(self) -> ExtractionConfig:
         return ExtractionConfig(
             query="""
-            Digital Twin system purpose and objectives: What is the Physical Twin system being studied?
-            What specific services does the Digital Twin provide to users and stakeholders?
-            What tools, technologies, and enablers support the Digital Twin's functionality and services?
-            System architecture and implementation approach for achieving Digital Twin goals.
+Digital Twin system purpose and objectives: What is the Physical Twin system being studied?
+What specific services does the Digital Twin provide to users and stakeholders?
+What tools, technologies, and enablers support the Digital Twin's functionality and services?
+System architecture and implementation approach for achieving Digital Twin goals.
             """,
             description="""
-            system_under_study: Provide a comprehensive description of the Physical Twin system being studied. Include the type of system, its main components, operational domain, and key characteristics that make it suitable for digital twinning.
-            
-            dt_services: Detail the specific services that the Digital Twin provides to users and the physical system. Include service types (monitoring, optimization, prediction, control, visualization), target users, and service capabilities.
-            
-            tooling_and_enablers: Describe the specific tools, technologies, frameworks, and enablers used to implement the Digital Twin. Include software platforms, development tools, simulation engines, databases, and any specialized technologies with their roles and functionalities.
+system_under_study: Provide a comprehensive description of the Physical Twin system being studied. Include the type of system, its main components, operational domain, and key characteristics that make it suitable for digital twinning.
+
+dt_services: Detail the specific services that the Digital Twin provides to users and the physical system. Include service types (monitoring, optimization, prediction, control, visualization), target users, and service capabilities.
+
+tooling_and_enablers: Describe the specific tools, technologies, frameworks, and enablers used to implement the Digital Twin. Include software platforms, development tools, simulation engines, databases, and any specialized technologies with their roles and functionalities.
             """,
             k=6
         )
@@ -307,19 +311,19 @@ class Block2Processor(BaseBlockProcessor):
     def get_config(self) -> ExtractionConfig:
         return ExtractionConfig(
             query="""
-            Digital Twin temporal aspects: synchronization frequencies, time scales, and temporal requirements.
-            System multiplicities and hierarchies: multiple twins, distributed architectures, coordination mechanisms.
-            Digital Twin constellation orchestration: system-wide coordination, component integration, service orchestration.
-            External system integration: data exchange with other systems, interoperability, horizontal integration patterns.
+Digital Twin temporal aspects: synchronization frequencies, time scales, and temporal requirements.
+System multiplicities and hierarchies: multiple twins, distributed architectures, coordination mechanisms.
+Digital Twin constellation orchestration: system-wide coordination, component integration, service orchestration.
+External system integration: data exchange with other systems, interoperability, horizontal integration patterns.
             """,
             description="""
-            twinning_time_scale: Describe the temporal aspects of the Digital Twin including synchronization frequencies between physical and digital components, time scales for different services, latency requirements, and temporal granularity needs.
-            
-            multiplicities: Describe the multiplicities and hierarchical structure including multiple digital twin instances, centralized vs decentralized architectures, coordination mechanisms between twins, and scope of responsibilities for each instance.
-            
-            dt_constellation: Describe the overall orchestration and coordination of the Digital Twin system including architecture patterns, component integration, resource management, and system-wide coordination mechanisms.
-            
-            horizontal_integration: Describe integration with external systems including data exchange protocols, interoperability standards, dependencies on external systems, and integration patterns with other Digital Twins or enterprise systems.
+twinning_time_scale: Describe the temporal aspects of the Digital Twin including synchronization frequencies between physical and digital components, time scales for different services, latency requirements, and temporal granularity needs.
+
+multiplicities: Describe the multiplicities and hierarchical structure including multiple digital twin instances, centralized vs decentralized architectures, coordination mechanisms between twins, and scope of responsibilities for each instance.
+
+dt_constellation: Describe the overall orchestration and coordination of the Digital Twin system including architecture patterns, component integration, resource management, and system-wide coordination mechanisms.
+
+horizontal_integration: Describe integration with external systems including data exchange protocols, interoperability standards, dependencies on external systems, and integration patterns with other Digital Twins or enterprise systems.
             """,
             k=7
         )
@@ -334,19 +338,19 @@ class Block3Processor(BaseBlockProcessor):
     def get_config(self) -> ExtractionConfig:
         return ExtractionConfig(
             query="""
-            Digital Twin models and data: computational models, data sources, model types, data management, model validation.
-            Physical acting components: actuators, control mechanisms, remote control capabilities, actuation systems.
-            Physical sensing components: sensors, measurement systems, data collection mechanisms, sensing technologies.
-            Model fidelity and validation: accuracy requirements, validation methods, uncertainty quantification, verification processes.
+Digital Twin models and data: computational models, data sources, model types, data management, model validation.
+Physical acting components: actuators, control mechanisms, remote control capabilities, actuation systems.
+Physical sensing components: sensors, measurement systems, data collection mechanisms, sensing technologies.
+Model fidelity and validation: accuracy requirements, validation methods, uncertainty quantification, verification processes.
             """,
             description="""
-            dt_models_and_data: Describe the Digital Twin's computational models and data components including model types (geometric, behavioral, analytical), data sources, data management approaches, model relationships, and their specific roles in the Digital Twin constellation.
-            
-            physical_acting_components: Describe the physical actuators and control mechanisms including types of actuators, control capabilities, remote control interfaces, actuation ranges and limitations, safety constraints, and addressing mechanisms.
-            
-            physical_sensing_components: Describe the sensing infrastructure including sensor types, measurement capabilities, spatial distribution, sampling frequencies, data transmission rates, accuracy and precision specifications, and data collection mechanisms.
-            
-            fidelity_and_validity_considerations: Describe model fidelity requirements, validation and verification methods, uncertainty sources and quantification, error detection and correction mechanisms, and quality assurance processes for models and data.
+dt_models_and_data: Describe the Digital Twin's computational models and data components including model types (geometric, behavioral, analytical), data sources, data management approaches, model relationships, and their specific roles in the Digital Twin constellation.
+
+physical_acting_components: Describe the physical actuators and control mechanisms including types of actuators, control capabilities, remote control interfaces, actuation ranges and limitations, safety constraints, and addressing mechanisms.
+
+physical_sensing_components: Describe the sensing infrastructure including sensor types, measurement capabilities, spatial distribution, sampling frequencies, data transmission rates, accuracy and precision specifications, and data collection mechanisms.
+
+fidelity_and_validity_considerations: Describe model fidelity requirements, validation and verification methods, uncertainty sources and quantification, error detection and correction mechanisms, and quality assurance processes for models and data.
             """,
             k=6
         )
@@ -362,19 +366,19 @@ class Block4Processor(BaseBlockProcessor):
     def get_config(self) -> ExtractionConfig:
         return ExtractionConfig(
             query="""
-            Physical to digital data flows: sensor data transmission, communication protocols, data preprocessing, event handling.
-            Digital to physical control flows: command transmission, control signals, feedback mechanisms, command validation.
-            Network infrastructure: communication protocols, network topology, bandwidth requirements, connection reliability.
-            Deployment infrastructure: hosting platforms, computational resources, cloud/edge deployment, scalability considerations.
+Physical to digital data flows: sensor data transmission, communication protocols, data preprocessing, event handling.
+Digital to physical control flows: command transmission, control signals, feedback mechanisms, command validation.
+Network infrastructure: communication protocols, network topology, bandwidth requirements, connection reliability.
+Deployment infrastructure: hosting platforms, computational resources, cloud/edge deployment, scalability considerations.
             """,
             description="""
-            physical_to_virtual_interaction: Describe data flows from physical to digital including data types transmitted, communication protocols, transmission frequencies, event triggers, data quality assurance, preprocessing steps, and data integration mechanisms.
-            
-            virtual_to_physical_interaction: Describe control flows from digital to physical including command types, control message formats, validation and authentication mechanisms, feedback systems, conflict resolution, and command execution confirmation.
-            
-            dt_technical_connection: Describe the technical network infrastructure including communication protocols, network topology and architecture, bandwidth and latency requirements, reliability and redundancy mechanisms, and security protocols for network communication.
-            
-            dt_hosting_deployment: Describe the deployment infrastructure including hosting platforms (cloud/edge/on-premise), computational and storage requirements, scalability mechanisms, deployment models supported, and availability/reliability assurance.
+physical_to_virtual_interaction: Describe data flows from physical to digital including data types transmitted, communication protocols, transmission frequencies, event triggers, data quality assurance, preprocessing steps, and data integration mechanisms.
+
+virtual_to_physical_interaction: Describe control flows from digital to physical including command types, control message formats, validation and authentication mechanisms, feedback systems, conflict resolution, and command execution confirmation.
+
+dt_technical_connection: Describe the technical network infrastructure including communication protocols, network topology and architecture, bandwidth and latency requirements, reliability and redundancy mechanisms, and security protocols for network communication.
+
+dt_hosting_deployment: Describe the deployment infrastructure including hosting platforms (cloud/edge/on-premise), computational and storage requirements, scalability mechanisms, deployment models supported, and availability/reliability assurance.
             """,
             k=7
         )
@@ -390,19 +394,19 @@ class Block5Processor(BaseBlockProcessor):
     def get_config(self) -> ExtractionConfig:
         return ExtractionConfig(
             query="""
-            Digital Twin lifecycle phases: development stages, deployment phases, evolution processes, maintenance activities.
-            Engineering processes: development methodologies, quality assurance, testing approaches, version control.
-            Decision support: insight generation, analytics capabilities, decision making processes, user interactions.
-            Standards and compliance: industry standards, certification requirements, compliance frameworks, interoperability standards.
+Digital Twin lifecycle phases: development stages, deployment phases, evolution processes, maintenance activities.
+Engineering processes: development methodologies, quality assurance, testing approaches, version control.
+Decision support: insight generation, analytics capabilities, decision making processes, user interactions.
+Standards and compliance: industry standards, certification requirements, compliance frameworks, interoperability standards.
             """,
             description="""
-            life_cycle_stages: Describe the lifecycle phases of the Digital Twin including development stages, representation types at different phases, transition management between phases, and lifecycle governance approaches.
-            
-            twinning_process_and_dt_evolution: Describe the engineering and development processes including methodologies used, quality assurance practices, testing and validation approaches, version control, and evolution management strategies.
-            
-            insights_and_decision_making: Describe the decision support capabilities including types of insights generated, analytics and processing capabilities, decision making processes, user interaction methods, and confidence measures for recommendations.
-            
-            standardization: Describe standards compliance including relevant industry standards, specifications followed, certification requirements, compliance frameworks, and interoperability standards adopted.
+life_cycle_stages: Describe the lifecycle phases of the Digital Twin including development stages, representation types at different phases, transition management between phases, and lifecycle governance approaches.
+
+twinning_process_and_dt_evolution: Describe the engineering and development processes including methodologies used, quality assurance practices, testing and validation approaches, version control, and evolution management strategies.
+
+insights_and_decision_making: Describe the decision support capabilities including types of insights generated, analytics and processing capabilities, decision making processes, user interaction methods, and confidence measures for recommendations.
+
+standardization: Describe standards compliance including relevant industry standards, specifications followed, certification requirements, compliance frameworks, and interoperability standards adopted.
             """,
             k=6
         )
@@ -418,15 +422,15 @@ class Block6Processor(BaseBlockProcessor):
     def get_config(self) -> ExtractionConfig:
         return ExtractionConfig(
             query="""
-            Data governance: data ownership policies, privacy regulations, data protection measures, consent management.
-            Security considerations: cybersecurity measures, access control, authentication, threat mitigation, security protocols.
-            Safety requirements: safety-critical considerations, fail-safe mechanisms, risk assessment, hazard analysis.
-            Compliance frameworks: regulatory compliance, data protection laws, industry regulations, audit requirements.
+Data governance: data ownership policies, privacy regulations, data protection measures, consent management.
+Security considerations: cybersecurity measures, access control, authentication, threat mitigation, security protocols.
+Safety requirements: safety-critical considerations, fail-safe mechanisms, risk assessment, hazard analysis.
+Compliance frameworks: regulatory compliance, data protection laws, industry regulations, audit requirements.
             """,
             description="""
-            data_ownership_and_privacy: Describe data governance including data ownership policies, privacy protection measures, compliance with data protection regulations, consent management, data anonymization, and data sharing agreements.
-            
-            security_and_safety_considerations: Describe security and safety measures including cybersecurity protocols, access control mechanisms, authentication systems, threat mitigation strategies, fail-safe mechanisms, risk assessment approaches, and safety-critical system considerations.
+data_ownership_and_privacy: Describe data governance including data ownership policies, privacy protection measures, compliance with data protection regulations, consent management, data anonymization, and data sharing agreements.
+
+security_and_safety_considerations: Describe security and safety measures including cybersecurity protocols, access control mechanisms, authentication systems, threat mitigation strategies, fail-safe mechanisms, risk assessment approaches, and safety-critical system considerations.
             """,
             k=5
         )
