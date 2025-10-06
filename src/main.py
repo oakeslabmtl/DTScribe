@@ -56,7 +56,7 @@ class ExtractionOrchestrator:
         self._extractor: ICharacteristicsExtractor = None
         self.last_experiment_id: Optional[str] = None
 
-    def run_extraction(self, pdf_path: str, experiment_id: Optional[str] = None, config: Optional[ExperimentConfig] = None, save_results: bool = True, no_regenerate_db: bool = True, no_llm_judge: bool = False) -> Dict[str, Any]:
+    def run_extraction(self, pdf_path: str, experiment_id: Optional[str] = None, config: Optional[ExperimentConfig] = None, save_results: bool = True, no_regenerate_db: bool = True, no_llm_judge: bool = False, max_judge_retries: int = 2) -> Dict[str, Any]:
         """Run the complete extraction pipeline with optional experiment tracking."""
         print("🚀 Starting Enhanced Digital Twin Characteristics Extraction")
         print("=" * 60)
@@ -81,7 +81,7 @@ class ExtractionOrchestrator:
             # Delete existing vector DB folder if any
             if vector_db_path.exists():
                 shutil.rmtree(vector_db_path)
-            init_result = self._initializer.initialize(pdf_path, config)
+            init_result = self._initializer.initialize(pdf_path, config, config.model_name)
             self._state_manager.update_state(init_result)
 
         # Set up retriever and extractor
@@ -90,6 +90,9 @@ class ExtractionOrchestrator:
 
         self._retriever = DocumentRetriever(rag_pipeline, vectordb)
         self._extractor = CharacteristicsExtractor(rag_pipeline)
+       
+        # print(f"🔁 Max judge retries set to: {max_retries}")
+
         if no_llm_judge:
             print("⚠️ Skipping LLM judge step as per --no-llm-judge.")
             judge = None
@@ -113,10 +116,12 @@ class ExtractionOrchestrator:
         for i, processor in enumerate(self._block_processors, 1):
             print(f"\n--- Processing Block {i} ---")
 
-            result = processor.process(self._retriever, self._extractor, judge=judge, max_retries=2)
+            result = processor.process(self._retriever, self._extractor, judge=judge, max_retries=max_judge_retries)
 
             # Track block metrics
-            block_name = f"block_{i}"
+            block_name = result.metadata.get("block_name", f"block_{i}")
+            # block_name = result.metadata['block_name'] if 'block_name' in result.metadata else f"block_{i}"
+
             block_metrics['success_rates'][block_name] = result.success
 
             if f"{block_name}_processing_time" in result.metadata:
@@ -147,7 +152,7 @@ class ExtractionOrchestrator:
                 existing_metadata.update(result.metadata)
                 self._state_manager.update_state({"extraction_metadata": existing_metadata})
             else:
-                error_msg = f"Block {i} processing failed: {result.error_message}"
+                error_msg = f"{block_name} processing failed: {result.error_message}"
                 print(f"❌ {error_msg}")
                 errors.append(error_msg)
 
@@ -186,7 +191,9 @@ class ExtractionOrchestrator:
                 # block_memory_usages=block_metrics.get('memory_usages', {}),
                 block_success_rates=block_metrics.get('success_rates', {}),
                 total_input_tokens=total_input_tokens,
-                total_output_tokens=total_output_tokens
+                total_output_tokens=total_output_tokens,
+                # judged_characteristics=block_metrics.get('judge', {}),
+                block_retries=block_metrics.get('retries', {}),
             )
 
             saved_path = self._experiment_tracker.results_saver.save_characteristics_results(characteristics_result)
@@ -341,7 +348,7 @@ class ExtractionPipelineFactory:
     
     @staticmethod
     def create_config(
-        model_name: str = "qwen3:4b",
+        model_name: str = "qwen3:8b",
         embedding_model: str = "nomic-embed-text",
         chunk_size: int = 1500,
         chunk_overlap: int = 200,
@@ -372,13 +379,14 @@ def main():
     parser.add_argument("--chunk-size", type=int, default=1500)
     parser.add_argument("--chunk-overlap", type=int, default=200)
     parser.add_argument("--temperature", type=float, default=0.1)
-    parser.add_argument("--model-name", default="qwen3:4b")
+    parser.add_argument("--model-name", default="qwen3:8b")
     parser.add_argument("--embedding-model", default="nomic-embed-text")
     parser.add_argument("--exp-id", help="Existing experiment id (hash_timestamp or just hash for latest) containing characteristics for standalone OML generation")
     parser.add_argument("--no-save", action="store_true", help="Do not persist results")
     parser.add_argument("--no-regenerate-db", action="store_true", help="Do not regenerate the vector database even if it exists")
     parser.add_argument("--no-oml-validation", action="store_true", help="Skip OML validation step")
     parser.add_argument("--no-llm-judge", action="store_true", help="Skip LLM judge step")
+    parser.add_argument("--max-judge-retries", type=int, default=2, help="Maximum retries for low-confidence judge evaluations")
     args = parser.parse_args()
 
     orchestrator = ExtractionPipelineFactory.create_orchestrator(with_experiment_tracking=True)
@@ -395,7 +403,7 @@ def main():
             temperature=args.temperature,
             custom_params={"cli": True}
         )
-        extraction_results = orchestrator.run_extraction(args.pdf, experiment_id=None, config=config, save_results=not args.no_save, no_regenerate_db=args.no_regenerate_db, no_llm_judge=args.no_llm_judge)
+        extraction_results = orchestrator.run_extraction(args.pdf, experiment_id=None, config=config, save_results=not args.no_save, no_regenerate_db=args.no_regenerate_db, no_llm_judge=args.no_llm_judge, max_judge_retries=args.max_judge_retries)
         experiment_id = orchestrator.last_experiment_id
 
     if args.mode in ("oml", "both"):

@@ -67,6 +67,10 @@ class CharacteristicsExtractionResult:
     # token usage
     total_input_tokens: int
     total_output_tokens: int #Optional[Dict[str, int]] = None
+
+    # llm judge usage
+    # judged_characteristics: Dict[str, Any] = field(default_factory=dict)
+    block_retries: Dict[str, int] = field(default_factory=dict)
     
     # Error information
     errors: List[str] = field(default_factory=list)

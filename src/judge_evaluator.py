@@ -10,7 +10,7 @@ class JudgeEvaluator:
     def __init__(self, llm):
         self.llm = llm
         self.prompt = PromptTemplate(
-            input_variables=["characteristics", "retrieved_docs"],
+            input_variables=["characteristics", "characteristics_description", "retrieved_docs"],
             template=
             """
 You are an expert evaluator in Digital Twin information extraction and ontology-based modeling.
@@ -53,7 +53,6 @@ You must:
 - Contains relevant technical details.
 - Could still be expanded with more depth.
 
-
 5. Very good
 - "Not in Document" or states the characteristic is missing and the Source Documents DO NOT contain relevant information.
 - Highly specific and detailed.
@@ -71,7 +70,6 @@ You must:
 - If "Not in Document" is stated but evidence exists in the sources, assign a 1.
 - If "Not in Document" is stated and no evidence exists in the sources, assign a 5.
 - Always explain your reasoning before giving the score.
-- 
 
 
 ---
@@ -89,19 +87,9 @@ Each element must have:
 - "score": integer from 1 to 5
 
 
-Example:
-[
-    {{
-        "characteristic": "System under study",
-        "reasoning": "Mentions the incubator and its role; specific, but lacks behavioral detail. Supported by quotes: 'The incubator maintains optimal fermentation temperature'.",
-        "score": 4
-    }},
-    {{
-        "characteristic": "Physical acting components",
-        "reasoning": "Lists fan and heater, describes control methods; detailed and supported by text.",
-        "score": 5
-    }}
-]
+EXAMPLE OUTPUT:
+[{{"characteristic": "system_under_study","reasoning": "Mentions the incubator and its role; specific, but lacks behavioral detail. Supported by quotes: 'The incubator maintains optimal fermentation temperature'.","score": 4}},{{"characteristic": "physical_acting_components","reasoning": "Lists fan and heater, describes control methods; detailed and supported by text.","score": 5}}]
+
 ---
 
 
@@ -157,14 +145,14 @@ Example:
             retrieved_docs=docs_content
         )
 
-        # print(f"JudgeEvaluator.evaluate(): Generated prompt for LLM:\n{prompt}")
+        # print(f"\n\nJudgeEvaluator.evaluate(): Generated prompt for LLM:\n{prompt}\n\n")
     
         response = self.llm.invoke(prompt)
-        # print(f"JudgeEvaluator.evaluate(): LLM raw response: {response}")
+        # print(f"\n\nJudgeEvaluator.evaluate(): LLM raw response: {response}\n\n")
 
         raw_text = getattr(response, "content", str(response))
 
-        # print(f"JudgeEvaluator.evaluate(): LLM output text: {raw_text}")
+        # print(f"\n\nJudgeEvaluator.evaluate(): LLM output text: {raw_text}\n\n")
 
         cleaned = self._clean_response(raw_text)
         cleaned = self._coerce_to_array(cleaned)
@@ -178,7 +166,7 @@ Example:
             parsed = [{
                 "characteristic": "ALL_BLOCK",
                 "reasoning": "Could not parse judge output; treating as low confidence",
-                "score": 1
+                "score": 0
             }]
         return parsed
 

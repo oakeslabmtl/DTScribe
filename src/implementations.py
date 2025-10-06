@@ -82,15 +82,13 @@ class PipelineInitializer(IPipelineInitializer):
     
     def __init__(self):
         self._rag_pipeline = None
-    
-    # def initialize(self, pdf_path: str) -> Dict[str, Any]: # NOTE: old vversion, didn't pass config, so chunk size and overlap were fixed
 
-    def initialize(self, pdf_path: str, config: ExtractionConfig) -> Dict[str, Any]:
+    def initialize(self, pdf_path: str, config: ExtractionConfig, model_name: str) -> Dict[str, Any]:
         if not Path(pdf_path).exists():
             raise FileNotFoundError(f"PDF file not found: {pdf_path}")
         
         print("🚀 Initializing enhanced RAG pipeline...")
-        self._rag_pipeline = EnhancedRAGPipeline()
+        self._rag_pipeline = EnhancedRAGPipeline(model_name=model_name)
         
         # Show PDF information
         print("📊 Analyzing PDF...")
@@ -113,12 +111,12 @@ class PipelineInitializer(IPipelineInitializer):
             }
         }
     
-    def load_existing_vector_db(self, vector_db_path: str = "vector_db") -> Dict[str, Any]:
+    def load_existing_vector_db(self, vector_db_path: str = "vector_db", model_name: str = "") -> Dict[str, Any]:
         """
         Loads an existing vector database from disk.
         """
         print(f"📂 Loading existing vector DB from {vector_db_path} ...")
-        self._rag_pipeline = EnhancedRAGPipeline()
+        self._rag_pipeline = EnhancedRAGPipeline(model_name=model_name)
         # Load Chroma vector DB from persist_directory
         
         vectordb = Chroma(
@@ -195,8 +193,13 @@ class BaseBlockProcessor(IBlockProcessor, ABC):
     def get_schema(self) -> Type[BaseModel]:  # pragma: no cover - abstract
         ...
 
-    def process(self, retriever: IDocumentRetriever, extractor: ICharacteristicsExtractor,
-                judge: "JudgeEvaluator" = None, max_retries: int = 2) -> ExtractionResult:
+    def process(
+        self,
+        retriever: IDocumentRetriever,
+        extractor: ICharacteristicsExtractor,
+        judge: "JudgeEvaluator" = None,
+        max_retries: int = 2
+    ) -> ExtractionResult:
         
         config = self.get_config()
         label = self.block_label or f"Block {self.block_index}"
@@ -212,44 +215,79 @@ class BaseBlockProcessor(IBlockProcessor, ABC):
             last_output = None
             last_metadata = {}
             judge_results = []
+            preserved_info = {}
 
             while True:
                 print(f"🧠 Extracting {label} (attempt {retries+1})...")
-                output, response_metadata = extractor.extract(config.description, retrieved_docs, self.get_schema())
+                output, response_metadata = extractor.extract(
+                    config.description, retrieved_docs, self.get_schema()
+                )
+                extracted_dict = output.model_dump(exclude_none=True)
+
+                # if it'a a retry, preserve high score characteristics from previous output
+                if retries > 0 and last_output is not None and judge_results:
+                    prev_dict = last_output.model_dump(exclude_none=True)
+                    preserved = []
+                    retried = []
+                    for jr in judge_results:
+                        cname = jr.get("characteristic")
+                        score = jr.get("score", 0)
+                        if score > 3 and cname in prev_dict:
+                            extracted_dict[cname] = prev_dict[cname]
+                            preserved.append(cname)
+                        else:
+                            retried.append(cname)
+                    preserved_info[f"retry_{retries}"] = {
+                        "preserved": preserved,
+                        "retried": retried
+                    }
+                    # rebuild schema
+                    output = self.get_schema()(**extracted_dict)
+
                 last_output = output
                 last_metadata = response_metadata
 
-                # Judge step (optional)
+                # Judge step
                 low_quality = False
                 if judge is not None:
-
-                    extracted_dict = output.model_dump(exclude_none=True)
-
                     print(f"🔬 Performing LLM evaluation of {label} (attempt {retries+1})...")
-
-                    judge_results = judge.evaluate(extracted_dict, retrieved_docs, config.description)
+                    judge_results = judge.evaluate(
+                        extracted_dict, retrieved_docs, config.description
+                    )
 
                     # print(f"\n\njudge results in process:implementations.py:237: {type(judge_results),judge_results}\n\n")
 
+                    print(f"💡 LLM evaluation results for {label}:")
+                    for res in judge_results:
+                        print(f"  - Characteristic: {res.get('characteristic')}")
+                        print(f"    Score: {res.get('score')}")
+                        print(f"    Reasoning: {res.get('reasoning')}\n")
+
                     # Determine if any characteristic <= 3
-                    low_quality = any((r.get("score", 0) or 0) <= 3 for r in judge_results)
+                    # low_quality = any((r.get("score", 0) or 0) <= 3 for r in judge_results)
+                    low_quality = any(int(r.get("score", 0)) <= 3 for r in judge_results)
 
                     if low_quality and retries < max_retries:
-                        print(f"⚠️ Low judge score detected in {label}. Retrying extraction...")
+                        # low_score_names = [r.get("characteristic") for r in judge_results if (r.get("score", 0) or 0) <= 3]
+                        low_score_names = [
+                            r.get("characteristic")
+                            for r in judge_results
+                            if int(r.get("score", 0)) <= 3
+                        ]
+                        
+                        print(
+                            f"⚠️ Low judge score detected in {label}. "
+                            f"Retrying extraction for {low_score_names} (low-score items)..."
+                        )
                         retries += 1
                         continue
-                break # could be no judge or acceptable quality or retries exhausted
+                break  # could be no judge or acceptable quality or retries exhausted
 
-            if judge_results:
-                print(f"💡 LLM evaluation results for {label}:")
-                for res in judge_results:
-                    print(f"  - Characteristic: {res.get('characteristic')}")
-                    print(f"    Score: {res.get('score')}")
-                    print(f"    Reasoning: {res.get('reasoning')}\n")
-
+            
 
             processing_time = time.time() - start_time
             meta = {
+                "block_name": meta_prefix,
                 f"{meta_prefix}_processing_time": processing_time,
                 f"{meta_prefix}_docs_retrieved": [str(doc[0].page_content) for doc in retrieved_docs],
                 f"{meta_prefix}_input_tokens": last_metadata.get('prompt_eval_count', 0),
@@ -258,16 +296,20 @@ class BaseBlockProcessor(IBlockProcessor, ABC):
             }
             if judge_results:
                 meta[f"{meta_prefix}_judge"] = judge_results
+            if preserved_info:
+                meta[f"{meta_prefix}_retry_preserve_info"] = preserved_info
 
             return ExtractionResult(
                 characteristics=last_output.model_dump(exclude_none=True),
                 metadata=meta,
                 success=True
             )
-            
+
         except Exception as e:
-            
             processing_time = time.time() - start_time
+            print(f"❌ Error processing {meta_prefix}: {e}")
+            # import traceback
+            # traceback.print_exc() 
             return ExtractionResult(
                 characteristics={},
                 metadata={
@@ -277,7 +319,6 @@ class BaseBlockProcessor(IBlockProcessor, ABC):
                 success=False,
                 error_message=str(e)
             )
-
 
 class Block1Processor(BaseBlockProcessor):
     block_index = 1
