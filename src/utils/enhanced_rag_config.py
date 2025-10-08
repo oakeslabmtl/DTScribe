@@ -147,10 +147,13 @@ class EnhancedRAGPipeline:
             md_text = pymupdf4llm.to_markdown(pdf_path, pages=pages_list)
 
             # Remove the references section and anything after if found # NOTE: make more robust for other pdfs
-            ref_marker = "### **References**"
-            ref_index = md_text.find(ref_marker)
-            if ref_index != -1:
-                md_text = md_text[:ref_index]
+            # ref_marker = "### **References**"
+            # ref_index = md_text.find(ref_marker)
+            # if ref_index != -1:
+            #     md_text = md_text[:ref_index]
+
+            m = re.search(r"\n#+\s*\**references\**\s*\n", md_text, flags=re.I)
+            if m: md_text = md_text[:m.start()]
             
         except Exception as e:
             print(f"Error processing PDF: {e}")
@@ -163,6 +166,7 @@ class EnhancedRAGPipeline:
             chunk_size=chunk_size,
             chunk_overlap=overlap,
             separators=["\n\n", "\n", ". ", " ", ""],
+            # separators=["\n## ", "\n### ", "\n\n", "\n", ". ", " ", ""]
             keep_separator=True,
             length_function=len,
         )
@@ -217,7 +221,7 @@ class EnhancedRAGPipeline:
     #     return sorted(docs, key=score_document, reverse=True)
     
     def generate_with_cot_and_validation(self, description: str, retrieved_docs: List, 
-                                       schema: Type[BaseModel]) -> BaseModel:
+                                       schema: Type[BaseModel], judge_results: List[dict[str, Any]]) -> BaseModel:
         """
         Enhanced generation with Chain of Thought reasoning and self-validation.
         """
@@ -229,7 +233,20 @@ class EnhancedRAGPipeline:
         
         # Create parser for structured output
         parser = PydanticOutputParser(pydantic_object=schema)
+
+        print(f"\n\njudge_results:\n{judge_results}\n\n")  # debug print
         
+        # If judge_results is empty [] (first attempt) or any characteristic is "ALL_BLOCK" (when judge parsing fails), set judge_results to "Not provided"
+        if not judge_results or any(res.get('characteristic') == "ALL_BLOCK" for res in judge_results):
+            judge_results_str = "Not provided"
+        else:
+            judge_results_str = "\n".join([
+            f"\n- Characteristic: {res.get('characteristic')}\nScore: {res.get('score')}\nReasoning: {res.get('reasoning')}\n\n"
+            for res in judge_results
+            ])
+
+        print(f"\n\njudge_results_str:\n{judge_results_str}\n\n")  # debug print
+
         # Enhanced prompt with Chain of Thought reasoning and strict output format
         cot_prompt = PromptTemplate.from_template("""
 You are an expert in Digital Twin systems and ontology modeling. Your task is to extract detailed characteristics from technical documents.
@@ -239,6 +256,9 @@ CONTEXT DOCUMENTS:
 
 CHARACTERISTICS TO EXTRACT:
 {description}
+                                                  
+JUDGE RESULTS:
+{judge_results}  
                                                   
 INSTRUCTIONS:
 1. REASONING PHASE: First, analyze the documents step by step:
@@ -251,12 +271,15 @@ INSTRUCTIONS:
    - Include concrete technical details (tools, technologies, protocols, methods)
    - Be precise about quantities, frequencies, and specifications when mentioned
    - If no evidence is found, state "Not in Document"
+   - Implement the information from the judge results (if provided) to preserve high-quality characteristics and enhance characteristics scored less than 4.
+
 
 3. VALIDATION PHASE: Review your extracted information:
    - Ensure all details come from the provided documents
    - Check that technical terms are used correctly
    - Verify completeness of the description
-
+   - Ensure the extraction of characteristics is consistent with the judge results (if provided)
+   
 REASONING:
 Let me analyze each document for relevant information...
 
@@ -273,8 +296,11 @@ Remember: Be highly specific and technical. Include exact technologies, methods,
         formatted_prompt = cot_prompt.format(
             docs_content=docs_content,
             description=description,
-            format_instructions=parser.get_format_instructions()
+            judge_results=judge_results_str,
+            format_instructions=parser.get_format_instructions(),
         )
+
+        print(f"\n\nFORMATTED PROMPT (enhanced_rag_config.py:299):\n{formatted_prompt}\n\n")  # debug print
         
         # Generate with retry mechanism for better reliability
         max_retries = 3
@@ -302,18 +328,20 @@ Remember: Be highly specific and technical. Include exact technologies, methods,
                     try:
                         response = self.llm.invoke(simple_prompt)
                         response_text = response.content if hasattr(response, 'content') else str(response)
+                        response_metadata = getattr(response, 'response_metadata', {})
                         cleaned_text = self._clean_llm_response(response_text)
                         output = parser.parse(cleaned_text)
                         validated_output = self._self_validate_output(output, retrieved_docs)
                         print(f"Success with fallback prompt on attempt {attempt + 1}")
-                        return validated_output
+                        return validated_output, response_metadata
                     except Exception as fallback_error:
                         print(f"Fallback also failed: {str(fallback_error)}")
                         continue
                 else:
                     # Final fallback: create a basic output with "Not Found" values
                     print("All attempts failed, creating fallback output...")
-                    return self._create_fallback_output(schema)
+                    fb = self._create_fallback_output(schema)
+                    return fb, {}
     
     def _clean_llm_response(self, response_text: str) -> str:
         """
@@ -385,7 +413,7 @@ JSON OUTPUT:
         return schema(**fallback_data)
     
     def generate_with_manual_parsing(self, description: str, retrieved_docs: List, 
-                                   schema: Type[BaseModel]) -> BaseModel:
+                                   schema: Type[BaseModel], judge_results: List[dict[str, Any]]) -> BaseModel:
         """
         Alternative generation method with manual JSON parsing as fallback.
         """
@@ -393,6 +421,14 @@ JSON OUTPUT:
             f"Document {i+1}:\n{getattr(doc, 'page_content', str(doc))}" 
             for i, doc in enumerate(retrieved_docs)
         ])
+
+        if not judge_results or any(res.get('characteristic') == "ALL_BLOCK" for res in judge_results):
+            judge_results_str = "Not provided"
+        else:
+            judge_results_str = "\n".join([
+            f"\n- Characteristic: {res.get('characteristic')}\nScore: {res.get('score')}\nReasoning: {res.get('reasoning')}\n\n"
+            for res in judge_results
+            ])        
         
         # Simple prompt without structured output parser
         prompt = f"""
@@ -403,6 +439,9 @@ DOCUMENTS:
 
 EXTRACT THESE CHARACTERISTICS:
 {description}
+
+USE THESE JUDGE EVALUATIONS TO IMPROVE YOUR EXTRACTION (if provided):
+{judge_results_str}
 
 For each characteristic, provide a detailed description based ONLY on the documents, or "Not in Document" if no information exists.
 
@@ -422,6 +461,7 @@ JSON:
             # Direct LLM call without structured output
             response = self.llm.invoke(prompt)
             response_text = response.content if hasattr(response, 'content') else str(response)
+            response_metadata = getattr(response, 'response_metadata', {})
             
             # Use the same cleaning function for consistency
             cleaned_text = self._clean_llm_response(response_text)
@@ -430,11 +470,11 @@ JSON:
             parsed_data = json.loads(cleaned_text)
             
             # Create schema instance
-            return schema(**parsed_data)
+            return schema(**parsed_data), response_metadata
             
         except Exception as e:
             print(f"Manual parsing failed: {e}")
-            return self._create_fallback_output(schema)
+            return self._create_fallback_output(schema), {}
 
     
     def generate_oml(self, characteristics: Dict[str, Any], 

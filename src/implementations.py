@@ -65,15 +65,17 @@ class CharacteristicsExtractor(ICharacteristicsExtractor):
     def __init__(self, rag_pipeline: EnhancedRAGPipeline):
         self._rag_pipeline = rag_pipeline
 
-    def extract(self, description: str, documents: List[Any], schema: Type[BaseModel]) -> BaseModel:
+    def extract(self, description: str, documents: List[Any], schema: Type[BaseModel], judge_results: List[dict[str, Any]]) -> BaseModel:
+        # import traceback
         try:
             return self._rag_pipeline.generate_with_cot_and_validation(
-                description, documents, schema
+                description, documents, schema, judge_results
             )
         except Exception as e:
             print(f"⚠️  Structured output failed, trying manual parsing: {e}")
+            # traceback.print_exc() 
             return self._rag_pipeline.generate_with_manual_parsing(
-                description, documents, schema
+                description, documents, schema, judge_results
             )
 
 
@@ -220,11 +222,11 @@ class BaseBlockProcessor(IBlockProcessor, ABC):
             while True:
                 print(f"🧠 Extracting {label} (attempt {retries+1})...")
                 output, response_metadata = extractor.extract(
-                    config.description, retrieved_docs, self.get_schema()
+                    config.description, retrieved_docs, self.get_schema(), judge_results
                 )
                 extracted_dict = output.model_dump(exclude_none=True)
 
-                # if it'a a retry, preserve high score characteristics from previous output
+                # if it's a retry, preserve high score characteristics from previous output
                 if retries > 0 and last_output is not None and judge_results:
                     prev_dict = last_output.model_dump(exclude_none=True)
                     preserved = []

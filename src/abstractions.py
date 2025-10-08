@@ -37,7 +37,7 @@ class ICharacteristicsExtractor(ABC):
     """Interface for characteristics extraction."""
     
     @abstractmethod
-    def extract(self, description: str, documents: List[Any], schema: Type[BaseModel]) -> BaseModel:
+    def extract(self, description: str, documents: List[Any], schema: Type[BaseModel], judge_results: List[dict[str, Any]]) -> BaseModel:
         """Extract characteristics from documents."""
         pass
 
