@@ -234,7 +234,7 @@ class EnhancedRAGPipeline:
         # Create parser for structured output
         parser = PydanticOutputParser(pydantic_object=schema)
 
-        print(f"\n\njudge_results:\n{judge_results}\n\n")  # debug print
+        # print(f"\n\njudge_results:\n{judge_results}\n\n")  # debug print
         
         # If judge_results is empty [] (first attempt) or any characteristic is "ALL_BLOCK" (when judge parsing fails), set judge_results to "Not provided"
         if not judge_results or any(res.get('characteristic') == "ALL_BLOCK" for res in judge_results):
@@ -245,7 +245,7 @@ class EnhancedRAGPipeline:
             for res in judge_results
             ])
 
-        print(f"\n\njudge_results_str:\n{judge_results_str}\n\n")  # debug print
+        # print(f"\n\njudge_results_str:\n{judge_results_str}\n\n")  # debug print
 
         # Enhanced prompt with Chain of Thought reasoning and strict output format
         cot_prompt = PromptTemplate.from_template("""
@@ -300,7 +300,8 @@ Remember: Be highly specific and technical. Include exact technologies, methods,
             format_instructions=parser.get_format_instructions(),
         )
 
-        print(f"\n\nFORMATTED PROMPT (enhanced_rag_config.py:299):\n{formatted_prompt}\n\n")  # debug print
+        # print(f"\n\nDOCS CONTENT in prompt (enhanced_rag_config.py:299):\n{docs_content}\n\n")  # debug print
+        # print(f"\n\nFORMATTED PROMPT (enhanced_rag_config.py:299):\n{formatted_prompt}\n\n")  # debug print
         
         # Generate with retry mechanism for better reliability
         max_retries = 3
