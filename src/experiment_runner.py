@@ -16,11 +16,9 @@ from main import ExtractionPipelineFactory
 class ExperimentRunner:
     """Runs multiple experiments with different parameter configurations."""
     
-    def __init__(self, pdf_path: str, output_dir: str = "hyperparameter_tuning"):
+    def __init__(self, pdf_path: str):
         self.pdf_path = pdf_path
-        self.output_dir = Path(output_dir)
-        self.output_dir.mkdir(exist_ok=True)
-        
+
         # Create orchestrator with experiment tracking
         self.orchestrator = ExtractionPipelineFactory.create_orchestrator(with_experiment_tracking=True)
 
@@ -33,8 +31,11 @@ class ExperimentRunner:
         
         return combinations
 
-    def run_experiment_batch(self, max_experiments: int = 10, experiment_name: str = "default", param_grid: Dict[str, Any] = None) -> List[Dict[str, Any]]:
+    def run_experiment_batch(self, max_experiments: int = 10, experiment_name: str = "default", param_grid: Dict[str, Any] = None, repeat_experiments: int = 1) -> List[Dict[str, Any]]:
         """Run a batch of experiments with different parameters."""
+
+        self.output_dir = Path(experiment_name)
+        self.output_dir.mkdir(exist_ok=True)
 
         if param_grid is None:
             print("❌ No parameter grid provided for experiments.")
@@ -48,69 +49,80 @@ class ExperimentRunner:
         print(f"🧪 Running {len(parameter_combinations)} experiments...")
 
         experiment_results = []
+        total_experiments = len(parameter_combinations) * repeat_experiments
+        experiment_counter = 0
 
-        for i, params in enumerate(parameter_combinations, 1):
-            print(f"\n{'='*60}")
-            print(f"🔬 Experiment {i}/{len(parameter_combinations)}")
-            print(f"📊 Parameters: {params}")
-            print(f"{'='*60}")
+        for combo_idx, params in enumerate(parameter_combinations, 1):
+            for rep in range(repeat_experiments):
+                experiment_counter += 1
+                print(f"\n{'='*60}")
+                print(f"🔬 Experiment {experiment_counter}/{total_experiments}")
+                print(f"📊 Parameters: {params}")
+                print(f"🔄 Repetition: {rep + 1}/{repeat_experiments}")
+                print(f"{'='*60}")
 
-            try:
-                # Create configuration
-                config = ExtractionPipelineFactory.create_config(
-                    **params,
-                    custom_params={
-                        "experiment_batch": experiment_name,
-                        "experiment_number": i,
-                    }
-                )
-
-                # Run extraction
-                start_time = time.time()
-
-                results = self.orchestrator.run_extraction(
-                    self.pdf_path,
-                    config=config,
-                    save_results=True,
-                    experiment_id=None,
-                )
-                experiment_time = time.time() - start_time
-
-                # Analyze results
-                if results.get("extracted_characteristics"):
-                    quality_metrics = self.orchestrator.analyze_characteristic_extraction(results)
-                    print("\n📈 Extraction Quality:")
-                    print(f" - Extraction Rate: {quality_metrics['extraction_rate']:.2f}%")
-                    print(f" - Extracted: {quality_metrics['extracted_count']}/{quality_metrics['total_characteristics']}")
-                                
-                    # Store experiment result
-                    experiment_result = {
-                        'experiment_number': i,
-                        'total_time': experiment_time,
+                try:
+                    # Create configuration
+                    config = ExtractionPipelineFactory.create_config(
                         **params,
-                        **quality_metrics,
-                        'success': True,
-                        'error': None,
-                        # 'extraction_strategy': "individual" if use_individual_extraction else "batch"
-                    }
-                    
-                    experiment_results.append(experiment_result)
-                    print(f"✅ Experiment {i} completed successfully (id stored with hash_timestamp format)")
-                    print(f"   📈 Extraction Rate: {quality_metrics['extraction_rate']:.1f}%")
-                    print(f"   ⏱️  Total Time: {experiment_time:.2f}s")
-            except Exception as e:
-                print(f"❌ Experiment {i} failed: {str(e)}")
-                experiment_result = {
-                    'experiment_number': i,
-                    **params,
-                    'success': False,
-                    'error': str(e),
-                    'extraction_rate': 0.0,
-                    'total_time': 0.0,
-                }
-                experiment_results.append(experiment_result)
+                        custom_params={
+                            "experiment_batch": experiment_name,
+                            "experiment_number": experiment_counter,
+                            "parameter_combination": combo_idx,
+                            "repetition": rep + 1,
+                        }
+                    )
 
-        print("\n✅ Parameter tuning named " + experiment_name + " completed!")
+                    # Run extraction
+                    start_time = time.time()
+
+                    results = self.orchestrator.run_extraction(
+                        self.pdf_path,
+                        config=config,
+                        save_results=True,
+                        experiment_id=None,
+                    )
+                    experiment_time = time.time() - start_time
+
+                    # Analyze results
+                    if results.get("extracted_characteristics"):
+                        quality_metrics = self.orchestrator.analyze_characteristic_extraction(results)
+                        print("\n📈 Extraction Quality:")
+                        print(f" - Extraction Rate: {quality_metrics['extraction_rate']:.2f}%")
+                        print(f" - Extracted: {quality_metrics['extracted_count']}/{quality_metrics['total_characteristics']}")
+                                
+                        # Store experiment result
+                        experiment_result = {
+                            'experiment_number': experiment_counter,
+                            'parameter_combination': combo_idx,
+                            'repetition': rep + 1,
+                            'total_time': experiment_time,
+                            **params,
+                            **quality_metrics,
+                            'success': True,
+                            'error': None,
+                        }
+                        
+                        experiment_results.append(experiment_result)
+                        print(f"✅ Experiment {experiment_counter} completed successfully (id stored with hash_timestamp format)")
+                        print(f"   📈 Extraction Rate: {quality_metrics['extraction_rate']:.1f}%")
+                        print(f"   ⏱️  Total Time: {experiment_time:.2f}s")
+                except Exception as e:
+                    print(f"❌ Experiment {experiment_counter} failed: {str(e)}")
+                    experiment_result = {
+                        'experiment_number': experiment_counter,
+                        'parameter_combination': combo_idx,
+                        'repetition': rep + 1,
+                        **params,
+                        'success': False,
+                        'error': str(e),
+                        'extraction_rate': 0.0,
+                        'total_time': 0.0,
+                    }
+                    experiment_results.append(experiment_result)
+
+        print(f"\n✅ Parameter tuning named {experiment_name} completed!")
+        print(f"📊 Ran {len(parameter_combinations)} parameter combinations × {repeat_experiments} repetitions = {total_experiments} total experiments")
         return experiment_results
     
     def analyze_and_visualize_results(self, experiment_results: List[Dict[str, Any]]):
@@ -120,7 +132,7 @@ class ExperimentRunner:
         df = pd.DataFrame(experiment_results)
         
         # Save detailed results
-        results_file = self.output_dir / "hyperparameter_experiments.csv"
+        results_file = self.output_dir / "experiments.csv"
         df.to_csv(results_file, index=False)
         print(f"\n💾 Detailed results saved to: {results_file}")
         
@@ -184,7 +196,7 @@ class ExperimentRunner:
         plt.tight_layout()
         
         # Save visualization
-        viz_file = self.output_dir / "hyperparameter_analysis.png"
+        viz_file = self.output_dir / "analysis.png"
         plt.savefig(viz_file, dpi=300, bbox_inches='tight')
         print(f"📊 Visualizations saved to: {viz_file}")
         
@@ -198,7 +210,7 @@ class ExperimentRunner:
         corr_matrix = df[numeric_cols].corr()
         
         sns.heatmap(corr_matrix, annot=True, cmap='coolwarm', center=0, ax=ax)
-        ax.set_title('Hyperparameter Correlation Matrix')
+        ax.set_title('Parameter Correlation Matrix')
         
         plt.tight_layout()
         corr_file = self.output_dir / "correlation_matrix.png"
@@ -208,12 +220,13 @@ class ExperimentRunner:
         plt.show()
 
 
-def visualize_existing_results(csv_file_path: str = None, output_dir: str = None):
+def visualize_results(csv_file_path: str = None, output_dir: str = None):
     """Convenience function to visualize existing experiment results."""
     from results_visualizer import ExperimentResultsVisualizer
     
     if csv_file_path is None:
-        csv_file_path = "hyperparameter_tuning/hyperparameter_experiments.csv"
+        print("❌ Please provide the path to the CSV file containing experiment results.")
+        return
     
     print(f"📊 Visualizing existing results from: {csv_file_path}")
     print("=" * 80)
@@ -231,15 +244,7 @@ def visualize_existing_results(csv_file_path: str = None, output_dir: str = None
 
 
 def main():
-    """Main function for hyperparameter tuning."""
     import sys
-    
-    # Check if user wants to visualize existing results
-    if len(sys.argv) > 1 and sys.argv[1] == "--visualize":
-        csv_path = sys.argv[2] if len(sys.argv) > 2 else None
-        output_dir = sys.argv[3] if len(sys.argv) > 3 else None
-        visualize_existing_results(csv_path, output_dir)
-        return
     
     # Configuration
     pdf_path = "data/papers/The Incubator Case Study for Digital Twin Engineering.pdf"
@@ -247,24 +252,38 @@ def main():
     print("🧪 Starting Parameter Exploration for Digital Twin Characteristics Extraction")
     print("=" * 80)
     
-    # Create tuner
-    tuner = ExperimentRunner(pdf_path)
+    # Create experiment runner
+    runner = ExperimentRunner(pdf_path)
 
     # Run experiments
+    # param_grid = {
+    #     'model_name': ["qwen3:8b"],
+    #     'chunk_size': [1000, 1500, 2000, 2500, 3000, 3500],
+    #     'temperature': [0.1, 0.15, 0.2, 0.25, 0.3],
+    #     "embedding_model": ["embeddinggemma"],
+    #     "chunk_overlap": [200, 300, 400],
+    # }
+    experiment_name = "hyperparameter_tuning"
     param_grid = {
         'model_name': ["qwen3:8b"],
-        'chunk_size': [1000, 1500, 2000, 2500, 3000, 3500],
-        'temperature': [0.1, 0.15, 0.2, 0.25, 0.3],
-        "embedding_model": "embeddinggemma",
-        "chunk_overlap": [200, 300, 400],
+        'chunk_size': [2500],
+        'temperature': [0.2],
+        "embedding_model": ["embeddinggemma"],
+        "chunk_overlap": [300],
     }
-    experiment_results = tuner.run_experiment_batch(max_experiments=-1, experiment_name="hyperparameter_tuning", param_grid=param_grid)
+    experiment_results = runner.run_experiment_batch(max_experiments=-1, repeat_experiments=2, experiment_name=experiment_name, param_grid=param_grid)
 
+    # Check if user wants to visualize existing results
+    if len(sys.argv) > 1 and sys.argv[1] == "--visualize":
+        output_dir = Path(experiment_name)
+        csv_path = output_dir / "experiments.csv"
+        visualize_results(csv_path, output_dir)
+
+    # TODO: Fix this part
     # Analyze and visualize results
-    tuner.analyze_and_visualize_results(experiment_results)
+    runner.analyze_and_visualize_results(experiment_results)
 
     print("\n✅ Parameter tuning completed!")
-    print("💡 Use the results to select optimal parameters for your specific use case.")
 
 
 if __name__ == "__main__":
