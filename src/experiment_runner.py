@@ -1,6 +1,5 @@
 """
-Hyperparameter tuning and evaluation script for research purposes.
-Demonstrates how to run multiple experiments with different configurations.
+Runs multiple experiments with different configurations.
 """
 
 import itertools
@@ -12,11 +11,10 @@ from typing import List, Dict, Any
 import time
 
 from main import ExtractionPipelineFactory
-from experiment_tracking import ExperimentConfig
 
 
-class HyperparameterTuner:
-    """Runs multiple experiments with different hyperparameter configurations."""
+class ExperimentRunner:
+    """Runs multiple experiments with different parameter configurations."""
     
     def __init__(self, pdf_path: str, output_dir: str = "hyperparameter_tuning"):
         self.pdf_path = pdf_path
@@ -25,19 +23,9 @@ class HyperparameterTuner:
         
         # Create orchestrator with experiment tracking
         self.orchestrator = ExtractionPipelineFactory.create_orchestrator(with_experiment_tracking=True)
-    
-    def define_hyperparameter_grid(self) -> List[Dict[str, Any]]:
-        """Define the hyperparameter grid to search."""
-        
-        # Define parameter ranges
-        param_grid = {
-            'model_name': ["qwen3:8b"],
-            'chunk_size': [1000, 1500, 2000, 2500, 3000, 3500],
-            'temperature': [0.1, 0.15, 0.2, 0.25, 0.3],
-            "embedding_model": "nomic-embed-text",
-            "chunk_overlap": [200, 300, 400],
-        }
-        
+
+    def define_combinations_from_parameter_grid(self, param_grid: Dict[str, List[Any]]) -> List[Dict[str, Any]]:
+        """Define the parameter grid to search."""
         # Generate all combinations
         keys = param_grid.keys()
         values = param_grid.values()
@@ -45,21 +33,25 @@ class HyperparameterTuner:
         
         return combinations
 
-    def run_experiment_batch(self, max_experiments: int = 10) -> List[Dict[str, Any]]:
-        """Run a batch of experiments with different hyperparameters."""     
-   
-        hyperparameter_combinations = self.define_hyperparameter_grid()
+    def run_experiment_batch(self, max_experiments: int = 10, experiment_name: str = "default", param_grid: Dict[str, Any] = None) -> List[Dict[str, Any]]:
+        """Run a batch of experiments with different parameters."""
+
+        if param_grid is None:
+            print("❌ No parameter grid provided for experiments.")
+            return []
+        parameter_combinations = self.define_combinations_from_parameter_grid(param_grid)
+
         # Limit the number of experiments for demonstration
         if max_experiments > 0:
-            hyperparameter_combinations = hyperparameter_combinations[:max_experiments]
-        
-        print(f"🧪 Running {len(hyperparameter_combinations)} experiments...")
+            parameter_combinations = parameter_combinations[:max_experiments]
+
+        print(f"🧪 Running {len(parameter_combinations)} experiments...")
 
         experiment_results = []
-        
-        for i, params in enumerate(hyperparameter_combinations, 1):
+
+        for i, params in enumerate(parameter_combinations, 1):
             print(f"\n{'='*60}")
-            print(f"🔬 Experiment {i}/{len(hyperparameter_combinations)}")
+            print(f"🔬 Experiment {i}/{len(parameter_combinations)}")
             print(f"📊 Parameters: {params}")
             print(f"{'='*60}")
 
@@ -68,7 +60,7 @@ class HyperparameterTuner:
                 config = ExtractionPipelineFactory.create_config(
                     **params,
                     custom_params={
-                        "experiment_batch": "hyperparameter_tuning",
+                        "experiment_batch": experiment_name,
                         "experiment_number": i,
                     }
                 )
@@ -117,7 +109,8 @@ class HyperparameterTuner:
                     'total_time': 0.0,
                 }
                 experiment_results.append(experiment_result)
-        
+
+        print("\n✅ Parameter tuning named " + experiment_name + " completed!")
         return experiment_results
     
     def analyze_and_visualize_results(self, experiment_results: List[Dict[str, Any]]):
@@ -170,7 +163,7 @@ class HyperparameterTuner:
         
         # 1. Extraction Rate vs Time Trade-off
         fig, axes = plt.subplots(2, 2, figsize=(15, 12))
-        fig.suptitle('Hyperparameter Tuning Results', fontsize=16)
+        fig.suptitle('Parameter Tuning Results', fontsize=16)
         
         # Scatter plot: Extraction Rate vs Time
         axes[0, 0].scatter(df['total_time'], df['extraction_rate'], alpha=0.7, c=df['chunk_size'], cmap='viridis')
@@ -250,22 +243,28 @@ def main():
     
     # Configuration
     pdf_path = "data/papers/The Incubator Case Study for Digital Twin Engineering.pdf"
-    
-    print("🧪 Starting Hyperparameter Tuning for Digital Twin Characteristics Extraction")
+
+    print("🧪 Starting Parameter Exploration for Digital Twin Characteristics Extraction")
     print("=" * 80)
     
     # Create tuner
-    tuner = HyperparameterTuner(pdf_path)
+    tuner = ExperimentRunner(pdf_path)
 
     # Run experiments
-    # experiment_results = tuner.run_experiment_batch(max_experiments=-1)  # Run all combinations
-    experiment_results = tuner.run_experiment_batch(max_experiments=-1) 
-    
+    param_grid = {
+        'model_name': ["qwen3:8b"],
+        'chunk_size': [1000, 1500, 2000, 2500, 3000, 3500],
+        'temperature': [0.1, 0.15, 0.2, 0.25, 0.3],
+        "embedding_model": "nomic-embed-text",
+        "chunk_overlap": [200, 300, 400],
+    }
+    experiment_results = tuner.run_experiment_batch(max_experiments=-1, experiment_name="hyperparameter_tuning", param_grid=param_grid)
+
     # Analyze and visualize results
     tuner.analyze_and_visualize_results(experiment_results)
-    
-    print("\n✅ Hyperparameter tuning completed!")
-    print("💡 Use the results to select optimal hyperparameters for your specific use case.")
+
+    print("\n✅ Parameter tuning completed!")
+    print("💡 Use the results to select optimal parameters for your specific use case.")
 
 
 if __name__ == "__main__":

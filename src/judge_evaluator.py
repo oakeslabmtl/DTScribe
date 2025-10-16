@@ -22,8 +22,8 @@ Your task is to evaluate the quality of an extracted group of characteristics of
 You must:
 1. Read the extracted characteristic carefully.
 2. Compare it to the evidence provided — only use the information contained in the source snippets. Do not rely on outside knowledge.
-3. Score it on the 1–5 scale below.
-4. Provide reasoning for your score, citing 1–3 short quotes from the sources that justify your decision. If no relevant evidence is present, explicitly say so.
+3. Score it on the 1-5 scale below.
+4. Provide reasoning for your score, citing 1-3 short quotes from the sources that justify your decision. If no relevant evidence is present, explicitly say so.
 5. Output in the required JSON format.
 
 

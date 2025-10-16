@@ -10,8 +10,6 @@ from pathlib import Path
 import pandas as pd
 import time
 
-# from utils.memory import get_memory_usage_mb
-
 from abstractions import (
     IDocumentRetriever, ICharacteristicsExtractor, IBlockProcessor,
     IPipelineInitializer, IOMLGenerator, IQualityAnalyzer, IStateManager,
@@ -175,7 +173,6 @@ class QualityAnalyzer(IQualityAnalyzer):
             "not_found_count": total_characteristics - valid_extractions,
             "extraction_rate": (valid_extractions / total_characteristics * 100) if total_characteristics > 0 else 0,
             "average_description_length": avg_length,
-            # "total_docs_retrieved": sum(v for k, v in metadata.items() if k.endswith("_docs_retrieved")),
             "total_chunks": metadata.get("total_chunks", 0)
         }
 
