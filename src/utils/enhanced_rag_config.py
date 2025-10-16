@@ -119,7 +119,7 @@ class EnhancedRAGPipeline:
         except Exception as e:
             return {"error": str(e), "total_pages": 0}
         
-    def enhanced_pdf_processing(self, pdf_path: str, chunk_size: int = 1500, overlap: int = 200, max_pages: int = None) -> Chroma:
+    def enhanced_pdf_processing(self, pdf_path: str, chunk_size: int, overlap: int, max_pages: int = None) -> Chroma:
         """
         Enhanced PDF processing with better chunking strategy and metadata preservation.
         
@@ -147,10 +147,13 @@ class EnhancedRAGPipeline:
             md_text = pymupdf4llm.to_markdown(pdf_path, pages=pages_list)
 
             # Remove the references section and anything after if found # NOTE: make more robust for other pdfs
-            ref_marker = "### **References**"
-            ref_index = md_text.find(ref_marker)
-            if ref_index != -1:
-                md_text = md_text[:ref_index]
+            # ref_marker = "### **References**"
+            # ref_index = md_text.find(ref_marker)
+            # if ref_index != -1:
+            #     md_text = md_text[:ref_index]
+
+            m = re.search(r"\n#+\s*\**references\**\s*\n", md_text, flags=re.I)
+            if m: md_text = md_text[:m.start()]
             
         except Exception as e:
             print(f"Error processing PDF: {e}")
@@ -163,6 +166,7 @@ class EnhancedRAGPipeline:
             chunk_size=chunk_size,
             chunk_overlap=overlap,
             separators=["\n\n", "\n", ". ", " ", ""],
+            # separators=["\n## ", "\n### ", "\n\n", "\n", ". ", " ", ""]
             keep_separator=True,
             length_function=len,
         )
@@ -193,67 +197,56 @@ class EnhancedRAGPipeline:
     def enhanced_retrieval(self, vectordb: Chroma, query: str, k: int = 5) -> List:
         """
         Enhanced retrieval with multiple strategies and query expansion.
-        """      
-        all_docs = []
+        """ 
 
         # Standard similarity search
-        docs = vectordb.similarity_search(query=query, k=k)
-            
-        all_docs.extend(docs)
+        docs = vectordb.similarity_search_with_relevance_scores(query=query, k=k) # output relevance scores, they are already ranked by relevance
+        # print(f"\n\nsimilarity_search_with_relevance_scores. \ntype(docs):{type(docs)} \n\nDOCS:{docs}\n\n") # debug print
         
         # 3. Re-rank documents based on relevance and technical content
-        ranked_docs = self._rerank_documents(all_docs, query)
+        # ranked_docs = self._rerank_documents(all_docs, query)
         
         # 4. Remove duplicates while preserving order
         seen_content = set()
         unique_docs = []
-        for doc in ranked_docs:
-            content_hash = hash(doc.page_content)
+        # for doc in ranked_docs:
+        for doc in docs:
+            content_hash = hash(doc[0].page_content) # first element is the document, second is the score
             if content_hash not in seen_content:
                 seen_content.add(content_hash)
                 unique_docs.append(doc)
         
         return unique_docs[:k]
-    
-    def _rerank_documents(self, docs: List, original_query: str) -> List:
-        """Re-rank documents based on multiple factors."""
-        def score_document(doc):
-            # content = doc.page_content.lower()
-            # query_lower = original_query.lower()
 
-            content = doc.page_content
-            query_embedding = self.embeddings.embed_query(original_query)
-            doc_embedding = self.embeddings.embed_documents([content])[0]
-
-            # Compute cosine similarity
-            def cosine_similarity(a, b):
-                dot_product = sum(x * y for x, y in zip(a, b))
-                norm_a = sum(x * x for x in a) ** 0.5
-                norm_b = sum(y * y for y in b) ** 0.5
-                return dot_product / (norm_a * norm_b + 1e-8)
-            
-            relevance_score = cosine_similarity(query_embedding, doc_embedding)
-
-            # Length penalty (prefer moderate length chunks)
-            length_penalty = abs(len(content.split()) - 200) / 1000
-
-            return relevance_score - length_penalty
-        
-        return sorted(docs, key=score_document, reverse=True)
+    #     return sorted(docs, key=score_document, reverse=True)
     
     def generate_with_cot_and_validation(self, description: str, retrieved_docs: List, 
-                                       schema: Type[BaseModel]) -> BaseModel:
+                                       schema: Type[BaseModel], judge_results: List[dict[str, Any]]) -> BaseModel:
         """
         Enhanced generation with Chain of Thought reasoning and self-validation.
         """
+        
         docs_content = "\n\n".join([
-            f"Document {i+1}:\n{doc.page_content}" 
+            f"## Document {i+1}:\n{str(doc[0].page_content)}" 
             for i, doc in enumerate(retrieved_docs)
         ])
         
         # Create parser for structured output
         parser = PydanticOutputParser(pydantic_object=schema)
+
+        # print(f"\n\njudge_results:\n{judge_results}\n\n")  # debug print
         
+        # If judge_results is empty [] (first attempt) or any characteristic is "ALL_BLOCK" (when judge parsing fails), set judge_results to "Not provided"
+        if not judge_results or any(res.get('characteristic') == "ALL_BLOCK" for res in judge_results):
+            judge_results_str = "Not provided"
+        else:
+            judge_results_str = "\n".join([
+            f"\n- Characteristic: {res.get('characteristic')}\nScore: {res.get('score')}\nReasoning: {res.get('reasoning')}\n\n"
+            for res in judge_results
+            ])
+
+        # print(f"\n\njudge_results_str:\n{judge_results_str}\n\n")  # debug print
+
         # Enhanced prompt with Chain of Thought reasoning and strict output format
         cot_prompt = PromptTemplate.from_template("""
 You are an expert in Digital Twin systems and ontology modeling. Your task is to extract detailed characteristics from technical documents.
@@ -263,6 +256,9 @@ CONTEXT DOCUMENTS:
 
 CHARACTERISTICS TO EXTRACT:
 {description}
+                                                  
+JUDGE RESULTS:
+{judge_results}  
                                                   
 INSTRUCTIONS:
 1. REASONING PHASE: First, analyze the documents step by step:
@@ -274,13 +270,16 @@ INSTRUCTIONS:
    - Provide specific, detailed descriptions based ONLY on the provided documents
    - Include concrete technical details (tools, technologies, protocols, methods)
    - Be precise about quantities, frequencies, and specifications when mentioned
-   - If no evidence is found, state "Not Found"
+   - If no evidence is found, state "Not in Document"
+   - Implement the information from the judge results (if provided) to preserve high-quality characteristics and enhance characteristics scored less than 4.
+
 
 3. VALIDATION PHASE: Review your extracted information:
    - Ensure all details come from the provided documents
    - Check that technical terms are used correctly
    - Verify completeness of the description
-
+   - Ensure the extraction of characteristics is consistent with the judge results (if provided)
+   
 REASONING:
 Let me analyze each document for relevant information...
 
@@ -297,8 +296,12 @@ Remember: Be highly specific and technical. Include exact technologies, methods,
         formatted_prompt = cot_prompt.format(
             docs_content=docs_content,
             description=description,
-            format_instructions=parser.get_format_instructions()
+            judge_results=judge_results_str,
+            format_instructions=parser.get_format_instructions(),
         )
+
+        # print(f"\n\nDOCS CONTENT in prompt (enhanced_rag_config.py:299):\n{docs_content}\n\n")  # debug print
+        # print(f"\n\nFORMATTED PROMPT (enhanced_rag_config.py:299):\n{formatted_prompt}\n\n")  # debug print
         
         # Generate with retry mechanism for better reliability
         max_retries = 3
@@ -326,18 +329,20 @@ Remember: Be highly specific and technical. Include exact technologies, methods,
                     try:
                         response = self.llm.invoke(simple_prompt)
                         response_text = response.content if hasattr(response, 'content') else str(response)
+                        response_metadata = getattr(response, 'response_metadata', {})
                         cleaned_text = self._clean_llm_response(response_text)
                         output = parser.parse(cleaned_text)
                         validated_output = self._self_validate_output(output, retrieved_docs)
                         print(f"Success with fallback prompt on attempt {attempt + 1}")
-                        return validated_output
+                        return validated_output, response_metadata
                     except Exception as fallback_error:
                         print(f"Fallback also failed: {str(fallback_error)}")
                         continue
                 else:
                     # Final fallback: create a basic output with "Not Found" values
                     print("All attempts failed, creating fallback output...")
-                    return self._create_fallback_output(schema)
+                    fb = self._create_fallback_output(schema)
+                    return fb, {}
     
     def _clean_llm_response(self, response_text: str) -> str:
         """
@@ -388,7 +393,7 @@ DOCUMENTS:
 TASK: Extract the following characteristics and return as valid JSON only:
 {description}
 
-For each characteristic, provide a detailed description based on the documents, or "Not Found" if no information exists.
+For each characteristic, provide a detailed description based on the documents, or "Not in Document" if no information exists.
 
 RETURN ONLY VALID JSON IN THIS FORMAT:
 {parser.get_format_instructions()}
@@ -403,20 +408,28 @@ JSON OUTPUT:
         field_names = list(schema.model_fields.keys())
         
         # Create a dict with "Not Found" for all fields
-        fallback_data = {field: "Not Found" for field in field_names}
+        fallback_data = {field: "Not in Document" for field in field_names}
         
         # Create and return the schema instance
         return schema(**fallback_data)
     
     def generate_with_manual_parsing(self, description: str, retrieved_docs: List, 
-                                   schema: Type[BaseModel]) -> BaseModel:
+                                   schema: Type[BaseModel], judge_results: List[dict[str, Any]]) -> BaseModel:
         """
         Alternative generation method with manual JSON parsing as fallback.
         """
         docs_content = "\n\n".join([
-            f"Document {i+1}:\n{doc.page_content}" 
+            f"Document {i+1}:\n{getattr(doc, 'page_content', str(doc))}" 
             for i, doc in enumerate(retrieved_docs)
         ])
+
+        if not judge_results or any(res.get('characteristic') == "ALL_BLOCK" for res in judge_results):
+            judge_results_str = "Not provided"
+        else:
+            judge_results_str = "\n".join([
+            f"\n- Characteristic: {res.get('characteristic')}\nScore: {res.get('score')}\nReasoning: {res.get('reasoning')}\n\n"
+            for res in judge_results
+            ])        
         
         # Simple prompt without structured output parser
         prompt = f"""
@@ -428,15 +441,18 @@ DOCUMENTS:
 EXTRACT THESE CHARACTERISTICS:
 {description}
 
-For each characteristic, provide a detailed description based ONLY on the documents, or "Not Found" if no information exists.
+USE THESE JUDGE EVALUATIONS TO IMPROVE YOUR EXTRACTION (if provided):
+{judge_results_str}
+
+For each characteristic, provide a detailed description based ONLY on the documents, or "Not in Document" if no information exists.
 
 IMPORTANT: Respond with ONLY a valid JSON object. No additional text, explanations, or formatting.
 
 Example format:
 {{
-    "system_under_study": "description here or Not Found",
-    "dt_services": "description here or Not Found",
-    "tooling_and_enablers": "description here or Not Found"
+    "system_under_study": "description here or Not in Document",
+    "dt_services": "description here or Not in Document",
+    "tooling_and_enablers": "description here or Not in Document"
 }}
 
 JSON:
@@ -446,6 +462,7 @@ JSON:
             # Direct LLM call without structured output
             response = self.llm.invoke(prompt)
             response_text = response.content if hasattr(response, 'content') else str(response)
+            response_metadata = getattr(response, 'response_metadata', {})
             
             # Use the same cleaning function for consistency
             cleaned_text = self._clean_llm_response(response_text)
@@ -454,11 +471,11 @@ JSON:
             parsed_data = json.loads(cleaned_text)
             
             # Create schema instance
-            return schema(**parsed_data)
+            return schema(**parsed_data), response_metadata
             
         except Exception as e:
             print(f"Manual parsing failed: {e}")
-            return self._create_fallback_output(schema)
+            return self._create_fallback_output(schema), {}
 
     
     def generate_oml(self, characteristics: Dict[str, Any], 
@@ -466,7 +483,9 @@ JSON:
                         output_path: Path = Path(r"data\DTDF\src\oml\bentleyjoakes.github.io\LLM_described_DT\llm_dt.oml"),
                         catalog_parent_path: Path = Path(r"data\DTDF\\"),
                         writer: IOMLWriter = None,
-                        max_retries: int = 3) -> str:
+                        max_retries: int = 3,
+                        no_validation: bool = False
+                        ) -> str:
         """
         OML generation workflow with retries and validation.
         """
@@ -496,32 +515,40 @@ JSON:
         # Create component-based dictionary
         component_based_characteristics = {key: characteristics[key] for key in component_based_characteristics_keys if key in characteristics}
 
-        attempt_start = time.perf_counter()
-        print(f"📝 Attempt 1/{max_retries + 1}: Generating OML...")
-        description_based_oml = self.generate_description_based_oml(description_based_characteristics, description_based_vocab_mapping)
-        component_based_oml = self.generate_component_based_oml(component_based_characteristics, vocab_files, comma_separated_description_based_vocab_mapping_keys)
+        # Skip validation if specified
+        if no_validation:
+            print("🏗️ Generating OML without validation step...")
+            description_based_oml = self.generate_description_based_oml(description_based_characteristics, description_based_vocab_mapping)
+            component_based_oml = self.generate_component_based_oml(component_based_characteristics, vocab_files, comma_separated_description_based_vocab_mapping_keys)
+            print("⚠️ Skipping validation as per no_validation=True")
+            combined_oml = f"{component_based_oml}\n\n{description_based_oml}"
+            combined_oml = self._clean_llm_response(combined_oml)
+            write_success = writer.write_oml(combined_oml, output_path)
+            if not write_success:
+                print("❌ Failed to write OML to file")
+                return None
+            return combined_oml
+        else:
+            attempt_start = time.perf_counter()
+            print(f"📝 Attempt 1/{max_retries + 1}: Generating OML...")
+            description_based_oml = self.generate_description_based_oml(description_based_characteristics, description_based_vocab_mapping)
+            component_based_oml = self.generate_component_based_oml(component_based_characteristics, vocab_files, comma_separated_description_based_vocab_mapping_keys)
 
         # Retry mechanism for component-based OML generation
         print("🔄 Retrying component-based OML generation with multiple attempts...")
         for attempt in range(max_retries + 1):
             try:
-                # Validate the generated OML syntax
-                if not self._validate_oml_syntax(component_based_oml):
-                    elapsed = time.perf_counter() - attempt_start
-                    print(f"❌ Attempt {attempt + 1}: Invalid OML syntax detected (⏱️ {elapsed:.2f}s)")
-                    # Try to fix the OML based on validation feedback
-                    component_based_oml = self._fix_oml_with_feedback(
-                        oml_content=component_based_oml, 
-                        validation_output="There were OML syntax errors detected. Maybe the generation was incomplete.", 
-                        characteristics=component_based_characteristics, 
-                        vocab_files=vocab_files
-                    )
-                    continue
-
                 # Combine both OML description-based and component-based characteristics
                 print("🏗️ Combining OML descriptions...")
                 combined_oml = f"{component_based_oml}\n\n{description_based_oml}"
                 combined_oml = self._clean_llm_response(combined_oml)
+
+                has_proper_brackets = combined_oml.count('[') == combined_oml.count(']')
+                if not has_proper_brackets:
+                    print(f"❌ Attempt {attempt + 1}: OML syntax error - mismatched brackets")
+                    description_based_oml = self.generate_description_based_oml(description_based_characteristics, description_based_vocab_mapping)
+                    component_based_oml = self.generate_component_based_oml(component_based_characteristics, vocab_files, comma_separated_description_based_vocab_mapping_keys)
+                    continue  # Retry with the fixed component-based OML
                 
                 # Write the OML content to file
                 write_success = writer.write_oml(combined_oml, output_path)
@@ -544,7 +571,8 @@ JSON:
                         component_based_oml, 
                         validation_output, 
                         component_based_characteristics, 
-                        vocab_files
+                        vocab_files,
+                        writer=writer
                     )
                     continue  # Retry with the fixed component-based OML
             except Exception as e:
@@ -577,7 +605,7 @@ JSON:
         oml_parts = []
         for key in characteristics:
             value = characteristics.get(key)
-            if value and value != "Not Found":
+            if value and value != "Not in Document":
                 oml_parts.append(f"instance {key} : DTDFVocab:{vocab_mapping.get(key, 'Unknown')} [\n    base:desc \"{value}\"\n]")
         joined_parts = "\n\n".join(oml_parts)
         return self._clean_llm_response(joined_parts)
@@ -585,7 +613,7 @@ JSON:
     def generate_component_based_oml(self, characteristics: Dict[str, Any], 
                                     vocab_files: Dict[str, str], description_based_vocab_mapping: str) -> str:
         """Generate OML based on components and vocabulary files."""
-        print("🏗️ Generating component-based OML description...")
+        print("🏗️ Generating component-based OML...")
         # Load vocabulary files
         vocab_context = ""
         for name, path in vocab_files.items():
@@ -605,9 +633,6 @@ TASK: Generate complete, syntactically correct OML code for a Digital Twin based
 EXTRACTED CHARACTERISTICS:
 {characteristics}
 
-VOCABULARY REFERENCE:
-{vocab_context}
-
 LIST OF ALREADY GENERATED CHARACTERISTICS (do not generate again):
 {description_based_vocab_mapping}
 
@@ -623,7 +648,7 @@ LIST OF ALREADY GENERATED CHARACTERISTICS (do not generate again):
 ## PROCESSING RULES:
 
 ### 1. Characteristic Analysis:
-- Only generate instances for characteristics with meaningful content (ignore "Not Found")
+- Only generate instances for characteristics with meaningful content (ignore "Not in Document")
 - For characteristics containing multiple items, create separate instances for each distinct item
 - Extract specific technical details from characteristic descriptions for instance names and descriptions
 
@@ -659,7 +684,7 @@ Before generating, ensure:
 - [ ] All instance names are unique and CamelCase
 - [ ] All relationships follow the mandatory data flow pattern
 - [ ] Descriptions are specific and extracted from characteristics
-- [ ] No "Not Found" characteristics are included
+- [ ] No "Not in Document" characteristics are included
 - [ ] Multiple items in characteristics are split into separate instances
 - [ ] All OML syntax is correct (brackets, colons, commas)
 
@@ -679,17 +704,8 @@ Generate ONLY the OML code with no additional explanations:
         oml_content = oml_content.replace("<", "").replace(">", "")  # Remove any stray angle brackets for components
         return oml_content
 
-    def _validate_oml_syntax(self, oml_content: str) -> bool:
-        """Basic OML syntax validation."""
-        # Check for basic OML patterns
-        has_instances = "instance" in oml_content
-        has_proper_brackets = oml_content.count('[') == oml_content.count(']')
-        has_vocabulary_references = "DTDFVocab:" in oml_content or "base:" in oml_content
-        
-        return has_instances and has_proper_brackets and has_vocabulary_references
-
     def _fix_oml_with_feedback(self, oml_content: str, validation_output: str, 
-                              characteristics: Dict[str, Any], vocab_files: Dict[str, str]) -> str:
+                              characteristics: Dict[str, Any], vocab_files: Dict[str, str], writer: IOMLWriter = None,) -> str:
         """
         Fix OML content based on OpenCAESAR validation feedback.
         """
@@ -704,29 +720,30 @@ Generate ONLY the OML code with no additional explanations:
                     vocab_context += f"\n\n{name}:\n```oml\n{content}\n```"
             except FileNotFoundError:
                 print(f"Warning: Could not find '{path}'")
-        
+
+        # Combine OML content and validation output
+        oml_content = writer._combine_oml_with_validation_errors(oml_content, validation_output)
+        print("🔍 Validation errors integrated into OML content for context")
+        print(oml_content)
+
         # Create fix prompt with validation feedback
         fix_prompt = PromptTemplate.from_template("""
 You are an expert in OML (Ontological Modeling Language) debugging and fixing syntax errors.
 
 TASK: Fix the OML code based on the validation errors provided, given the set of characteristics this ontology is based on.
 
-ORIGINAL OML CODE:
+OML CODE WITH CONTEXTUAL VALIDATION ERRORS TO FIX MARKED AS 'TODO':
 ```oml
-{original_oml}
+{oml_content}
 ```
 
-VALIDATION ERRORS:
-{validation_errors}
-
-EXTRACTED CHARACTERISTICS:
+EXTRACTED CHARACTERISTICS FOR CONTEXT:
 {characteristics}
 
 ## ERROR ANALYSIS FRAMEWORK:
 
 ### 1. Error Pattern Recognition:
 Analyze each error by:
-- **Line number and position**: Locate exact error location
 - **Error type**: Identify the specific issue (reference, syntax, semantic)
 - **Root cause**: Determine why the error occurred
 - **Impact scope**: Assess which parts of code are affected
@@ -739,7 +756,7 @@ Analyze each error by:
   - **Fix**: Replace with correct DTDFVocab property or remove if invalid
 
 #### Syntax Errors:
-- Missing brackets, semicolons, or colons
+- Missing brackets, commas, or colons
 - Malformed instance declarations
 - Incorrect namespace usage
 
@@ -761,6 +778,7 @@ DTDFVocab:IsAutomatic        // Action → boolean
 base:contains                // Environment → Components
 base:desc                    // Any instance → description string
 base:isContainedIn          // Component → Environment
+DTDFVocab:hasEnvironment       // SystemUnderStudy → Environment
 ```
 
 ### 4. Systematic Fixing Process:
@@ -769,10 +787,10 @@ base:isContainedIn          // Component → Environment
 - Check each DTDFVocab property against valid properties list
 - Replace invalid properties with correct ones or remove entirely
 - Ensure namespace prefixes are correct
+- Make sure the capitalization matches exactly
 
 #### Step 2: Fix Syntax Issues
 - Verify bracket matching: `[ ]` pairs
-- Check semicolon placement after property values
 - Confirm colon usage in instance declarations
 
 #### Step 3: Resolve Relationship Consistency
@@ -789,10 +807,11 @@ base:isContainedIn          // Component → Environment
 Before outputting fixed code, verify:
 - [ ] All DTDFVocab properties are from the valid list above
 - [ ] All referenced instances are defined in the code
-- [ ] All brackets and semicolons are properly placed
+- [ ] All brackets and colons are properly placed
 - [ ] No circular references exist
 - [ ] Instance names are unique and properly formatted
 - [ ] Relationships follow correct vocabulary semantics
+- [ ] Capitalization and spelling of properties are exact
 
 ## SYNTAX EXAMPLES:
 {guiding_syntax}
@@ -802,10 +821,10 @@ Before outputting fixed code, verify:
 2. **Preserve Intent**: Keep original structure and content where possible
 3. **Valid Properties Only**: Replace invalid properties with correct ones from the reference list
 4. **Complete Relationships**: Ensure all referenced instances exist
-5. **Proper Syntax**: Fix brackets, semicolons, and formatting issues
+5. **Proper Syntax**: Fix brackets, capitalization, and formatting issues
 
 ## CRITICAL RULES:
-- NEVER invent new DTDFVocab properties - use only the valid ones listed above
+- NEVER invent new DTDFVocab properties - use only the valid ones listed above exactly
 - ALWAYS preserve the original instance names unless they cause syntax errors
 - ONLY remove code if it's completely invalid and cannot be corrected
 - MAINTAIN all meaningful relationships and descriptions from the original
@@ -814,7 +833,7 @@ Generate ONLY the corrected OML code with no explanations or comments:
 """)
         
         formatted_prompt = fix_prompt.format(
-            original_oml=oml_content,
+            oml_content=oml_content,
             validation_errors=validation_output,
             characteristics=json.dumps(characteristics, indent=2),
             vocab_context=vocab_context,
