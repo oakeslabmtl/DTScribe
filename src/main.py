@@ -28,7 +28,7 @@ from experiment_tracking import (
     ExperimentConfig, ResultsSaver, ExperimentTracker,
     CharacteristicsExtractionResult, OMLGenerationResult
 )
-# from utils.memory import get_memory_usage_mb
+
 from judge_evaluator import JudgeEvaluator
 
 
@@ -70,15 +70,15 @@ class ExtractionOrchestrator:
             print(f"📊 Using provided Experiment ID: {experiment_id}")
         self.last_experiment_id = experiment_id
 
-        # Only process PDF and create vector DB if it does not exist
         vector_db_path = Path("vector_db")
+        # Re-use existing vector DB if specified and available
         if no_regenerate_db and vector_db_path.exists() and any(vector_db_path.iterdir()):
             print("📂 Vector DB found, skipping regeneration as per --no-regenerate-db.")
             init_result = self._initializer.load_existing_vector_db(str(vector_db_path))
             self._state_manager.update_state(init_result)
         else:
+            # Create new vector DB by default
             print("📁 Processing PDF and creating vector DB...")
-            # Delete existing vector DB folder if any
             if vector_db_path.exists():
                 shutil.rmtree(vector_db_path)
             init_result = self._initializer.initialize(pdf_path, config, config.model_name)
@@ -237,20 +237,6 @@ class ExtractionOrchestrator:
             print("❌ No characteristics available to generate OML. Run extraction first or specify --source-experiment-id.")
             return self._state_manager.get_all_state()
 
-        # TODO: remove this part, ensure functionality
-        # # Ensure RAG pipeline is available (load existing DB if necessary for standalone mode)
-        # if self._state_manager.get_state("rag_pipeline") is None:
-        #     vector_db_path = Path("vector_db")
-        #     if vector_db_path.exists() and any(vector_db_path.iterdir()):
-        #         print("📂 RAG pipeline missing. Loading existing vector DB for OML generation...")
-        #         try:
-        #             init_result = self._initializer.load_existing_vector_db(str(vector_db_path))
-        #             self._state_manager.update_state(init_result)
-        #         except Exception as e:
-        #             print(f"⚠️ Failed to load existing vector DB (continuing): {e}")
-        #     else:
-        #         print("⚠️ No vector DB directory found; proceeding without RAG context (may reduce OML quality).")
-
         try:
             vocab_files = {
                 "DTDFVocab": "data/oml/DTDF/vocab/DTDFVocab.oml",
@@ -274,7 +260,6 @@ class ExtractionOrchestrator:
                 generated_oml=oml_output,
                 oml_metadata={},
                 generation_time_seconds=oml_processing_time,
-                # oml_memory_usage_mb=mem_after - mem_before,
                 errors=oml_errors,
                 warnings=oml_warnings,
                 timestamp=datetime.now(),

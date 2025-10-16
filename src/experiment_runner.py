@@ -255,7 +255,7 @@ def main():
         'model_name': ["qwen3:8b"],
         'chunk_size': [1000, 1500, 2000, 2500, 3000, 3500],
         'temperature': [0.1, 0.15, 0.2, 0.25, 0.3],
-        "embedding_model": "nomic-embed-text",
+        "embedding_model": "embeddinggemma",
         "chunk_overlap": [200, 300, 400],
     }
     experiment_results = tuner.run_experiment_batch(max_experiments=-1, experiment_name="hyperparameter_tuning", param_grid=param_grid)
