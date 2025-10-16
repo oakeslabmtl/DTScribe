@@ -56,7 +56,7 @@ class ExtractionOrchestrator:
         self._extractor: ICharacteristicsExtractor = None
         self.last_experiment_id: Optional[str] = None
 
-    def run_extraction(self, pdf_path: str, experiment_id: Optional[str] = None, config: Optional[ExperimentConfig] = None, save_results: bool = True, no_regenerate_db: bool = True, no_llm_judge: bool = False, max_judge_retries: int = 2) -> Dict[str, Any]:
+    def run_extraction(self, pdf_path: str, experiment_id: Optional[str] = None, config: Optional[ExperimentConfig] = None, save_results: bool = True, keep_db: bool = False, no_llm_judge: bool = False, max_judge_retries: int = 2) -> Dict[str, Any]:
         """Run the complete extraction pipeline with optional experiment tracking."""
         print("🚀 Starting Enhanced Digital Twin Characteristics Extraction")
         print("=" * 60)
@@ -72,8 +72,8 @@ class ExtractionOrchestrator:
 
         vector_db_path = Path("vector_db")
         # Re-use existing vector DB if specified and available
-        if no_regenerate_db and vector_db_path.exists() and any(vector_db_path.iterdir()):
-            print("📂 Vector DB found, skipping regeneration as per --no-regenerate-db.")
+        if keep_db and vector_db_path.exists() and any(vector_db_path.iterdir()):
+            print("📂 Vector DB found, skipping regeneration as per --keep-db.")
             init_result = self._initializer.load_existing_vector_db(str(vector_db_path))
             self._state_manager.update_state(init_result)
         else:
@@ -368,7 +368,7 @@ def main():
     parser.add_argument("--embedding-model", default="embeddinggemma")
     parser.add_argument("--exp-id", help="Existing experiment id (hash_timestamp or just hash for latest) containing characteristics for standalone OML generation")
     parser.add_argument("--no-save", action="store_true", help="Do not persist results")
-    parser.add_argument("--no-regenerate-db", action="store_true", help="Do not regenerate the vector database even if it exists")
+    parser.add_argument("--keep-db", action="store_true", help="Keep the vector database even if it exists")
     parser.add_argument("--no-oml-validation", action="store_true", help="Skip OML validation step")
     parser.add_argument("--no-llm-judge", action="store_true", help="Skip LLM judge step")
     parser.add_argument("--max-judge-retries", type=int, default=2, help="Maximum retries for low-confidence judge evaluations")
@@ -388,7 +388,7 @@ def main():
             temperature=args.temperature,
             custom_params={"cli": True}
         )
-        extraction_results = orchestrator.run_extraction(args.pdf, experiment_id=None, config=config, save_results=not args.no_save, no_regenerate_db=args.no_regenerate_db, no_llm_judge=args.no_llm_judge, max_judge_retries=args.max_judge_retries)
+        extraction_results = orchestrator.run_extraction(args.pdf, experiment_id=None, config=config, save_results=not args.no_save, keep_db=args.keep_db, no_llm_judge=args.no_llm_judge, max_judge_retries=args.max_judge_retries)
         experiment_id = orchestrator.last_experiment_id
 
     if args.mode in ("oml", "both"):
