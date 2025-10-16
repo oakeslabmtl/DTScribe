@@ -380,7 +380,7 @@ def main():
     parser.add_argument("--chunk-overlap", type=int, default=200)
     parser.add_argument("--temperature", type=float, default=0.1)
     parser.add_argument("--model-name", default="qwen3:8b")
-    parser.add_argument("--embedding-model", default="nomic-embed-text")
+    parser.add_argument("--embedding-model", default="embeddinggemma")
     parser.add_argument("--exp-id", help="Existing experiment id (hash_timestamp or just hash for latest) containing characteristics for standalone OML generation")
     parser.add_argument("--no-save", action="store_true", help="Do not persist results")
     parser.add_argument("--no-regenerate-db", action="store_true", help="Do not regenerate the vector database even if it exists")
@@ -419,10 +419,6 @@ def main():
         print(f" - Extracted: {quality_metrics['extracted_count']}/{quality_metrics['total_characteristics']}")
 
     print("\nCompleted mode:", args.mode)
-    print("💡 For standalone OML: python -m src.main --mode oml --exp-id <hash_timestamp | hash>")
-    print("   - Provide full ID (e.g. a1b2c3d4e5f6_20250812143055) to target an exact run")
-    print("   - Or just the 12-char hash to use the latest run with that configuration")
-
 
 if __name__ == "__main__":
     main()

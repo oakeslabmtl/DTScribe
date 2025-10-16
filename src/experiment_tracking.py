@@ -27,7 +27,6 @@ class ExperimentConfig:
     temperature: float
     top_p: float
     top_k: int
-    # repeat_penalty: float
     max_pages: Optional[int] = None
     llm_judge: bool = False
     oml_feedback_loop: bool = False
@@ -54,14 +53,12 @@ class CharacteristicsExtractionResult:
     average_description_length: float
     
     # Performance metrics
-    # total_docs_retrieved: int
     total_chunks: int
     processing_time_seconds: float
     
     # Block-specific metrics
     block_processing_times: Dict[str, float]
     block_docs_retrieved: Dict[str, int]
-    # block_memory_usages: Dict[str, float]
     block_success_rates: Dict[str, bool]
 
     # token usage
@@ -98,7 +95,6 @@ class OMLGenerationResult:
     
     # Performance metrics
     generation_time_seconds: float
-    # oml_memory_usage_mb: float
     
     # Error information
     errors: List[str] = field(default_factory=list)
@@ -180,14 +176,6 @@ class ResultsSaver:
         """Update the characteristics extraction summary CSV."""
         summary_file = self.analysis_dir / "characteristics_summary.csv"
 
-        # Flatten token dicts for CSV (sum or join per block)
-        def flatten_token_dict(token_dict):
-            if not token_dict:
-                return 0
-            if isinstance(token_dict, dict):
-                return sum(token_dict.values())
-            return token_dict
-
         summary_data = {
             'experiment_id': result.experiment_id,
             'timestamp': result.timestamp.isoformat(),
@@ -201,7 +189,6 @@ class ResultsSaver:
             'extracted_count': result.extracted_count,
             'total_characteristics': result.total_characteristics,
             'average_description_length': result.average_description_length,
-            # 'total_docs_retrieved': result.total_docs_retrieved,
             'processing_time_seconds': result.processing_time_seconds,
             'total_input_tokens': result.total_input_tokens,
             'total_output_tokens': result.total_output_tokens,
@@ -229,7 +216,6 @@ class ResultsSaver:
             'oml_line_count': result.oml_line_count,
             'oml_instance_count': result.oml_instance_count,
             'generation_time_seconds': result.generation_time_seconds,
-            # 'oml_memory_usage_mb': result.oml_memory_usage_mb,
             'error_count': len(result.errors),
             'warning_count': len(result.warnings)
         }
