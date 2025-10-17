@@ -97,7 +97,6 @@ class EnhancedRAGPipeline:
             # repeat_penalty=1.1,
             num_ctx=8192,
             num_predict=4096,
-
         )
         
         self.embeddings = OllamaEmbeddings(model=embedding_model)
@@ -483,8 +482,7 @@ JSON:
                         output_path: Path = Path(r"data\DTDF\src\oml\bentleyjoakes.github.io\LLM_described_DT\llm_dt.oml"),
                         catalog_parent_path: Path = Path(r"data\DTDF\\"),
                         writer: IOMLWriter = None,
-                        max_retries: int = 3,
-                        no_validation: bool = False
+                        max_retries: int = 3
                         ) -> str:
         """
         OML generation workflow with retries and validation.
@@ -516,11 +514,11 @@ JSON:
         component_based_characteristics = {key: characteristics[key] for key in component_based_characteristics_keys if key in characteristics}
 
         # Skip validation if specified
-        if no_validation:
+        if max_retries <= 0:
             print("🏗️ Generating OML without validation step...")
             description_based_oml = self.generate_description_based_oml(description_based_characteristics, description_based_vocab_mapping)
             component_based_oml = self.generate_component_based_oml(component_based_characteristics, vocab_files, comma_separated_description_based_vocab_mapping_keys)
-            print("⚠️ Skipping validation as per no_validation=True")
+            print("⚠️ Skipping validation as per max_retries <= 0")
             combined_oml = f"{component_based_oml}\n\n{description_based_oml}"
             combined_oml = self._clean_llm_response(combined_oml)
             write_success = writer.write_oml(combined_oml, output_path)

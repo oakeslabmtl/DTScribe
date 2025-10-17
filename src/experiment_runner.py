@@ -56,7 +56,8 @@ class ExperimentRunner:
             for rep in range(repeat_experiments):
                 experiment_counter += 1
                 print(f"\n{'='*60}")
-                print(f"🔬 Experiment {experiment_counter}/{total_experiments}")
+                print(f"🔬 Experiment {combo_idx}/{len(parameter_combinations)}")
+                print(f"➕ Experiment counter: {experiment_counter}/{total_experiments}")
                 print(f"📊 Parameters: {params}")
                 print(f"🔄 Repetition: {rep + 1}/{repeat_experiments}")
                 print(f"{'='*60}")
@@ -82,6 +83,8 @@ class ExperimentRunner:
                         save_results=True,
                         experiment_id=None,
                     )
+                    experiment_id = self.orchestrator.last_experiment_id
+                    # oml_results = self.orchestrator.run_oml_generation(experiment_id=experiment_id, save_results=True, source_experiment_id=experiment_id, no_validation=False)
                     experiment_time = time.time() - start_time
 
                     # Analyze results

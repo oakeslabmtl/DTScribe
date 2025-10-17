@@ -9,8 +9,9 @@ Once installed, pull the required models:
 ```bash
 # Example LLM (adjust to desired model, e.g., llama3, qwen, mistral, etc.):
 ollama pull llama3.2
-# Embedding model:
+# Embedding models:
 ollama pull nomic-embed-text
+ollama pull embeddinggemma
 ```
 
 ### 2. (Optional) Install uv
@@ -54,9 +55,8 @@ parser.add_argument("--embedding-model", default="embeddinggemma")
 parser.add_argument("--exp-id", help="Existing experiment id (hash_timestamp or just hash for latest) containing characteristics for standalone OML generation")
 parser.add_argument("--no-save", action="store_true", help="Do not persist results")
 parser.add_argument("--keep-db", action="store_true", help="Keep the vector database even if it exists")
-parser.add_argument("--no-oml-validation", action="store_true", help="Skip OML validation step")
-parser.add_argument("--no-llm-judge", action="store_true", help="Skip LLM judge step")
-parser.add_argument("--max-judge-retries", type=int, default=2, help="Maximum retries for low-confidence judge evaluations")
+parser.add_argument("--max-judge-retries", type=int, default=2, help="Maximum retries for low-confidence judge evaluations. Set to 0 to disable judging.")
+parser.add_argument("--max-oml-retries", type=int, default=3, help="Maximum retries for OML generation validation. Set to 0 to skip validation.")
 ```
 
 ## Analyzing results
