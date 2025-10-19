@@ -58,6 +58,7 @@ class ExtractionOrchestrator:
 
     def initialize_pipeline(self, pdf_path: str, config: ExperimentConfig, keep_db: bool = False):
         """Initialize the pipeline with the given PDF and configuration."""
+        print("🔧 Initializing extraction pipeline...")
         vector_db_path = Path("vector_db")
         # Re-use existing vector DB if specified and available
         if keep_db and vector_db_path.exists() and any(vector_db_path.iterdir()):
@@ -72,7 +73,7 @@ class ExtractionOrchestrator:
             init_result = self._initializer.initialize(pdf_path, config, config.model_name)
             self._state_manager.update_state(init_result)
 
-    def run_extraction(self, pdf_path: str, experiment_id: Optional[str] = None, config: Optional[ExperimentConfig] = None, save_results: bool = True, keep_db: bool = False) -> Dict[str, Any]:
+    def run_extraction(self, pdf_path: str, experiment_id: Optional[str] = None, config: Optional[ExperimentConfig] = None, save_results: bool = True) -> Dict[str, Any]:
         """Run the complete extraction pipeline with optional experiment tracking."""
         print("🚀 Starting Enhanced Digital Twin Characteristics Extraction")
         print("=" * 60)

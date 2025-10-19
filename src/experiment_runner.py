@@ -74,6 +74,8 @@ class ExperimentRunner:
                         }
                     )
 
+                    self.orchestrator.initialize_pipeline(self.pdf_path, config=config, keep_db=False)
+
                     # Run extraction
                     start_time = time.time()
 
@@ -81,10 +83,10 @@ class ExperimentRunner:
                         self.pdf_path,
                         config=config,
                         save_results=True,
-                        experiment_id=None,
+                        experiment_id=None
                     )
                     experiment_id = self.orchestrator.last_experiment_id
-                    # oml_results = self.orchestrator.run_oml_generation(experiment_id=experiment_id, save_results=True, source_experiment_id=experiment_id, no_validation=False)
+                    # oml_results = self.orchestrator.run_oml_generation(experiment_id=experiment_id, save_results=True, source_experiment_id=experiment_id)
                     experiment_time = time.time() - start_time
 
                     # Analyze results
@@ -150,7 +152,7 @@ class ExperimentRunner:
         
         # Basic statistics
         print(f"   📈 Extraction Rate: {successful_df['extraction_rate'].mean():.2f}% ± {successful_df['extraction_rate'].std():.2f}%")
-        print(f"   ⏱️  Average Time: {successful_df['total_time'].mean():.2f}s ± {successful_df['total_time'].std():.2f}s")
+        print(f"   ⏱️ Average Time: {successful_df['total_time'].mean():.2f}s ± {successful_df['total_time'].std():.2f}s")
         print(f"   🏆 Best Extraction Rate: {successful_df['extraction_rate'].max():.2f}%")
         print(f"   ⚡ Fastest Time: {successful_df['total_time'].min():.2f}s")
         
@@ -273,6 +275,7 @@ def main():
         'temperature': [0.2],
         "embedding_model": ["embeddinggemma"],
         "chunk_overlap": [300],
+        "max_judge_retries": [2],
     }
     experiment_results = runner.run_experiment_batch(max_experiments=-1, repeat_experiments=2, experiment_name=experiment_name, param_grid=param_grid)
 
