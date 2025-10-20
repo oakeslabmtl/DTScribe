@@ -10,17 +10,16 @@ import seaborn as sns
 from typing import List, Dict, Any
 import time
 
-from main import ExtractionPipelineFactory
+from main import ExtractionPipelineFactory, ExtractionOrchestrator
+
 
 
 class ExperimentRunner:
     """Runs multiple experiments with different parameter configurations."""
     
-    def __init__(self, pdf_path: str):
+    def __init__(self, pdf_path: str, orchestrator: ExtractionOrchestrator):
         self.pdf_path = pdf_path
-
-        # Create orchestrator with experiment tracking
-        self.orchestrator = ExtractionPipelineFactory.create_orchestrator(with_experiment_tracking=True)
+        self.orchestrator = orchestrator
 
     def define_combinations_from_parameter_grid(self, param_grid: Dict[str, List[Any]]) -> List[Dict[str, Any]]:
         """Define the parameter grid to search."""
@@ -31,7 +30,7 @@ class ExperimentRunner:
         
         return combinations
 
-    def run_experiment_batch(self, max_experiments: int = 10, experiment_name: str = "default", param_grid: Dict[str, Any] = None, repeat_experiments: int = 1) -> List[Dict[str, Any]]:
+    def run_experiment_batch(self, max_experiments: int = 10, experiment_name: str = "default", param_grid: Dict[str, Any] = None, repeat_experiments: int = 1, mode: str = "both") -> List[Dict[str, Any]]:
         """Run a batch of experiments with different parameters."""
 
         self.output_dir = Path(experiment_name)
@@ -62,7 +61,7 @@ class ExperimentRunner:
                 print(f"🔄 Repetition: {rep + 1}/{repeat_experiments}")
                 print(f"{'='*60}")
 
-                try:
+                try:                   
                     # Create configuration
                     config = ExtractionPipelineFactory.create_config(
                         **params,
@@ -74,24 +73,40 @@ class ExperimentRunner:
                         }
                     )
 
-                    self.orchestrator.initialize_pipeline(self.pdf_path, config=config, keep_db=False)
+                    # Initialize pipeline
+                    self.orchestrator.initialize_pipeline(self.pdf_path, config=config)
 
                     # Run extraction
                     start_time = time.time()
 
-                    results = self.orchestrator.run_extraction(
-                        self.pdf_path,
-                        config=config,
-                        save_results=True,
-                        experiment_id=None
-                    )
-                    experiment_id = self.orchestrator.last_experiment_id
-                    # oml_results = self.orchestrator.run_oml_generation(experiment_id=experiment_id, save_results=True, source_experiment_id=experiment_id)
+                    extraction_results = {}
+                    oml_results = {}
+                    experiment_id = None
+                    if mode in ("extraction", "both"):
+                        extraction_results = self.orchestrator.run_extraction(
+                            pdf_path=self.pdf_path,
+                            config=config,
+                            save_results=True,
+                            experiment_id=None
+                        )
+                        experiment_id = self.orchestrator.last_experiment_id
+
+                    if mode in ("oml", "both"):
+                        oml_results = self.orchestrator.run_oml_generation(
+                            config=config,
+                            experiment_id=experiment_id,
+                            save_results=True,
+                            source_experiment_id=experiment_id
+                        )
+                        oml_output = oml_results.get("oml_output")
+                        if not oml_output:
+                            print("No OML generated.")
+                    
                     experiment_time = time.time() - start_time
 
                     # Analyze results
-                    if results.get("extracted_characteristics"):
-                        quality_metrics = self.orchestrator.analyze_characteristic_extraction(results)
+                    if extraction_results.get("extracted_characteristics"):
+                        quality_metrics = self.orchestrator.analyze_characteristic_extraction(extraction_results)
                         print("\n📈 Extraction Quality:")
                         print(f" - Extraction Rate: {quality_metrics['extraction_rate']:.2f}%")
                         print(f" - Extracted: {quality_metrics['extracted_count']}/{quality_metrics['total_characteristics']}")
@@ -125,7 +140,6 @@ class ExperimentRunner:
                         'total_time': 0.0,
                     }
                     experiment_results.append(experiment_result)
-
         print(f"\n✅ Parameter tuning named {experiment_name} completed!")
         print(f"📊 Ran {len(parameter_combinations)} parameter combinations × {repeat_experiments} repetitions = {total_experiments} total experiments")
         return experiment_results
@@ -161,13 +175,15 @@ class ExperimentRunner:
         fastest_config = successful_df.loc[successful_df['total_time'].idxmin()]
         
         print(f"\n🏆 Best Extraction Rate Configuration:")
-        for param in ['chunk_size', 'model', 'temperature']:
-            print(f"   • {param}: {best_extraction[param]}")
+        for param in ['chunk_size', 'model_name', 'temperature']:
+            if param in best_extraction:
+                print(f"   • {param}: {best_extraction[param]}")
         print(f"   • Extraction Rate: {best_extraction['extraction_rate']:.2f}%")
 
         print(f"\n⚡ Fastest Configuration:")
-        for param in ['chunk_size', 'model', 'temperature']:
-            print(f"   • {param}: {fastest_config[param]}")
+        for param in ['chunk_size', 'model_name', 'temperature']:
+            if param in fastest_config:
+                print(f"   • {param}: {fastest_config[param]}")
         print(f"   • Time: {fastest_config['total_time']:.2f}s")
         
         # Create visualizations
@@ -258,7 +274,8 @@ def main():
     print("=" * 80)
     
     # Create experiment runner
-    runner = ExperimentRunner(pdf_path)
+    orchestrator = ExtractionPipelineFactory.create_orchestrator(with_experiment_tracking=True)
+    runner = ExperimentRunner(pdf_path, orchestrator=orchestrator)
 
     # Run experiments
     # param_grid = {
@@ -271,13 +288,20 @@ def main():
     experiment_name = "hyperparameter_tuning"
     param_grid = {
         'model_name': ["qwen3:8b"],
-        'chunk_size': [2500],
-        'temperature': [0.2],
+        'chunk_size': [2000, 2500, 3000],
+        'temperature': [0.1, 0.2, 0.3],
         "embedding_model": ["embeddinggemma"],
-        "chunk_overlap": [300],
-        "max_judge_retries": [2],
+        "chunk_overlap": [100, 200, 300, 400],
+        "max_judge_retries": [0],
+        "max_oml_retries": [0],
     }
-    experiment_results = runner.run_experiment_batch(max_experiments=-1, repeat_experiments=2, experiment_name=experiment_name, param_grid=param_grid)
+    experiment_results = runner.run_experiment_batch(
+        max_experiments=-1,
+        repeat_experiments=2,
+        experiment_name=experiment_name,
+        param_grid=param_grid,
+        mode="extraction",
+    )
 
     # Check if user wants to visualize existing results
     if len(sys.argv) > 1 and sys.argv[1] == "--visualize":
@@ -287,7 +311,7 @@ def main():
 
     # TODO: Fix this part
     # Analyze and visualize results
-    runner.analyze_and_visualize_results(experiment_results)
+    # runner.analyze_and_visualize_results(experiment_results)
 
     print("\n✅ Parameter tuning completed!")
 

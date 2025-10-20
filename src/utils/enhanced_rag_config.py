@@ -11,6 +11,7 @@ from langchain_ollama import OllamaEmbeddings, ChatOllama
 from langchain.text_splitter import MarkdownTextSplitter
 from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import PydanticOutputParser
+from chromadb.config import Settings
 from typing import Type, List, Dict, Any
 from pydantic import BaseModel
 import pymupdf4llm
@@ -186,8 +187,8 @@ class EnhancedRAGPipeline:
         vectordb = Chroma.from_documents(
             docs,
             embedding=self.embeddings,
-            persist_directory="./vector_db",
-            collection_metadata={"hnsw:space": "cosine"}  # Better for semantic similarity
+            collection_metadata={"hnsw:space": "cosine"},  # Better for semantic similarity
+            client_settings=Settings(allow_reset=True)  # Allow resetting existing collections
         )
         
         return vectordb

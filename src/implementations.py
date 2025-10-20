@@ -50,7 +50,7 @@ class DocumentRetriever(IDocumentRetriever):
         self._rag_pipeline = rag_pipeline
         self._vectordb = vectordb
     
-    def retrieve_documents(self, query: str, k: int = 5, **kwargs) -> List[Any]:
+    def retrieve_documents(self, query: str, k: int = 5) -> List[Any]:
         
         return self._rag_pipeline.enhanced_retrieval(
             self._vectordb, query, k=k
@@ -108,27 +108,6 @@ class PipelineInitializer(IPipelineInitializer):
             "extraction_metadata": {
                 "total_chunks": vectordb._collection.count(),
                 "pdf_info": pdf_info
-            }
-        }
-    
-    def load_existing_vector_db(self, vector_db_path: str = "vector_db", model_name: str = "") -> Dict[str, Any]:
-        """
-        Loads an existing vector database from disk.
-        """
-        print(f"📂 Loading existing vector DB from {vector_db_path} ...")
-        self._rag_pipeline = EnhancedRAGPipeline(model_name=model_name)
-        # Load Chroma vector DB from persist_directory
-        
-        vectordb = Chroma(
-            embedding_function=self._rag_pipeline.embeddings,
-            persist_directory=vector_db_path
-        )
-        print("✅ Existing vector DB loaded successfully")
-        return {
-            "vectordb": vectordb,
-            "rag_pipeline": self._rag_pipeline,
-            "extraction_metadata": {
-                "total_chunks": vectordb._collection.count() if hasattr(vectordb, '_collection') else None
             }
         }
 

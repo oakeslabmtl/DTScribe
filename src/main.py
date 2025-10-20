@@ -13,7 +13,10 @@ import time
 from datetime import datetime
 import argparse
 import sys
-
+import os
+import gc
+import atexit
+import chromadb
 from abstractions import (
     IBlockProcessor, IPipelineInitializer, IOMLGenerator, 
     IQualityAnalyzer, IStateManager, IDocumentRetriever, ICharacteristicsExtractor
@@ -30,7 +33,6 @@ from experiment_tracking import (
 )
 
 from judge_evaluator import JudgeEvaluator
-
 
 class ExtractionOrchestrator:
     """Main orchestrator that coordinates the extraction pipeline."""
@@ -56,22 +58,14 @@ class ExtractionOrchestrator:
         self._extractor: ICharacteristicsExtractor = None
         self.last_experiment_id: Optional[str] = None
 
-    def initialize_pipeline(self, pdf_path: str, config: ExperimentConfig, keep_db: bool = False):
+    def initialize_pipeline(self, pdf_path: str, config: ExperimentConfig):
         """Initialize the pipeline with the given PDF and configuration."""
         print("🔧 Initializing extraction pipeline...")
-        vector_db_path = Path("vector_db")
-        # Re-use existing vector DB if specified and available
-        if keep_db and vector_db_path.exists() and any(vector_db_path.iterdir()):
-            print("📂 Vector DB found, skipping regeneration as per --keep-db.")
-            init_result = self._initializer.load_existing_vector_db(str(vector_db_path))
-            self._state_manager.update_state(init_result)
-        else:
-            # Create new vector DB by default
-            print("📁 Processing PDF and creating vector DB...")
-            if vector_db_path.exists():
-                shutil.rmtree(vector_db_path)
-            init_result = self._initializer.initialize(pdf_path, config, config.model_name)
-            self._state_manager.update_state(init_result)
+        print("📁 Processing PDF and creating vector DB...")
+        if self._state_manager.get_state("vectordb"):
+            self._state_manager.get_state("vectordb")._client.reset()
+        init_result = self._initializer.initialize(pdf_path, config, config.model_name)
+        self._state_manager.update_state(init_result)
 
     def run_extraction(self, pdf_path: str, experiment_id: Optional[str] = None, config: Optional[ExperimentConfig] = None, save_results: bool = True) -> Dict[str, Any]:
         """Run the complete extraction pipeline with optional experiment tracking."""
@@ -206,17 +200,16 @@ class ExtractionOrchestrator:
         state = self._state_manager.get_all_state()
         state['experiment_id'] = experiment_id
         return state
-        
-        
-    def run_oml_generation(self, experiment_id: str = None, save_results: bool = True,
-                            source_experiment_id: str = None, max_retries: int = 3) -> Dict[str, Any]:
+
+
+    def run_oml_generation(self, experiment_id: str = None, save_results: bool = True, config: Optional[ExperimentConfig] = None,
+                            source_experiment_id: str = None) -> Dict[str, Any]:
         """Run OML generation; optionally load characteristics from a saved experiment.
 
         Parameters:
             experiment_id: (optional) ID for this OML generation run.
             save_results: persist results if tracking enabled.
             source_experiment_id: load characteristics from this prior extraction experiment.
-            no_validation: skip OML validation step if True.
         """
         print("\n--- Generating OML ---")
         oml_start_time = time.time()
@@ -245,7 +238,7 @@ class ExtractionOrchestrator:
                 "DTDFVocab": "data/oml/DTDF/vocab/DTDFVocab.oml",
                 "base": "data/oml/DTDF/vocab/base.oml"
             }
-            oml_output = self._oml_generator.generate(characteristics, vocab_files, max_retries=max_retries)
+            oml_output = self._oml_generator.generate(characteristics, vocab_files, max_retries=config.max_oml_retries)
             self._state_manager.update_state({"oml_output": oml_output})
         except Exception as e:
             oml_error = f"OML generation failed: {str(e)}"
@@ -343,6 +336,7 @@ class ExtractionPipelineFactory:
         top_p: float = 0.9,
         top_k: int = 20,
         max_judge_retries: int = 2,
+        max_oml_retries: int = 3,
         max_pages: int = None,
         **custom_params
     ) -> ExperimentConfig:
@@ -357,6 +351,7 @@ class ExtractionPipelineFactory:
             top_k=top_k,
             max_pages=max_pages,
             max_judge_retries=max_judge_retries,
+            max_oml_retries=max_oml_retries,
             custom_params=custom_params
         )
 
@@ -377,11 +372,6 @@ def main():
     parser.add_argument("--max-oml-retries", type=int, default=3, help="Maximum retries for OML generation validation. Set to 0 to skip validation.")
     args = parser.parse_args()
 
-    orchestrator = ExtractionPipelineFactory.create_orchestrator(with_experiment_tracking=True)
-
-    extraction_results: Dict[str, Any] = {}
-    experiment_id = None
-
     config = ExtractionPipelineFactory.create_config(
         model_name=args.model_name,
         embedding_model=args.embedding_model,
@@ -389,22 +379,27 @@ def main():
         chunk_overlap=args.chunk_overlap,
         temperature=args.temperature,
         max_judge_retries=args.max_judge_retries,
+        max_oml_retries=args.max_oml_retries,
         custom_params={"cli": True}
     )
+    print("Using configuration:", config)
 
+    orchestrator = ExtractionPipelineFactory.create_orchestrator(with_experiment_tracking=True)
     orchestrator.initialize_pipeline(args.pdf, config=config, keep_db=args.keep_db)
 
+    extraction_results = {}
+    experiment_id = None
     if args.mode in ("extraction", "both"):
-        extraction_results = orchestrator.run_extraction(args.pdf, experiment_id=None, config=config, save_results=not args.no_save, keep_db=args.keep_db)
+        extraction_results = orchestrator.run_extraction(args.pdf, experiment_id=None, config=config, save_results=not args.no_save)
         experiment_id = orchestrator.last_experiment_id
 
     if args.mode in ("oml", "both"):
-        oml_results = orchestrator.run_oml_generation(experiment_id=experiment_id, save_results=not args.no_save, source_experiment_id=args.exp_id, max_retries=args.max_oml_retries)
+        oml_results = orchestrator.run_oml_generation(experiment_id=experiment_id, save_results=not args.no_save, source_experiment_id=args.exp_id, config=config)
         oml_output = oml_results.get("oml_output")
         if not oml_output:
             print("No OML generated.")
 
-    if extraction_results.get("extracted_characteristics"):
+    if extraction_results and extraction_results.get("extracted_characteristics"):
         quality_metrics = orchestrator.analyze_characteristic_extraction(extraction_results)
         print("\n📈 Extraction Quality:")
         print(f" - Extraction Rate: {quality_metrics['extraction_rate']:.2f}%")
