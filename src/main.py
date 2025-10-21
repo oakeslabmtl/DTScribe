@@ -367,7 +367,6 @@ def main():
     parser.add_argument("--embedding-model", default="embeddinggemma")
     parser.add_argument("--exp-id", help="Existing experiment id (hash_timestamp or just hash for latest) containing characteristics for standalone OML generation")
     parser.add_argument("--no-save", action="store_true", help="Do not persist results")
-    parser.add_argument("--keep-db", action="store_true", help="Keep the vector database even if it exists")
     parser.add_argument("--max-judge-retries", type=int, default=2, help="Maximum retries for low-confidence judge evaluations. Set to 0 to disable judging.")
     parser.add_argument("--max-oml-retries", type=int, default=3, help="Maximum retries for OML generation validation. Set to 0 to skip validation.")
     args = parser.parse_args()
@@ -385,7 +384,7 @@ def main():
     print("Using configuration:", config)
 
     orchestrator = ExtractionPipelineFactory.create_orchestrator(with_experiment_tracking=True)
-    orchestrator.initialize_pipeline(args.pdf, config=config, keep_db=args.keep_db)
+    orchestrator.initialize_pipeline(args.pdf, config=config)
 
     extraction_results = {}
     experiment_id = None
