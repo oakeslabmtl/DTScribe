@@ -118,14 +118,14 @@ class OMLGenerator(IOMLGenerator):
     def __init__(self, rag_pipeline: EnhancedRAGPipeline):
         self._rag_pipeline = rag_pipeline
 
-    def generate(self, characteristics: Dict[str, Any], vocab_files: Dict[str, str], max_retries: int = 3) -> str:
+    def generate(self, characteristics: Dict[str, Any], vocab_files: Dict[str, str], max_retries: int = 3):
         print("🏗️ Generating OML description...")
-        oml_output = self._rag_pipeline.generate_oml(characteristics, vocab_files, max_retries=max_retries)
+        oml_output, oml_repetition_count, validation_status = self._rag_pipeline.generate_oml(characteristics, vocab_files, max_retries=max_retries)
         if oml_output and oml_output.strip() != "":
             print("OML generation completed")
         else:
             print("⚠️ OML generation failed or produced empty output")
-        return oml_output
+        return oml_output, oml_repetition_count, validation_status
 
 
 class QualityAnalyzer(IQualityAnalyzer):

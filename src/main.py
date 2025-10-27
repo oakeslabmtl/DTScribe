@@ -238,7 +238,7 @@ class ExtractionOrchestrator:
                 "DTDFVocab": "data/oml/DTDF/vocab/DTDFVocab.oml",
                 "base": "data/oml/DTDF/vocab/base.oml"
             }
-            oml_output = self._oml_generator.generate(characteristics, vocab_files, max_retries=config.max_oml_retries)
+            oml_output, oml_repetition_count, validation_status = self._oml_generator.generate(characteristics, vocab_files, max_retries=config.max_oml_retries)
             self._state_manager.update_state({"oml_output": oml_output})
         except Exception as e:
             oml_error = f"OML generation failed: {str(e)}"
@@ -255,11 +255,12 @@ class ExtractionOrchestrator:
                 generated_oml=oml_output,
                 oml_metadata={},
                 generation_time_seconds=oml_processing_time,
+                oml_max_retries=config.max_oml_retries,
+                oml_repetition_count=oml_repetition_count,
                 errors=oml_errors,
                 warnings=oml_warnings,
                 timestamp=datetime.now(),
-                oml_syntax_valid=True,
-                oml_completeness_score=1.0,
+                oml_valid=(validation_status == 1),
                 oml_line_count=len(oml_output.splitlines()),
                 oml_instance_count=oml_output.count("instance")
             )

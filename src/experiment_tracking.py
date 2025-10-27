@@ -72,8 +72,6 @@ class CharacteristicsExtractionResult:
     # Error information
     errors: List[str] = field(default_factory=list)
     warnings: List[str] = field(default_factory=list)
-    
-
 
 
 @dataclass
@@ -88,13 +86,14 @@ class OMLGenerationResult:
     oml_metadata: Dict[str, Any]
     
     # Quality metrics
-    oml_syntax_valid: bool
-    oml_completeness_score: float
+    oml_valid: bool
     oml_line_count: int
     oml_instance_count: int
     
     # Performance metrics
     generation_time_seconds: float
+    oml_max_retries: int
+    oml_repetition_count: int
     
     # Error information
     errors: List[str] = field(default_factory=list)
@@ -211,10 +210,11 @@ class ResultsSaver:
             'experiment_id': result.experiment_id,
             'timestamp': result.timestamp.isoformat(),
             'characteristics_experiment_id': result.characteristics_experiment_id,
-            'oml_syntax_valid': result.oml_syntax_valid,
-            'oml_completeness_score': result.oml_completeness_score,
+            'oml_valid': result.oml_valid,
             'oml_line_count': result.oml_line_count,
             'oml_instance_count': result.oml_instance_count,
+            'oml_repetition_count': result.oml_repetition_count,
+            'oml_max_retries': result.oml_max_retries,
             'generation_time_seconds': result.generation_time_seconds,
             'error_count': len(result.errors),
             'warning_count': len(result.warnings)
