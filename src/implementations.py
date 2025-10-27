@@ -4,10 +4,8 @@ Concrete implementations following SOLID principles.
 
 from typing import Dict, Any, List, Type, Optional
 from abc import ABC, abstractmethod
-from langchain_chroma import Chroma
 from pydantic import BaseModel
 from pathlib import Path
-import pandas as pd
 import time
 
 from abstractions import (

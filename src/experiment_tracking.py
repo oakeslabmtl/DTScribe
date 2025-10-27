@@ -12,10 +12,7 @@ from dataclasses import dataclass, asdict, field
 import pandas as pd
 import hashlib
 
-# New experiment id format: <12-char config hash>_<YYYYMMDDHHMMSS>
-# This keeps a stable portion for grouping while ensuring each run
-# (even with identical config) has a unique readable suffix.
-
+# Experiment id format: <12-char config hash>_<YYYYMMDDHHMMSS>
 
 @dataclass
 class ExperimentConfig:

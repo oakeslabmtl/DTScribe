@@ -1,22 +1,10 @@
 """Main orchestrator & CLI.
-
-Enhancement: allow standalone OML generation from previously saved characteristics
-without re-running extraction (faster iteration). Use --mode oml and provide
---exp-id.
 """
 
-import shutil
 from typing import Dict, Any, List, Optional
-from pathlib import Path
-import pandas as pd
 import time
 from datetime import datetime
 import argparse
-import sys
-import os
-import gc
-import atexit
-import chromadb
 from abstractions import (
     IBlockProcessor, IPipelineInitializer, IOMLGenerator, 
     IQualityAnalyzer, IStateManager, IDocumentRetriever, ICharacteristicsExtractor
