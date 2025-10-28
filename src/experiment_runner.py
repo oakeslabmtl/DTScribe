@@ -12,8 +12,6 @@ import time
 
 from main import ExtractionPipelineFactory, ExtractionOrchestrator
 
-
-
 class ExperimentRunner:
     """Runs multiple experiments with different parameter configurations."""
     
