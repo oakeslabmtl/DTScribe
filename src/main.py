@@ -294,10 +294,10 @@ class ExtractionPipelineFactory:
         block_processors = [
             Block1Processor(),
             Block2Processor(),
-            # Block3Processor(),
-            # Block4Processor(),
-            # Block5Processor(),
-            # Block6Processor()
+            Block3Processor(),
+            Block4Processor(),
+            Block5Processor(),
+            Block6Processor()
         ]
         
         # Create a wrapper that handles the OML generator creation
