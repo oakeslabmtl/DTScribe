@@ -5,6 +5,7 @@ Concrete implementations following SOLID principles.
 from typing import Dict, Any, List, Type, Optional
 from abc import ABC, abstractmethod
 from langchain_chroma import Chroma
+from langchain.schema import Document
 from pydantic import BaseModel
 from pathlib import Path
 import pandas as pd
@@ -83,23 +84,25 @@ class PipelineInitializer(IPipelineInitializer):
     def __init__(self):
         self._rag_pipeline = None
 
-    def initialize(self, pdf_path: str, config: ExtractionConfig, model_name: str) -> Dict[str, Any]:
-        if not Path(pdf_path).exists():
-            raise FileNotFoundError(f"PDF file not found: {pdf_path}")
+    def initialize(self, input_path: str, config: ExtractionConfig, model_name: str) -> Dict[str, Any]:
+        if not Path(input_path).exists():
+            raise FileNotFoundError(f"PDF source not found: {input_path}")
         
-        print("🚀 Initializing enhanced RAG pipeline...")
+        print("🚀 Initializing RAG pipeline...")
         self._rag_pipeline = EnhancedRAGPipeline(model_name=model_name)
         
-        # Show PDF information
-        print("📊 Analyzing PDF...")
-        pdf_info = self._rag_pipeline.get_pdf_info(pdf_path)
-        if "error" not in pdf_info:
-            print(f"   📄 Pages: {pdf_info['total_pages']}")
-            print(f"   💾 Size: {pdf_info['file_size_mb']:.2f} MB")
-            print(f"   📝 Title: {pdf_info.get('title', 'Unknown')}")
+        # # Show PDF information
+        # print("📊 Analyzing PDF...")
+        # pdf_info = self._rag_pipeline.get_pdf_info(input_path)
+        # if "error" not in pdf_info:
+        #     print(f"   📄 Pages: {pdf_info['total_pages']}")
+        #     print(f"   💾 Size: {pdf_info['file_size_mb']:.2f} MB")
+        #     print(f"   📝 Title: {pdf_info.get('title', 'Unknown')}")
         
-        print("📄 Processing PDF with enhanced chunking...")
-        vectordb = self._rag_pipeline.enhanced_pdf_processing(pdf_path, chunk_size=config.chunk_size, overlap=config.chunk_overlap)
+        print("📄 Processing source...")
+
+        docs = self._rag_pipeline.load_documents(input_path)
+        vectordb = self._rag_pipeline.chunk_and_store(docs, chunk_size=config.chunk_size, overlap=config.chunk_overlap)
         
         print("✅ Pipeline initialized successfully")
         return {
@@ -107,7 +110,7 @@ class PipelineInitializer(IPipelineInitializer):
             "rag_pipeline": self._rag_pipeline,
             "extraction_metadata": {
                 "total_chunks": vectordb._collection.count(),
-                "pdf_info": pdf_info
+                # "pdf_info": pdf_info
             }
         }
 

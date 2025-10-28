@@ -58,16 +58,16 @@ class ExtractionOrchestrator:
         self._extractor: ICharacteristicsExtractor = None
         self.last_experiment_id: Optional[str] = None
 
-    def initialize_pipeline(self, pdf_path: str, config: ExperimentConfig):
+    def initialize_pipeline(self, input_path: str, config: ExperimentConfig):
         """Initialize the pipeline with the given PDF and configuration."""
         print("🔧 Initializing extraction pipeline...")
-        print("📁 Processing PDF and creating vector DB...")
+        # print("📁 Processing sources and creating vector DB...")
         if self._state_manager.get_state("vectordb"):
             self._state_manager.get_state("vectordb")._client.reset()
-        init_result = self._initializer.initialize(pdf_path, config, config.model_name)
+        init_result = self._initializer.initialize(input_path, config, config.model_name)
         self._state_manager.update_state(init_result)
 
-    def run_extraction(self, pdf_path: str, experiment_id: Optional[str] = None, config: Optional[ExperimentConfig] = None, save_results: bool = True) -> Dict[str, Any]:
+    def run_extraction(self, input_path: str, experiment_id: Optional[str] = None, config: Optional[ExperimentConfig] = None, save_results: bool = True) -> Dict[str, Any]:
         """Run the complete extraction pipeline with optional experiment tracking."""
         print("🚀 Starting Enhanced Digital Twin Characteristics Extraction")
         print("=" * 60)
@@ -168,7 +168,7 @@ class ExtractionOrchestrator:
 
             characteristics_result = CharacteristicsExtractionResult(
                 experiment_id=experiment_id,
-                pdf_path=pdf_path,
+                input_path=input_path,
                 extracted_characteristics=results.get("extracted_characteristics", {}),
                 extraction_metadata=results.get("extraction_metadata", {}),
                 errors=errors,
@@ -294,10 +294,10 @@ class ExtractionPipelineFactory:
         block_processors = [
             Block1Processor(),
             Block2Processor(),
-            Block3Processor(),
-            Block4Processor(),
-            Block5Processor(),
-            Block6Processor()
+            # Block3Processor(),
+            # Block4Processor(),
+            # Block5Processor(),
+            # Block6Processor()
         ]
         
         # Create a wrapper that handles the OML generator creation
@@ -359,7 +359,7 @@ class ExtractionPipelineFactory:
 def main():
     parser = argparse.ArgumentParser(description="Extraction / OML generation pipeline")
     parser.add_argument("--mode", choices=["both", "extraction", "oml"], default="both", help="Run extraction, OML generation, or both")
-    parser.add_argument("--pdf", default="data/papers/The Incubator Case Study for Digital Twin Engineering.pdf", help="PDF path for extraction")
+    parser.add_argument("--input-path", default="data/papers/The Incubator Case Study for Digital Twin Engineering.pdf", help="PDF path for extraction")
     parser.add_argument("--chunk-size", type=int, default=1500)
     parser.add_argument("--chunk-overlap", type=int, default=200)
     parser.add_argument("--temperature", type=float, default=0.1)
@@ -384,12 +384,12 @@ def main():
     print("Using configuration:", config)
 
     orchestrator = ExtractionPipelineFactory.create_orchestrator(with_experiment_tracking=True)
-    orchestrator.initialize_pipeline(args.pdf, config=config)
+    orchestrator.initialize_pipeline(args.input_path, config=config)
 
     extraction_results = {}
     experiment_id = None
     if args.mode in ("extraction", "both"):
-        extraction_results = orchestrator.run_extraction(args.pdf, experiment_id=None, config=config, save_results=not args.no_save)
+        extraction_results = orchestrator.run_extraction(args.input_path, experiment_id=None, config=config, save_results=not args.no_save)
         experiment_id = orchestrator.last_experiment_id
 
     if args.mode in ("oml", "both"):

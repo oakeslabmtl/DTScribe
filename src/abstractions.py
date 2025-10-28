@@ -61,13 +61,25 @@ class IBlockProcessor(ABC):
         pass
 
 
-class IPipelineInitializer(ABC):
-    """Interface for pipeline initialization."""
-    
+class IIngestor(ABC):
     @abstractmethod
-    def initialize(self, pdf_path: str) -> Dict[str, Any]:
-        """Initialize the pipeline with a PDF."""
+    def ingest(self, path: str, chunk_size: int, overlap: int) -> tuple:
+        """Return (vectordb, metadata_dict) for the given path."""
         pass
+
+class IPipelineInitializer(ABC):
+    @abstractmethod
+    def initialize(self, input_path: str, config: ExtractionConfig, model_name: str) -> Dict[str, Any]:
+        """Initialize the pipeline with a file or directory path."""
+        pass
+
+# class IPipelineInitializer(ABC):
+#     """Interface for pipeline initialization."""
+    
+#     @abstractmethod
+#     def initialize(self, pdf_path: str) -> Dict[str, Any]:
+#         """Initialize the pipeline with a PDF."""
+#         pass
 
 
 class IOMLGenerator(ABC):

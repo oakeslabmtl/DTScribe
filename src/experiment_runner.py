@@ -17,8 +17,8 @@ from main import ExtractionPipelineFactory, ExtractionOrchestrator
 class ExperimentRunner:
     """Runs multiple experiments with different parameter configurations."""
     
-    def __init__(self, pdf_path: str, orchestrator: ExtractionOrchestrator):
-        self.pdf_path = pdf_path
+    def __init__(self, input_path: str, orchestrator: ExtractionOrchestrator):
+        self.input_path = input_path
         self.orchestrator = orchestrator
 
     def define_combinations_from_parameter_grid(self, param_grid: Dict[str, List[Any]]) -> List[Dict[str, Any]]:
@@ -74,7 +74,7 @@ class ExperimentRunner:
                     )
 
                     # Initialize pipeline
-                    self.orchestrator.initialize_pipeline(self.pdf_path, config=config)
+                    self.orchestrator.initialize_pipeline(self.input_path, config=config)
 
                     # Run extraction
                     start_time = time.time()
@@ -84,7 +84,7 @@ class ExperimentRunner:
                     experiment_id = None
                     if mode in ("extraction", "both"):
                         extraction_results = self.orchestrator.run_extraction(
-                            pdf_path=self.pdf_path,
+                            input_path=self.input_path,
                             config=config,
                             save_results=True,
                             experiment_id=None
@@ -268,14 +268,14 @@ def main():
     import sys
     
     # Configuration
-    pdf_path = "data/papers/The Incubator Case Study for Digital Twin Engineering.pdf"
+    input_path = "data/papers/The Incubator Case Study for Digital Twin Engineering.pdf"
 
     print("🧪 Starting Parameter Exploration for Digital Twin Characteristics Extraction")
     print("=" * 80)
     
     # Create experiment runner
     orchestrator = ExtractionPipelineFactory.create_orchestrator(with_experiment_tracking=True)
-    runner = ExperimentRunner(pdf_path, orchestrator=orchestrator)
+    runner = ExperimentRunner(input_path, orchestrator=orchestrator)
 
     # Run experiments
     # param_grid = {

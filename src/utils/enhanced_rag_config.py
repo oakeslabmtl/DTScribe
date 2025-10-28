@@ -4,7 +4,10 @@ Enhanced RAG Configuration with modern LLM techniques for improved Digital Twin 
 
 import subprocess
 import os
-from langchain_community.document_loaders import PyMuPDFLoader
+from langchain_community.document_loaders import PyMuPDFLoader, DirectoryLoader
+from langchain_community.vectorstores.utils import filter_complex_metadata
+from langchain_core.documents import Document
+from langchain_unstructured import UnstructuredLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_chroma import Chroma
 from langchain_ollama import OllamaEmbeddings, ChatOllama
@@ -12,7 +15,7 @@ from langchain.text_splitter import MarkdownTextSplitter
 from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import PydanticOutputParser
 from chromadb.config import Settings
-from typing import Type, List, Dict, Any
+from typing import Type, List, Dict, Any, Iterable, Tuple
 from pydantic import BaseModel
 import pymupdf4llm
 import pymupdf
@@ -117,82 +120,122 @@ class EnhancedRAGPipeline:
             return info
         except Exception as e:
             return {"error": str(e), "total_pages": 0}
-        
-    def enhanced_pdf_processing(self, pdf_path: str, chunk_size: int, overlap: int, max_pages: int = None) -> Chroma:
+
+    def load_documents(self, input_path: str) -> List[Document]:
         """
-        Enhanced PDF processing with better chunking strategy and metadata preservation.
-        
-        Args:
-            pdf_path: Path to the PDF file
-            chunk_size: Size of text chunks
-            overlap: Overlap between chunks
-            max_pages: Maximum number of pages to process (None for all pages)
+        Load generic documents (PDF, DOCX, TXT, etc.).
+        Converts PDFs to Markdown with pymupdf4llm.
+        Returns a list of LangChain Document objects.
         """
-        try:
-            doc = pymupdf.open(pdf_path)
-            total_pages = len(doc)
-            doc.close()
-            
-            # Determine pages to process
-            if max_pages is not None:
-                pages_to_process = min(total_pages, max_pages)
-                print(f"Processing {pages_to_process} of {total_pages} pages (limited by max_pages={max_pages})...")
+        path = Path(input_path)
+
+        if path.is_dir():
+            print(f"📂 Loading documents in directory: {path}")
+            loader = DirectoryLoader(
+                str(path),
+                glob="**/*.*",
+                show_progress=True,
+                silent_errors=True,
+                use_multithreading=True,
+                loader_cls=UnstructuredLoader,
+                loader_kwargs={"mode": "elements", "strategy": "fast"},
+            )
+
+            docs = loader.load()
+            # print(f"\n\n DEBUG: docs[0].metadata: {docs[0].metadata} \n\n")
+            print(f"✅ Loaded {len(docs)} documents from directory.")
+            return docs
+
+        elif path.is_file():
+            ext = path.suffix.lower()
+            print(f"📄 Loading single file: {path.name} ({ext})")
+
+            # Case 1: PDF -> process as Markdown
+            if ext == ".pdf":
+                try:
+                    print("🧾 Extracting PDF as Markdown using pymupdf4llm...")
+                    md_text = pymupdf4llm.to_markdown(str(path))
+
+                    # Crear un único documento LangChain con metadatos limpios
+                    doc = Document(
+                        metadata={
+                            "source": str(path),
+                            "type": "technical_document",
+                            "format": "pdf",
+                            "filename": path.name,
+                        },
+                        page_content=md_text,
+                    )
+                    print(f"✅ Loaded 1 Markdown document from PDF ({len(md_text)} chars).")
+                    # print(f"\n\n DEBUG: docs[0].metadata: {doc.metadata} \n\n")
+                    return [doc]
+
+                except Exception as e:
+                    print(f"⚠️ Markdown conversion failed ({e}), falling back to UnstructuredLoader.")
+                    loader = UnstructuredLoader(str(path), mode="paged", strategy="fast")
+                    docs = loader.load()
+                    # print(f"\n\n DEBUG: docs[0].metadata: {docs[0].metadata} \n\n")
+                    return docs
+
+            # Case 2: any other file (DOCX, TXT, PPTX, etc.)
             else:
-                pages_to_process = total_pages
-                print(f"Processing all {total_pages} pages...")
-            
-            # Extract markdown with specified pages
-            pages_list = list(range(pages_to_process))
-            md_text = pymupdf4llm.to_markdown(pdf_path, pages=pages_list)
+                loader = UnstructuredLoader(str(path), mode="paged", strategy="fast")
+                docs = loader.load()
+                for d in docs:
+                    d.metadata["source"] = str(path)
+                    d.metadata["format"] = ext.strip(".")
+                print(f"✅ Loaded {len(docs)} elements from {ext} file.")
+                # print(f"\n\n DEBUG: docs[0].metadata: {docs[0].metadata} \n\n")
+                return docs
 
-            # Remove the references section and anything after if found # NOTE: make more robust for other pdfs
-            # ref_marker = "### **References**"
-            # ref_index = md_text.find(ref_marker)
-            # if ref_index != -1:
-            #     md_text = md_text[:ref_index]
-
-            m = re.search(r"\n#+\s*\**references\**\s*\n", md_text, flags=re.I)
-            if m: md_text = md_text[:m.start()]
-            
-        except Exception as e:
-            print(f"Error processing PDF: {e}")
-            print("Falling back to processing first 20 pages...")
-            # Fallback to original behavior
-            md_text = pymupdf4llm.to_markdown(pdf_path, pages=list(range(20)))
+        else:
+            raise FileNotFoundError(f"❌ Path not found: {input_path}")
         
-        # Enhanced text splitter with better chunk boundaries
+    
+    def chunk_and_store(self, docs: List, chunk_size: int, overlap: int) -> Chroma:
+        """Split all documents into chunks and store them in Chroma with metadata."""
+
+        print(f"✂️ Chunking {len(docs)} documents (chunk_size={chunk_size}, overlap={overlap})...")
+
         splitter = RecursiveCharacterTextSplitter(
             chunk_size=chunk_size,
             chunk_overlap=overlap,
             separators=["\n\n", "\n", ". ", " ", ""],
-            # separators=["\n## ", "\n### ", "\n\n", "\n", ". ", " ", ""]
             keep_separator=True,
             length_function=len,
         )
-        
-        # Create documents with enhanced metadata
-        docs = splitter.create_documents(
-            [md_text],
-            metadatas=[{"source": pdf_path, "type": "technical_document"}]
-        )
-        
-        # Add semantic metadata to chunks
-        for i, doc in enumerate(docs):
+
+
+        chunks = splitter.split_documents(docs)
+
+        # print(f"\n\n DEBUG: first chunk with complex metadata : {chunks[0]} \n\n")
+
+        chunks = filter_complex_metadata(chunks)
+
+        # print(f"\n\n DEBUG: first chunk after filter complex metadata : {chunks[0]} \n\n")
+
+        # Add metadata
+        for i, doc in enumerate(chunks):
             doc.metadata.update({
                 "chunk_id": i,
-                "word_count": len(doc.page_content.split())
-        })
-        
-        # Create vector store with improved configuration
+                "word_count": len(doc.page_content.split()),
+            })
+
+        print(f"✅ Created {len(chunks)} chunks total.")
+
+        # print(f"\n\n DEBUG: first chunk after filter and add id and count: {chunks[0]} \n\n")
+
+        # Crear vector store
         vectordb = Chroma.from_documents(
-            docs,
+            chunks,
             embedding=self.embeddings,
-            collection_metadata={"hnsw:space": "cosine"},  # Better for semantic similarity
-            client_settings=Settings(allow_reset=True)  # Allow resetting existing collections
+            collection_metadata={"hnsw:space": "cosine"},
+            client_settings=Settings(allow_reset=True),
         )
-        
+
+        print("📦 Vector DB created and ready for retrieval.")
         return vectordb
-    
+
     def enhanced_retrieval(self, vectordb: Chroma, query: str, k: int = 5) -> List:
         """
         Enhanced retrieval with multiple strategies and query expansion.

@@ -38,7 +38,7 @@ class CharacteristicsExtractionResult:
     """Results specifically for characteristics extraction task."""
     experiment_id: str
     timestamp: datetime
-    pdf_path: str
+    input_path: str
     config: ExperimentConfig
     
     # Extraction results
@@ -117,15 +117,15 @@ class ResultsSaver:
         for dir_path in [self.characteristics_dir, self.oml_dir, self.logs_dir, self.analysis_dir]:
             dir_path.mkdir(exist_ok=True)
     
-    def generate_experiment_id(self, config: ExperimentConfig, pdf_path: str) -> str:
+    def generate_experiment_id(self, config: ExperimentConfig, input_path: str) -> str:
         """Generate a readable, unique experiment ID.
 
         Format: <12hexhash>_<YYYYMMDDHHMMSS>
-        - 12hexhash: stable hash of (pdf_path + config) enabling grouping
+        - 12hexhash: stable hash of (input_path + config) enabling grouping
         - timestamp: ensures uniqueness per run even if config unchanged
         """
         config_str = json.dumps(asdict(config), sort_keys=True)
-        input_str = f"{pdf_path}_{config_str}"
+        input_str = f"{input_path}_{config_str}"
         base_hash = hashlib.md5(input_str.encode()).hexdigest()[:12]
         ts = datetime.utcnow().strftime("%Y%m%d%H%M%S")
         return f"{base_hash}_{ts}"
@@ -179,7 +179,7 @@ class ResultsSaver:
         summary_data = {
             'experiment_id': result.experiment_id,
             'timestamp': result.timestamp.isoformat(),
-            'pdf_path': result.pdf_path,
+            'input_path': result.input_path,
             'model_name': result.config.model_name,
             'embedding_model': result.config.embedding_model,
             'chunk_size': result.config.chunk_size,
