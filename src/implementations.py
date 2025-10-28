@@ -2,10 +2,8 @@
 Concrete implementations following SOLID principles.
 """
 
-from typing import Dict, Any, List, Type, Optional
+from typing import Dict, Any, List, Type
 from abc import ABC, abstractmethod
-from langchain_chroma import Chroma
-from langchain.schema import Document
 from pydantic import BaseModel
 from pathlib import Path
 import time

@@ -4,18 +4,17 @@ Enhanced RAG Configuration with modern LLM techniques for improved Digital Twin 
 
 import subprocess
 import os
-from langchain_community.document_loaders import PyMuPDFLoader, DirectoryLoader
+from langchain_community.document_loaders import DirectoryLoader
 from langchain_community.vectorstores.utils import filter_complex_metadata
 from langchain_core.documents import Document
 from langchain_unstructured import UnstructuredLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_chroma import Chroma
 from langchain_ollama import OllamaEmbeddings, ChatOllama
-from langchain.text_splitter import MarkdownTextSplitter
 from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import PydanticOutputParser
 from chromadb.config import Settings
-from typing import Type, List, Dict, Any, Iterable, Tuple
+from typing import Type, List, Dict, Any
 from pydantic import BaseModel
 import pymupdf4llm
 import pymupdf
