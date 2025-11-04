@@ -63,5 +63,5 @@ parser.add_argument("--max-oml-retries", type=int, default=3, help="Maximum retr
 
 Full command for analyzing results and generating a report/figures.
 ```bash
-uv run src\results_visualizer.py analyze --experiments-dir experiments --dashboard --show --report
+uv run src\viz\results_visualizer.py analyze --experiments-dir experiments --dashboard --show --report
 ```

@@ -28,7 +28,7 @@ class ExperimentRunner:
         
         return combinations
 
-    def run_experiment_batch(self, max_experiments: int = 10, experiment_name: str = "default", param_grid: Dict[str, Any] = None, repeat_experiments: int = 1, mode: str = "both") -> List[Dict[str, Any]]:
+    def run_experiment_batch(self, max_experiments: int = 10, experiment_name: str = "default", param_grid: Dict[str, Any] = None, repeat_experiments: int = 1, mode: str = "both", exp_id: str = None) -> List[Dict[str, Any]]:
         """Run a batch of experiments with different parameters."""
 
         self.output_dir = Path(experiment_name)
@@ -79,7 +79,7 @@ class ExperimentRunner:
 
                     extraction_results = {}
                     oml_results = {}
-                    experiment_id = None
+                    experiment_id = exp_id
                     if mode in ("extraction", "both"):
                         extraction_results = self.orchestrator.run_extraction(
                             input_path=self.input_path,
@@ -241,7 +241,7 @@ class ExperimentRunner:
 
 def visualize_results(csv_file_path: str = None, output_dir: str = None):
     """Convenience function to visualize existing experiment results."""
-    from results_visualizer import ExperimentResultsVisualizer
+    from viz.results_visualizer import ExperimentResultsVisualizer
     
     if csv_file_path is None:
         print("❌ Please provide the path to the CSV file containing experiment results.")
@@ -286,19 +286,20 @@ def main():
     experiment_name = "hyperparameter_tuning"
     param_grid = {
         'model_name': ["qwen3:8b"],
-        'chunk_size': [2000, 2500, 3000],
-        'temperature': [0.1, 0.2, 0.3],
+        'chunk_size': [3000],
+        'temperature': [0.0],
         "embedding_model": ["embeddinggemma"],
-        "chunk_overlap": [100, 200, 300, 400],
-        "max_judge_retries": [0],
-        "max_oml_retries": [0],
+        "chunk_overlap": [400],
+        "max_judge_retries": [4],
+        "max_oml_retries": [5],
     }
     experiment_results = runner.run_experiment_batch(
         max_experiments=-1,
         repeat_experiments=2,
         experiment_name=experiment_name,
         param_grid=param_grid,
-        mode="extraction",
+        mode="both",
+        exp_id=None,
     )
 
     # Check if user wants to visualize existing results
