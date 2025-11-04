@@ -171,7 +171,6 @@ class ExtractionOrchestrator:
                 # total_docs_retrieved=quality_metrics.get('total_docs_retrieved', 0),
                 total_chunks=quality_metrics.get('total_chunks', 0),
                 processing_time_seconds=characteristics_processing_time,
-                block_docs_retrieved=block_metrics.get('docs_retrieved', {}),
                 block_processing_times=block_metrics.get('processing_times', {}),
                 # block_memory_usages=block_metrics.get('memory_usages', {}),
                 block_success_rates=block_metrics.get('success_rates', {}),

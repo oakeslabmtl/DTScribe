@@ -55,7 +55,6 @@ class CharacteristicsExtractionResult:
     
     # Block-specific metrics
     block_processing_times: Dict[str, float]
-    block_docs_retrieved: Dict[str, int]
     block_success_rates: Dict[str, bool]
 
     # token usage
