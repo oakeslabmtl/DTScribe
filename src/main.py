@@ -238,6 +238,9 @@ class ExtractionOrchestrator:
         if self._experiment_tracker and save_results and oml_output:
             oml_result = OMLGenerationResult(
                 experiment_id=f"{experiment_id}_oml" if experiment_id else f"manual_{int(time.time())}_oml",
+                timestamp=datetime.now(),
+                config=config,
+                input_path=self._state_manager.get_state("input_path"),
                 characteristics_experiment_id=source_experiment_id or experiment_id or f"manual_{int(time.time())}",
                 generated_oml=oml_output,
                 oml_metadata={},
@@ -246,10 +249,11 @@ class ExtractionOrchestrator:
                 oml_repetition_count=oml_repetition_count,
                 errors=oml_errors,
                 warnings=oml_warnings,
-                timestamp=datetime.now(),
                 oml_valid=(validation_status == 1),
                 oml_line_count=len(oml_output.splitlines()),
-                oml_instance_count=oml_output.count("instance")
+                oml_instance_count=oml_output.count("instance"),
+                total_input_tokens=0,
+                total_output_tokens=0,
             )
             saved_oml_path = self._experiment_tracker.results_saver.save_oml_results(oml_result)
             print(f"💾 OML results saved to: {saved_oml_path}")

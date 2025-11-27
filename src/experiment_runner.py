@@ -283,19 +283,22 @@ def main():
     #     "embedding_model": ["embeddinggemma"],
     #     "chunk_overlap": [200, 300, 400],
     # }
-    experiment_name = "hyperparameter_tuning"
+
+    experiment_name = "testing_gptoss_20b_cloud"
     param_grid = {
-        'model_name': ["qwen3:8b"],
+        'model_name': ["gpt-oss:20b-cloud"],
         'chunk_size': [3000],
-        'temperature': [0.0],
+        "chunk_overlap": [500],
+        'temperature': [1.0],
+        'top_p': [1.0],
+        'top_k': [0],
         "embedding_model": ["embeddinggemma"],
-        "chunk_overlap": [400],
-        "max_judge_retries": [4],
+        "max_judge_retries": [3],
         "max_oml_retries": [5],
     }
-    experiment_results = runner.run_experiment_batch(
+    runner.run_experiment_batch(
         max_experiments=-1,
-        repeat_experiments=2,
+        repeat_experiments=1,
         experiment_name=experiment_name,
         param_grid=param_grid,
         mode="both",

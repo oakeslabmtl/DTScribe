@@ -59,7 +59,7 @@ class CharacteristicsExtractionResult:
 
     # token usage
     total_input_tokens: int
-    total_output_tokens: int #Optional[Dict[str, int]] = None
+    total_output_tokens: int
 
     # llm judge usage
     # judged_characteristics: Dict[str, Any] = field(default_factory=dict)
@@ -75,6 +75,8 @@ class OMLGenerationResult:
     """Results specifically for OML generation task."""
     experiment_id: str
     timestamp: datetime
+    input_path: str
+    config: ExperimentConfig
     characteristics_experiment_id: str  # Link to source characteristics
     
     # OML generation results
@@ -90,6 +92,10 @@ class OMLGenerationResult:
     generation_time_seconds: float
     oml_max_retries: int
     oml_repetition_count: int
+
+    # token usage
+    total_input_tokens: int
+    total_output_tokens: int
     
     # Error information
     errors: List[str] = field(default_factory=list)
@@ -205,6 +211,9 @@ class ResultsSaver:
         summary_data = {
             'experiment_id': result.experiment_id,
             'timestamp': result.timestamp.isoformat(),
+            'input_path': result.input_path,
+            'model_name': result.config.model_name,
+            'embedding_model': result.config.embedding_model,
             'characteristics_experiment_id': result.characteristics_experiment_id,
             'oml_valid': result.oml_valid,
             'oml_line_count': result.oml_line_count,

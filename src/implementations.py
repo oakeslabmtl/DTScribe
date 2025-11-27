@@ -305,10 +305,9 @@ class Block1Processor(BaseBlockProcessor):
     def get_config(self) -> ExtractionConfig:
         return ExtractionConfig(
             query="""
-Digital Twin system purpose and objectives: What is the Physical Twin system being studied?
-What specific services does the Digital Twin provide to users and stakeholders?
-What tools, technologies, and enablers support the Digital Twin's functionality and services?
-System architecture and implementation approach for achieving Digital Twin goals.
+System under study: system purpose and objectives, twin description, operational context, performance objectives, stakeholder goals
+Digital Twin services: monitoring and simulation, prediction and optimization, decision-support tools, control and actuation, visualization and interaction
+Digital Twin enablers: technologies, tools, data acquisition pipeline, modeling and simulation tools, AI/ML components
             """,
             description="""
 system_under_study: Provide a comprehensive description of the Physical Twin system being studied. Include the type of system, its main components, operational domain, and key characteristics that make it suitable for digital twinning.
@@ -363,7 +362,7 @@ Physical sensing components: sensors, measurement systems, data collection mecha
 Model fidelity and validation: accuracy requirements, validation methods, uncertainty quantification, verification processes.
             """,
             description="""
-dt_models_and_data: Describe the Digital Twin's computational models and data components including model types (geometric, behavioral, analytical), data sources, data management approaches, model relationships, and their specific roles in the Digital Twin constellation.
+dt_models_and_data: Describe the computational models and data components including model types (geometric, behavioral, analytical), data sources, data management approaches, model relationships, and their specific roles in the Digital Twin constellation.
 
 physical_acting_components: Describe the physical actuators and control mechanisms including types of actuators, control capabilities, remote control interfaces, actuation ranges and limitations, safety constraints, and addressing mechanisms.
 

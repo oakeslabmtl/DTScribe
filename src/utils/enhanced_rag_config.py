@@ -314,7 +314,6 @@ INSTRUCTIONS:
    - If no evidence is found, state "Not in Document"
    - Implement the information from the judge results (if provided) to preserve high-quality characteristics and enhance characteristics scored less than 4.
 
-
 3. VALIDATION PHASE: Review your extracted information:
    - Ensure all details come from the provided documents
    - Check that technical terms are used correctly
