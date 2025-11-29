@@ -15,6 +15,7 @@ from abstractions import (
 )
 from utils.enhanced_rag_config import EnhancedRAGPipeline
 from models.schemas import (
+    DTCharacteristics,
     Block1Characteristics, Block2Characteristics, Block3Characteristics,
     Block4Characteristics, Block5Characteristics, Block6Characteristics
 )
@@ -131,26 +132,38 @@ class OMLGenerator(IOMLGenerator):
 class QualityAnalyzer(IQualityAnalyzer):
     """Analyzes extraction quality."""
 
+    EXPECTED_FIELDS = list(DTCharacteristics.model_fields.keys())
+
     def analyze_characteristics(self, results: Dict[str, Any]) -> Dict[str, Any]:
         characteristics = results.get("extracted_characteristics", {})
         metadata = results.get("extraction_metadata", {})
         
-        total_characteristics = len(characteristics)
+        # total_characteristics = len(characteristics)
+        total_characteristics = len(self.EXPECTED_FIELDS)
         valid_extractions = 0
         total_length = 0
 
-        for v in characteristics.values():
-            if v and v != "Not in Document" and v.strip() != "":
+        # for v in characteristics.values():
+        #     if v and v != "Not in Document" and v.strip() != "":
+        #         valid_extractions += 1
+        #         total_length += len(v)
+
+        for name in self.EXPECTED_FIELDS:
+            v = characteristics.get(name)
+
+            # counts as extracted if:
+            #  - is a string, not empty or not "Not in Document"
+            if isinstance(v, str) and v.strip() and v.strip() != "Not in Document":
                 valid_extractions += 1
                 total_length += len(v)
 
-        avg_length = total_length / valid_extractions if valid_extractions > 0 else 0
+        avg_length = total_length / valid_extractions if valid_extractions > 0 else 0.0
 
         return {
             "total_characteristics": total_characteristics,
             "extracted_count": valid_extractions,
             "not_found_count": total_characteristics - valid_extractions,
-            "extraction_rate": (valid_extractions / total_characteristics * 100) if total_characteristics > 0 else 0,
+            "extraction_rate": (valid_extractions / total_characteristics * 100) if total_characteristics > 0 else 0.0,
             "average_description_length": avg_length,
             "total_chunks": metadata.get("total_chunks", 0)
         }
@@ -200,11 +213,13 @@ class BaseBlockProcessor(IBlockProcessor, ABC):
                 output, response_metadata = extractor.extract(
                     config.description, retrieved_docs, self.get_schema(), judge_results
                 )
-                extracted_dict = output.model_dump(exclude_none=True)
+                # extracted_dict = output.model_dump(exclude_none=True)
+                extracted_dict = output.model_dump()
 
                 # if it's a retry, preserve high score characteristics from previous output
                 if retries > 0 and last_output is not None and judge_results:
-                    prev_dict = last_output.model_dump(exclude_none=True)
+                    # prev_dict = last_output.model_dump(exclude_none=True)
+                    prev_dict = last_output.model_dump()
                     preserved = []
                     retried = []
                     for jr in judge_results:
@@ -278,7 +293,8 @@ class BaseBlockProcessor(IBlockProcessor, ABC):
                 meta[f"{meta_prefix}_retry_preserve_info"] = preserved_info
 
             return ExtractionResult(
-                characteristics=last_output.model_dump(exclude_none=True),
+                # characteristics=last_output.model_dump(exclude_none=True),
+                characteristics=last_output.model_dump(),
                 metadata=meta,
                 success=True
             )

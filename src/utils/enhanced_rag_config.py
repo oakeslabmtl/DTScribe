@@ -327,7 +327,7 @@ Let me analyze each document for relevant information...
 
 IMPORTANT: You MUST respond with ONLY valid JSON. Do not include any explanations, thinking tags, or additional text outside the JSON structure.
 
-EXTRACTED CHARACTERISTICS (JSON FORMAT ONLY):
+FOLLOW THESE FORMAT INSTRUCTIONS:
 {format_instructions}
 
 Remember: Be highly specific and technical. Include exact technologies, methods, and specifications mentioned in the documents. Return ONLY the JSON object with no additional text.
@@ -352,11 +352,17 @@ Remember: Be highly specific and technical. Include exact technologies, methods,
                 response_text = response.content if hasattr(response, 'content') else str(response)
                 response_metadata = getattr(response, 'response_metadata', {})
 
+                # print(f"\n\n {'---'*10}🔴RAW RESPONSE🔴{'---'*10}:\n{response_text}\n\n{'---'*10}\n\n")  # debug print
+
                 # Clean the response to remove thinking tags
                 cleaned_text = self._clean_llm_response(response_text)
+
+                # print(f"\n\n {'---'*10}🔴CLEANED TEXT🔴{'---'*10}:\n{cleaned_text}\n\n{'---'*10}\n\n") 
                 
                 # Parse the cleaned response
                 output = parser.parse(cleaned_text)
+
+                # print(f"\n\n {'---'*10}🔴PARSED OUTPUT🔴{'---'*10}:\n{output}\n\n{'---'*10}\n\n")  # debug print
 
                 return output, response_metadata
                 
@@ -387,6 +393,7 @@ Remember: Be highly specific and technical. Include exact technologies, methods,
     def _clean_llm_response(self, response_text: str) -> str:
         """
         Clean LLM response by removing thinking tags and extracting JSON content.
+        Also normalizes null/None values to the sentinel string "Not in Document".
         """
         
         # Strip whitespace
@@ -416,6 +423,17 @@ Remember: Be highly specific and technical. Include exact technologies, methods,
         if json_match:
             return json_match.group(0)
         
+        json_str = re.sub(
+            r'(:\s*)null(\s*[,\}])',
+            r'\1"Not in Document"\2',
+            json_str,
+            flags=re.IGNORECASE
+        )
+        json_str = re.sub(
+            r'(:\s*)None(\s*[,\}])',
+            r'\1"Not in Document"\2',
+            json_str
+        )
         # If no JSON object found, return the cleaned text as-is
         return response_text
 
