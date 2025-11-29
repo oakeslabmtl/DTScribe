@@ -151,8 +151,7 @@ class QualityAnalyzer(IQualityAnalyzer):
         for name in self.EXPECTED_FIELDS:
             v = characteristics.get(name)
 
-            # counts as extracted if:
-            #  - is a string, not empty or not "Not in Document"
+            # counts as extracted if: is a string, not empty or not "Not in Document"
             if isinstance(v, str) and v.strip() and v.strip() != "Not in Document":
                 valid_extractions += 1
                 total_length += len(v)
