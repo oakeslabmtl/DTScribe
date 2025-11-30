@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 import pathlib
 import io
 import seaborn as sns
+import argparse
 
 # Set style for publication-quality plots (double column)
 sns.set_style("whitegrid")
@@ -33,8 +34,12 @@ plt.rcParams.update({
     'axes.formatter.use_mathtext': True,
 })
 
+parser = argparse.ArgumentParser(description="Oml Success Retry Visualization")
+parser.add_argument("--exp-path", default="experiments", help="Path to the experiments directory")
+args = parser.parse_args()
+
 # Load the provided CSV data into a DataFrame
-oml_file = pathlib.Path("experiments/analysis/oml_summary.csv")
+oml_file = pathlib.Path(args.exp_path) / "analysis" / "oml_summary.csv"
 if oml_file.exists():
     df = pd.read_csv(oml_file)
 csv_data = df.to_csv(index=False)
@@ -79,7 +84,7 @@ for k in range(max_retry_index + 1):
 step_df = pd.DataFrame(step_results)
 
 # Create output directory
-output_dir = pathlib.Path("experiments/analysis/visualizations")
+output_dir = pathlib.Path(args.exp_path) / "analysis" / "visualizations"
 output_dir.mkdir(parents=True, exist_ok=True)
 
 # ==================== GRAPH 1: Cumulated Success Rate ====================
