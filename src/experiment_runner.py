@@ -284,7 +284,7 @@ def main():
     #     "chunk_overlap": [200, 300, 400],
     # }
 
-    experiment_name = "testing_gptoss_20b_cloud"
+    experiment_name = "gpt-oss_20b_20_runs"
     param_grid = {
         'model_name': ["gpt-oss:20b-cloud"],
         'chunk_size': [3000],
@@ -298,7 +298,7 @@ def main():
     }
     runner.run_experiment_batch(
         max_experiments=-1,
-        repeat_experiments=1,
+        repeat_experiments=5,
         experiment_name=experiment_name,
         param_grid=param_grid,
         mode="both",
