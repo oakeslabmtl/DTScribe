@@ -590,6 +590,13 @@ JSON:
             for attempt in range(max_retries):
                 try:
                     print(f"📝 Attempt {attempt + 1}/{max_retries}: Generating OML...")
+
+                    # Check if component-based OML is empty but characteristics exist
+                    if component_based_characteristics and (not component_based_oml or not component_based_oml.strip()):
+                        print(f"❌ Attempt {attempt + 1}: Component-based OML is empty despite having characteristics. Regenerating...")
+                        component_based_oml = self.generate_component_based_oml(component_based_characteristics, vocab_files, comma_separated_description_based_vocab_mapping_keys)
+                        continue
+
                     # Combine both OML description-based and component-based characteristics
                     combined_oml = f"{component_based_oml}\n\n{description_based_oml}"
                     combined_oml = self._clean_llm_response(combined_oml)
