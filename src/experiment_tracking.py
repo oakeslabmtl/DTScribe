@@ -24,7 +24,6 @@ class ExperimentConfig:
     temperature: float
     top_p: float
     top_k: int
-    max_pages: Optional[int] = None
     max_judge_retries: int
     max_oml_retries: int
     judge_model_name: str

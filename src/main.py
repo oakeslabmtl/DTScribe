@@ -346,7 +346,6 @@ class ExtractionPipelineFactory:
         top_k: int = 20,
         max_judge_retries: int = 2,
         max_oml_retries: int = 3,
-        max_pages: int = None,
         judge_model_name: Optional[str] = None,
         **custom_params
     ) -> ExperimentConfig:
@@ -362,7 +361,6 @@ class ExtractionPipelineFactory:
             temperature=temperature,
             top_p=top_p,
             top_k=top_k,
-            max_pages=max_pages,
             max_judge_retries=max_judge_retries,
             max_oml_retries=max_oml_retries,
             judge_model_name=judge_model_name,
