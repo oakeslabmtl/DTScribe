@@ -204,7 +204,6 @@ class EnhancedRAGPipeline:
             length_function=len,
         )
 
-
         chunks = splitter.split_documents(docs)
 
         # print(f"\n\n DEBUG: first chunk with complex metadata : {chunks[0]} \n\n")
@@ -421,19 +420,21 @@ Remember: Be highly specific and technical. Include exact technologies, methods,
         # Extract JSON content - look for the first complete JSON object
         json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
         if json_match:
-            return json_match.group(0)
+            json_str = json_match.group(0)
         
-        json_str = re.sub(
-            r'(:\s*)null(\s*[,\}])',
-            r'\1"Not in Document"\2',
-            json_str,
-            flags=re.IGNORECASE
-        )
-        json_str = re.sub(
-            r'(:\s*)None(\s*[,\}])',
-            r'\1"Not in Document"\2',
-            json_str
-        )
+            json_str = re.sub(
+                r'(:\s*)null(\s*[,\}])',
+                r'\1"Not in Document"\2',
+                json_str,
+                flags=re.IGNORECASE
+            )
+            json_str = re.sub(
+                r'(:\s*)None(\s*[,\}])',
+                r'\1"Not in Document"\2',
+                json_str
+            )
+            return json_str
+        
         # If no JSON object found, return the cleaned text as-is
         return response_text
 
