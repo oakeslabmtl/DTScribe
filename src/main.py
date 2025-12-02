@@ -20,6 +20,7 @@ from experiment_tracking import (
     CharacteristicsExtractionResult, OMLGenerationResult
 )
 
+from langchain_ollama import ChatOllama
 from judge_evaluator import JudgeEvaluator
 
 class ExtractionOrchestrator:
@@ -75,14 +76,29 @@ class ExtractionOrchestrator:
 
         self._retriever = DocumentRetriever(rag_pipeline, vectordb)
         self._extractor = CharacteristicsExtractor(rag_pipeline)
-       
-        # print(f"🔁 Max judge retries set to: {max_retries}")
+
 
         if config.max_judge_retries <= 0:
             print("⚠️ Skipping LLM judge step as max_judge_retries <= 0")
             judge = None
         else:
-            judge = JudgeEvaluator(rag_pipeline.llm)
+            # use same LLM by default
+            judge_llm = rag_pipeline.llm
+
+            if getattr(config, "judge_model_name", None) and config.judge_model_name != config.model_name:
+                print(f"🧪 Using separate LLM for judge: {config.judge_model_name}")
+                judge_llm = ChatOllama(
+                    model=config.judge_model_name,
+                    temperature=0.1,
+                    top_p=0.9,
+                    top_k=20,
+                    num_ctx=8192,
+                    num_predict=8192,
+                )
+            else:
+                print("🧪 Using same LLM for extraction and judge")
+
+            judge = JudgeEvaluator(judge_llm)
 
         # Track block processing
         block_metrics = {
@@ -330,9 +346,13 @@ class ExtractionPipelineFactory:
         max_judge_retries: int = 2,
         max_oml_retries: int = 3,
         max_pages: int = None,
+        judge_model_name: Optional[str] = None,
         **custom_params
     ) -> ExperimentConfig:
         """Create an experiment configuration."""
+        if judge_model_name is None:
+            judge_model_name = model_name
+
         return ExperimentConfig(
             model_name=model_name,
             embedding_model=embedding_model,
@@ -344,6 +364,7 @@ class ExtractionPipelineFactory:
             max_pages=max_pages,
             max_judge_retries=max_judge_retries,
             max_oml_retries=max_oml_retries,
+            judge_model_name=judge_model_name,
             custom_params=custom_params
         )
 
@@ -356,6 +377,7 @@ def main():
     parser.add_argument("--chunk-overlap", type=int, default=200)
     parser.add_argument("--temperature", type=float, default=0.1)
     parser.add_argument("--model-name", default="qwen3:8b")
+    parser.add_argument("--judge-model-name", default=None, help="Optional LLM model name used only for the judge. Defaults to --model-name.")
     parser.add_argument("--embedding-model", default="embeddinggemma")
     parser.add_argument("--exp-id", help="Existing experiment id (hash_timestamp or just hash for latest) containing characteristics for standalone OML generation")
     parser.add_argument("--no-save", action="store_true", help="Do not persist results")
@@ -371,6 +393,7 @@ def main():
         temperature=args.temperature,
         max_judge_retries=args.max_judge_retries,
         max_oml_retries=args.max_oml_retries,
+        judge_model_name=args.judge_model_name,
         custom_params={"cli": True}
     )
     print("Using configuration:", config)

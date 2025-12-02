@@ -27,6 +27,7 @@ class ExperimentConfig:
     max_pages: Optional[int] = None
     max_judge_retries: int = 2
     max_oml_retries: int = 2
+    judge_model_name: Optional[str] = None
     custom_params: Optional[Dict[str, Any]] = None
 
 
