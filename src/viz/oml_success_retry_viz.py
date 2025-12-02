@@ -60,26 +60,31 @@ max_retry_index = expanded_df['retry_index'].max()
 
 # Cumulated success rate calculation
 cumulated_results = []
-for k in range(max_retry_index + 1):
-    # For each original experiment, does it have a success with retries <= k?
-    success_within_k = df.apply(lambda r: int(r['oml_valid'] and r['oml_repetition_count'] <= k), axis=1)
-    success_rate = success_within_k.sum() / len(df) * 100
-    cumulated_results.append({"retry_index": k, "success_rate_pct": success_rate})
+for i in range(max_retry_index + 1):
+    # For each original experiment, does it have a success with retries <= i?
+    success_within_i = df.apply(lambda r: int(r['oml_valid'] and r['oml_repetition_count'] <= i), axis=1)
+    success_rate = success_within_i.sum() / len(df) * 100
+    cumulated_results.append({"retry_index": i, "success_rate_pct": success_rate})
 
 cumulated_df = pd.DataFrame(cumulated_results)
 
 # Step-specific success rate calculation
 step_results = []
-for k in range(max_retry_index + 1):
-    # For each original experiment, does it have a success exactly at retry k?
-    success_at_k = df.apply(lambda r: int(r['oml_valid'] and r['oml_repetition_count'] == k), axis=1)
-    failures_after_k = df.apply(lambda r: int(r['oml_repetition_count'] > k or not r['oml_valid']), axis=1)
-    print(f"Retry index: {k}, Successes at index: {success_at_k.sum()}, Failures after index: {failures_after_k.sum()}")
+for i in range(max_retry_index + 1):
+    # For each original experiment, does it have a success exactly at retry i?
+    success_at_i = df.apply(lambda r: int(r['oml_valid'] and r['oml_repetition_count'] == i), axis=1)
+    
+    # Failures at step i:
+    # 1. Experiments that continued beyond i (oml_repetition_count > i)
+    # 2. Experiments that stopped at i but failed (oml_repetition_count == i and not oml_valid)
+    failures_at_i = df.apply(lambda r: int(r['oml_repetition_count'] > i or (r['oml_repetition_count'] == i and not r['oml_valid'])), axis=1)
+    
+    print(f"Retry index: {i}, Successes at index: {success_at_i.sum()}, Failures at index: {failures_at_i.sum()}")
     # Success rate at this specific step (out of attempts that reached this step)
-    total_at_step = success_at_k.sum() + failures_after_k.sum()
-    success_rate = success_at_k.sum() / total_at_step * 100 if total_at_step > 0 else 0
-    step_results.append({"retry_index": k, "success_rate_pct": success_rate, 
-                         "successes": success_at_k.sum(), "failures": failures_after_k.sum()})
+    total_at_step = success_at_i.sum() + failures_at_i.sum()
+    success_rate = success_at_i.sum() / total_at_step * 100 if total_at_step > 0 else 0
+    step_results.append({"retry_index": i, "success_rate_pct": success_rate, 
+                         "successes": success_at_i.sum(), "failures": failures_at_i.sum()})
 
 step_df = pd.DataFrame(step_results)
 
@@ -103,9 +108,9 @@ for idx, row in cumulated_df.iterrows():
                  textcoords="offset points", xytext=(0, 10), ha='center', fontsize=9)
 ax1.fill_between(cumulated_df['retry_index'], 0, cumulated_df['success_rate_pct'], 
                 alpha=0.3, color='steelblue')
-ax1.set_xlabel("Retry Index (k)", fontsize=14, fontweight='bold')
-ax1.set_ylabel("Cumulative Success Rate (%)", fontsize=14, fontweight='bold')
-ax1.set_title("Cumulative Success Rate vs Retry Index (k)", 
+ax1.set_xlabel("Retry Index (i)", fontsize=14, fontweight='bold')
+ax1.set_ylabel("Cumulative Success Rate $R_i$ (%)", fontsize=14, fontweight='bold')
+ax1.set_title("Cumulative Success Rate vs Retry Index", 
               fontsize=14, fontweight='bold', pad=10)
 ax1.set_ylim(0, 105)
 ax1.set_xticks(range(0, int(cumulated_df['retry_index'].max()) + 1))
@@ -125,7 +130,7 @@ fig2.subplots_adjust(left=0.12, right=0.95, top=0.88, bottom=0.12)
 ax2.plot(step_df['retry_index'], step_df['success_rate_pct'], 
          marker='s', markersize=8, linewidth=2.5, color='coral',
          markerfacecolor='coral', markeredgecolor='black', markeredgewidth=1.2,
-         label='Success Rate at Step k')
+         label='Success Rate at Step i')
 
 # Add data labels on points
 for idx, row in step_df.iterrows():
@@ -133,8 +138,8 @@ for idx, row in step_df.iterrows():
                  (row['retry_index'], row['success_rate_pct']),
                  textcoords="offset points", xytext=(0, 10), ha='center', fontsize=8)
 
-ax2.set_xlabel("Retry Index (k)", fontsize=14, fontweight='bold')
-ax2.set_ylabel("Success Rate (%)", fontsize=14, fontweight='bold')
+ax2.set_xlabel("Retry Index (i)", fontsize=14, fontweight='bold')
+ax2.set_ylabel("Success Rate $S_i$ (%)", fontsize=14, fontweight='bold')
 ax2.set_title("Step-Specific Success Rate", 
               fontsize=14, fontweight='bold', pad=10)
 ax2.set_ylim(0, max(step_df['success_rate_pct'].max() * 1.3, 10))
@@ -159,8 +164,8 @@ ax3a.plot(cumulated_df['retry_index'], cumulated_df['success_rate_pct'],
           label='Cumulative Success Rate')
 ax3a.fill_between(cumulated_df['retry_index'], 0, cumulated_df['success_rate_pct'], 
                   alpha=0.3, color='steelblue')
-ax3a.set_xlabel("Retry Index (k)", fontsize=12, fontweight='bold')
-ax3a.set_ylabel("Cumulative Success Rate (%)", fontsize=12, fontweight='bold')
+ax3a.set_xlabel("Retry Index (i)", fontsize=12, fontweight='bold')
+ax3a.set_ylabel("Cumulative Success Rate $R_i$ (%)", fontsize=12, fontweight='bold')
 ax3a.set_title("Cumulative Success Rate", fontsize=12, fontweight='bold')
 ax3a.set_ylim(0, 105)
 ax3a.set_xticks(range(0, int(cumulated_df['retry_index'].max()) + 1))
@@ -172,9 +177,9 @@ ax3a.legend(loc='lower right', fontsize=9)
 ax3b.plot(step_df['retry_index'], step_df['success_rate_pct'], 
           marker='s', markersize=8, linewidth=2.5, color='coral',
           markerfacecolor='coral', markeredgecolor='black', markeredgewidth=1.2,
-          label='Success Rate at Retry Index k')
-ax3b.set_xlabel("Retry Index (k)", fontsize=12, fontweight='bold')
-ax3b.set_ylabel("Success Rate $S_k$ (%)", fontsize=12, fontweight='bold')
+          label='Success Rate at Retry Index i')
+ax3b.set_xlabel("Retry Index (i)", fontsize=12, fontweight='bold')
+ax3b.set_ylabel("Success Rate $S_i$ (%)", fontsize=12, fontweight='bold')
 ax3b.set_title("Step-Specific Success Rate", fontsize=12, fontweight='bold')
 ax3b.set_ylim(0, 105)
 ax3b.set_xticks(range(0, int(step_df['retry_index'].max()) + 1))
