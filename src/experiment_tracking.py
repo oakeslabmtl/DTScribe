@@ -25,9 +25,9 @@ class ExperimentConfig:
     top_p: float
     top_k: int
     max_pages: Optional[int] = None
-    max_judge_retries: int = 2
-    max_oml_retries: int = 2
-    judge_model_name: Optional[str] = None
+    max_judge_retries: int
+    max_oml_retries: int
+    judge_model_name: str
     custom_params: Optional[Dict[str, Any]] = None
 
 
@@ -184,6 +184,7 @@ class ResultsSaver:
             'input_path': result.input_path,
             'model_name': result.config.model_name,
             'embedding_model': result.config.embedding_model,
+            'judge_model_name': result.config.judge_model_name,
             'chunk_size': result.config.chunk_size,
             'chunk_overlap': result.config.chunk_overlap,
             'temperature': result.config.temperature,

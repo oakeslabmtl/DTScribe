@@ -82,12 +82,12 @@ class PipelineInitializer(IPipelineInitializer):
     def __init__(self):
         self._rag_pipeline = None
 
-    def initialize(self, input_path: str, config: ExtractionConfig, model_name: str) -> Dict[str, Any]:
+    def initialize(self, input_path: str, config: ExtractionConfig, model_name: str, embedding_model: str) -> Dict[str, Any]:
         if not Path(input_path).exists():
             raise FileNotFoundError(f"PDF source not found: {input_path}")
         
         print("🚀 Initializing RAG pipeline...")
-        self._rag_pipeline = EnhancedRAGPipeline(model_name=model_name)
+        self._rag_pipeline = EnhancedRAGPipeline(model_name=model_name, embedding_model=embedding_model)
         
         # # Show PDF information
         # print("📊 Analyzing PDF...")

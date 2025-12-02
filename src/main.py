@@ -52,8 +52,9 @@ class ExtractionOrchestrator:
         print("🔧 Initializing extraction pipeline...")
         # print("📁 Processing sources and creating vector DB...")
         if self._state_manager.get_state("vectordb"):
+            print("♻️ Resetting existing vector DB...")
             self._state_manager.get_state("vectordb")._client.reset()
-        init_result = self._initializer.initialize(input_path, config, config.model_name)
+        init_result = self._initializer.initialize(input_path, config, config.model_name, config.embedding_model)
         self._state_manager.update_state(init_result)
 
     def run_extraction(self, input_path: str, experiment_id: Optional[str] = None, config: Optional[ExperimentConfig] = None, save_results: bool = True) -> Dict[str, Any]:
@@ -89,7 +90,7 @@ class ExtractionOrchestrator:
                 print(f"🧪 Using separate LLM for judge: {config.judge_model_name}")
                 judge_llm = ChatOllama(
                     model=config.judge_model_name,
-                    temperature=0.1,
+                    temperature=0.2,
                     top_p=0.9,
                     top_k=20,
                     num_ctx=8192,
@@ -336,11 +337,11 @@ class ExtractionPipelineFactory:
     
     @staticmethod
     def create_config(
-        model_name: str = "qwen3:8b",
-        embedding_model: str = "nomic-embed-text",
-        chunk_size: int = 1500,
-        chunk_overlap: int = 200,
-        temperature: float = 0.1,
+        model_name: str,
+        embedding_model: str,
+        chunk_size: int,
+        chunk_overlap: int,
+        temperature: float,
         top_p: float = 0.9,
         top_k: int = 20,
         max_judge_retries: int = 2,
@@ -373,8 +374,8 @@ def main():
     parser = argparse.ArgumentParser(description="Extraction / OML generation pipeline")
     parser.add_argument("--mode", choices=["both", "extraction", "oml"], default="both", help="Run extraction, OML generation, or both")
     parser.add_argument("--input-path", default="data/papers/The Incubator Case Study for Digital Twin Engineering.pdf", help="PDF path for extraction")
-    parser.add_argument("--chunk-size", type=int, default=1500)
-    parser.add_argument("--chunk-overlap", type=int, default=200)
+    parser.add_argument("--chunk-size", type=int, default=3000)
+    parser.add_argument("--chunk-overlap", type=int, default=500)
     parser.add_argument("--temperature", type=float, default=0.1)
     parser.add_argument("--model-name", default="qwen3:8b")
     parser.add_argument("--judge-model-name", default=None, help="Optional LLM model name used only for the judge. Defaults to --model-name.")

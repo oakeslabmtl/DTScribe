@@ -90,7 +90,7 @@ instance <ComponentName> : DTDFVocab:Component [
 class EnhancedRAGPipeline:
     """Enhanced RAG Pipeline with improved techniques for better generation quality."""
     
-    def __init__(self, model_name: str = "qwen3:8b", embedding_model: str = "nomic-embed-text"):
+    def __init__(self, model_name, embedding_model):
         self.llm = ChatOllama(
             model=model_name,
             temperature=0.1,
