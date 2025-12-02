@@ -215,6 +215,14 @@ class BaseBlockProcessor(IBlockProcessor, ABC):
                 # extracted_dict = output.model_dump(exclude_none=True)
                 extracted_dict = output.model_dump()
 
+                # Clean up escaped quotes in strings
+                for key, value in extracted_dict.items():
+                    if isinstance(value, str):
+                        extracted_dict[key] = value.replace('\"', "'")
+                
+                # Update output with cleaned values
+                output = self.get_schema()(**extracted_dict)
+
                 # if it's a retry, preserve high score characteristics from previous output
                 if retries > 0 and last_output is not None and judge_results:
                     # prev_dict = last_output.model_dump(exclude_none=True)
