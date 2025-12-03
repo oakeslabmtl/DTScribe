@@ -130,7 +130,7 @@ fig2.subplots_adjust(left=0.12, right=0.95, top=0.88, bottom=0.12)
 ax2.plot(step_df['retry_index'], step_df['success_rate_pct'], 
          marker='s', markersize=8, linewidth=2.5, color='coral',
          markerfacecolor='coral', markeredgecolor='black', markeredgewidth=1.2,
-         label='Success Rate at Step i')
+         label='Conditional Success Rate at Step i')
 
 # Add data labels on points
 for idx, row in step_df.iterrows():
@@ -139,7 +139,7 @@ for idx, row in step_df.iterrows():
                  textcoords="offset points", xytext=(0, 10), ha='center', fontsize=8)
 
 ax2.set_xlabel("Retry Index (i)", fontsize=14, fontweight='bold')
-ax2.set_ylabel("Success Rate $S_i$ (%)", fontsize=14, fontweight='bold')
+ax2.set_ylabel("Conditional Success Rate $H_i$ (%)", fontsize=14, fontweight='bold')
 ax2.set_title("Step-Specific Success Rate", 
               fontsize=14, fontweight='bold', pad=10)
 ax2.set_ylim(0, max(step_df['success_rate_pct'].max() * 1.3, 10))
@@ -177,9 +177,9 @@ ax3a.legend(loc='lower right', fontsize=9)
 ax3b.plot(step_df['retry_index'], step_df['success_rate_pct'], 
           marker='s', markersize=8, linewidth=2.5, color='coral',
           markerfacecolor='coral', markeredgecolor='black', markeredgewidth=1.2,
-          label='Success Rate at Retry Index i')
+          label='Conditional Success Rate at Retry Index i')
 ax3b.set_xlabel("Retry Index (i)", fontsize=12, fontweight='bold')
-ax3b.set_ylabel("Success Rate $S_i$ (%)", fontsize=12, fontweight='bold')
+ax3b.set_ylabel("Conditional Success Rate $H_i$ (%)", fontsize=12, fontweight='bold')
 ax3b.set_title("Step-Specific Success Rate", fontsize=12, fontweight='bold')
 ax3b.set_ylim(0, 105)
 ax3b.set_xticks(range(0, int(step_df['retry_index'].max()) + 1))
@@ -208,6 +208,6 @@ print("="*60)
 print(cumulated_df.to_string(index=False))
 
 print("\n" + "="*60)
-print("STEP-SPECIFIC SUCCESS RATE SUMMARY")
+print("STEP-SPECIFIC CONDITIONAL SUCCESS RATE SUMMARY")
 print("="*60)
 print(step_df.to_string(index=False))
