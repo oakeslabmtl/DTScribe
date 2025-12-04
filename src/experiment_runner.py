@@ -284,15 +284,18 @@ def main():
     #     "chunk_overlap": [200, 300, 400],
     # }
 
-    experiment_name = "gpt-oss_20b_20_runs"
+    experiment_name = "gpt-oss_120b_runs"
+    experiment_name = "mistral_test_runs"
     param_grid = {
-        'model_name': ["gpt-oss:20b-cloud"],
-        'chunk_size': [3000],
-        "chunk_overlap": [500],
+        # 'model_name': ["gpt-oss:120b-cloud"],
+        'model_name': ["ministral-3:14b-cloud"],
         'temperature': [1.0],
         'top_p': [1.0],
         'top_k': [0],
         "embedding_model": ["embeddinggemma"],
+        'chunk_size': [3000],
+        "chunk_overlap": [500],
+        'judge_model_name': ["deepseek-v3.1:671b-cloud"],
         "max_judge_retries": [3],
         "max_oml_retries": [5],
     }
