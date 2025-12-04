@@ -1,0 +1,148 @@
+// C3: Physical sensing components
+instance InternalTemperatureSensor : DTDFVocab:SensingComponent [
+    base:desc "Senses temperature measurements inside the incubator box for real-time monitoring."
+    DTDFVocab:producedData InternalTemperatureDataTransmitted
+]
+
+instance ExternalTemperatureSensor : DTDFVocab:SensingComponent [
+    base:desc "Senses temperature measurements outside the incubator box for environmental context."
+    DTDFVocab:producedData ExternalTemperatureDataTransmitted
+]
+
+instance LowLevelDriver : DTDFVocab:SensingComponent [
+    base:desc "Low-level driver component that reads raw sensor data and formats control states (e.g., fan/heatbed activation status)."
+    DTDFVocab:producedData ControlStateDataTransmitted
+]
+
+// C4: Physical-to-virtual interaction
+instance InternalTemperatureDataTransmitted : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom InternalTemperatureSensor
+    base:desc "Periodically polled temperature data from inside the incubator box, transmitted via RabbitMQ."
+]
+
+instance ExternalTemperatureDataTransmitted : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom ExternalTemperatureSensor
+    base:desc "Periodically polled temperature data from outside the incubator box, transmitted via RabbitMQ."
+]
+
+instance ControlStateDataTransmitted : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom LowLevelDriver
+    base:desc "Continuously streamed control states (e.g., fan/heatbed activation status) from the low-level driver via RabbitMQ."
+]
+
+instance ControllerCommandDataTransmitted : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom ControllerComponent
+    base:desc "Controller commands and state changes relayed through RabbitMQ for digital twin synchronization."
+]
+
+// C10: Models/Data
+instance RawTemperatureData : DTDFVocab:Data [
+    base:desc "Raw temperature measurements (inside/outside) preprocessed by the low-level driver before transmission."
+    DTDFVocab:fromData InternalTemperatureDataTransmitted, ExternalTemperatureDataTransmitted
+    DTDFVocab:inputTo RabbitMQMessageBroker
+]
+
+instance ControlStateData : DTDFVocab:Data [
+    base:desc "Formatted control states (e.g., fan/heatbed activation) aggregated from the low-level driver."
+    DTDFVocab:fromData ControlStateDataTransmitted
+    DTDFVocab:inputTo RabbitMQMessageBroker
+]
+
+instance ControllerCommandData : DTDFVocab:Data [
+    base:desc "Controller commands and state updates relayed through RabbitMQ for digital twin synchronization."
+    DTDFVocab:fromData ControllerCommandDataTransmitted
+    DTDFVocab:inputTo RabbitMQMessageBroker
+]
+
+instance TimeSeriesTemperatureData : DTDFVocab:Data [
+    base:desc "Historical temperature data stored in a time-series database for analysis and what-if simulations."
+    DTDFVocab:fromData InternalTemperatureDataTransmitted, ExternalTemperatureDataTransmitted
+    DTDFVocab:inputTo TimeSeriesDatabase
+]
+
+// C11: Enablers
+instance RabbitMQMessageBroker : DTDFVocab:Enabler [
+    base:desc "Asynchronous message broker enabling decoupled communication between physical twin (low-level driver/controller) and digital twin."
+    DTDFVocab:enables RealTimeDataIntegrationService, ModelCalibrationService
+]
+
+instance TimeSeriesDatabase : DTDFVocab:Enabler [
+    base:desc "Database for storing historical temperature data for long-term analysis and simulation."
+    DTDFVocab:enables HistoricalAnalysisService
+]
+
+// C6: Services
+instance RealTimeDataIntegrationService : DTDFVocab:Service [
+    base:desc "Service that listens to RabbitMQ messages and integrates real-time data for visualization and calibration."
+    DTDFVocab:provides RealTimeTemperatureVisualizationInsight, SimulationModelCalibrationAction
+]
+
+instance ModelCalibrationService : DTDFVocab:Service [
+    base:desc "Service that uses real-time data to calibrate simulation models (e.g., Model B)."
+    DTDFVocab:provides ModelAccuracyInsight
+]
+
+instance HistoricalAnalysisService : DTDFVocab:Service [
+    base:desc "Service that analyzes historical temperature data for trend detection and what-if scenarios."
+    DTDFVocab:provides TemperatureTrendInsight, AnomalyDetectionInsight
+]
+
+// C17: Insights/Actions
+instance RealTimeTemperatureVisualizationInsight : DTDFVocab:Insight [
+    base:desc "Real-time plotting of temperature trends (inside/outside) in a dashboard for monitoring."
+]
+
+instance SimulationModelCalibrationAction : DTDFVocab:Action [
+    base:desc "Automatic calibration of simulation models using real-time temperature data."
+    DTDFVocab:IsAutomatic true
+]
+
+instance ModelAccuracyInsight : DTDFVocab:Insight [
+    base:desc "Assessment of simulation model accuracy based on real-time vs. predicted temperature data."
+]
+
+instance TemperatureTrendInsight : DTDFVocab:Insight [
+    base:desc "Identification of long-term temperature trends from historical data."
+]
+
+instance AnomalyDetectionInsight : DTDFVocab:Insight [
+    base:desc "Detection of temperature anomalies or deviations from expected behavior."
+]
+
+// C1: Components
+instance ControllerComponent : DTDFVocab:Component [
+    base:desc "Controller that generates commands and state updates relayed through RabbitMQ."
+]
+
+instance DigitalTwinEnvironment : DTDFVocab:Environment [
+    base:contains RabbitMQMessageBroker, TimeSeriesDatabase, RealTimeDataIntegrationService,
+                 ModelCalibrationService, HistoricalAnalysisService
+]
+
+
+instance virtual_to_physical_interaction : DTDFVocab:VirtualToPhysical [
+    base:desc "
+  **Control Flows from Digital to Physical:**
+  - **Command Types:**
+    - Heating commands (activate/deactivate heatbed) and fan control commands.
+    - Controller parameter adjustments (e.g., **LL** (Lower Limit), **UL** (Upper Limit), **H** (Heating Duration), **C** (Waiting Duration)).
+  - **Control Message Formats:**
+    - Commands are relayed as messages through RabbitMQ in a structured format (e.g., JSON or binary payloads).
+    - Controller statecharts (e.g., Figure 8) define the logic for interpreting commands (e.g., bang-bang control with hysteresis).
+  - **Validation and Authentication Mechanisms:**
+    - Implicit safety checks in the low-level driver (e.g., ensuring commands do not exceed safe temperature limits).
+    - No explicit authentication mentioned, but RabbitMQ’s access control can be configured for secure communication.
+  - **Feedback Systems:**
+    - The controller receives temperature measurements from sensors and adjusts commands dynamically (closed-loop control).
+    - Anomalies detected by the Kalman filter (e.g., unexpected temperature deviations) trigger recalibration or controller reconfiguration.
+  - **Conflict Resolution:**
+    - The bang-bang controller includes waiting durations (**C**) to avoid overshooting temperature limits, mitigating conflicts between heating and cooling.
+    - Priority is given to safety (e.g., stopping heating if temperatures exceed **UL**).
+  - **Command Execution Confirmation:**
+    - The low-level driver acknowledges commands by updating RabbitMQ with the executed state (e.g., heatbed on/off status).
+    - The DT monitors these updates to ensure commands are executed as intended.
+  - **Additional Notes:**
+    - The DT enables **self-adaptation loops** where detected anomalies (e.g., new objects in the incubator) trigger dynamic recalibration of models and controllers.
+    - What-if simulations are used to optimize controller parameters before deployment.
+  "
+]

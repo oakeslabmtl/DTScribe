@@ -1,0 +1,467 @@
+// C2: Acting Components
+instance HeatbedActuator : DTDFVocab:ActingComponent [
+    base:desc "Primary heating element controlled via bang-bang logic to regulate temperature within the insulated styrofoam container. Operates within safety constraints enforced by the low-level driver to prevent overheating (temperature limits LL/UL)."
+]
+
+instance FanActuator : DTDFVocab:ActingComponent [
+    base:desc "Distributes heat uniformly inside the insulated container. Controlled via RabbitMQ commands with synchronized operation relative to the heatbed (continuous or pulsed operation based on control strategy)."
+]
+
+// C3: Physical Sensing Components
+instance InternalTemperatureSensor1 : DTDFVocab:SensingComponent [
+    base:desc "Internal temperature sensor monitoring critical box temperature for control purposes. Part of the two internal sensor pair covering the styrofoam box volume."
+    DTDFVocab:producedData InternalTemperatureData1
+]
+
+instance InternalTemperatureSensor2 : DTDFVocab:SensingComponent [
+    base:desc "Internal temperature sensor monitoring critical box temperature for control purposes. Part of the two internal sensor pair covering the styrofoam box volume."
+    DTDFVocab:producedData InternalTemperatureData2
+]
+
+instance ExternalTemperatureSensor : DTDFVocab:SensingComponent [
+    base:desc "External temperature sensor measuring ambient conditions for environmental context in the incubator system."
+    DTDFVocab:producedData ExternalTemperatureData
+]
+
+// C4: Physical-to-Virtual Data Transmission
+instance InternalTemperatureData1 : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom InternalTemperatureSensor1
+]
+
+instance InternalTemperatureData2 : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom InternalTemperatureSensor2
+]
+
+instance ExternalTemperatureData : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom ExternalTemperatureSensor
+]
+
+instance ControllerStateData : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom LowLevelDriver
+]
+
+// C10: Models/Data
+instance ModelA : DTDFVocab:Model [
+    base:desc "Thermal model with 2 free parameters for temperature prediction inside the incubator. Simpler model with less accuracy for thermal inertia prediction."
+    DTDFVocab:inputTo RabbitMQCommunicationEnabler
+]
+
+instance ModelB : DTDFVocab:Model [
+    base:desc "Thermal model with 4 free parameters for improved thermal inertia prediction. Used for anomaly detection, state estimation, and what-if simulations."
+    DTDFVocab:inputTo RabbitMQCommunicationEnabler, KalmanFilterEnabler
+]
+
+instance InternalTemperatureData : DTDFVocab:Data [
+    base:desc "Time-series temperature data collected from internal sensors (0-100°C range) used for real-time monitoring and model calibration."
+    DTDFVocab:fromData InternalTemperatureData1, InternalTemperatureData2
+    DTDFVocab:inputTo RealTimeVisualizationService, AnomalyDetectionService, ModelCalibrationService
+]
+
+instance ExternalTemperatureData : DTDFVocab:Data [
+    base:desc "Ambient temperature data collected from external sensor used for environmental context and model calibration."
+    DTDFVocab:fromData ExternalTemperatureData
+    DTDFVocab:inputTo ModelCalibrationService, WhatIfSimulationService
+]
+
+instance ControllerStateData : DTDFVocab:Data [
+    base:desc "Controller state messages including heating/fan activation status and parameter values (LL, UL, H, C) for monitoring and simulation."
+    DTDFVocab:fromData ControllerStateData
+    DTDFVocab:inputTo RealTimeVisualizationService, ControllerOptimizationService
+]
+
+instance HeatbedStateEstimationData : DTDFVocab:Data [
+    base:desc "Estimated heatbed temperature data derived from Kalman filter processing of sensor data and Model B predictions."
+    DTDFVocab:inputTo AnomalyDetectionService, SelfAdaptationService
+]
+
+// C11: Enablers
+instance RabbitMQCommunicationEnabler : DTDFVocab:Enabler [
+    base:desc "Open-source message broker facilitating real-time data exchange between PT components (sensors, actuators) and DT services via publish-subscribe model."
+    DTDFVocab:enables RealTimeVisualizationService, OnDemandCalibrationService, AnomalyDetectionService, WhatIfSimulationService, SelfAdaptationService, ControllerService, DataTransmissionService
+]
+
+instance InfluxDBTimeSeriesEnabler : DTDFVocab:Enabler [
+    base:desc "Time-series database storing real-time incubator status data (temperature, control states) for visualization and analysis."
+    DTDFVocab:enables RealTimeVisualizationService, ModelCalibrationService
+]
+
+instance KalmanFilterEnabler : DTDFVocab:Enabler [
+    base:desc "State estimation tool processing noisy sensor data to detect anomalies and estimate non-measured heatbed temperature using Model B predictions."
+    DTDFVocab:enables AnomalyDetectionService, SelfAdaptationService
+]
+
+instance ModelCalibrationEnabler : DTDFVocab:Enabler [
+    base:desc "Automated calibration process updating Model B parameters using experimental data to minimize prediction errors via least-squares approximation."
+    DTDFVocab:enables OnDemandCalibrationService, SelfAdaptationService
+]
+
+instance LowLevelDriverEnabler : DTDFVocab:Enabler [
+    base:desc "Raspberry Pi-based firmware interfacing with PT sensors/actuators, enforcing safety protocols, and periodically uploading data to RabbitMQ."
+    DTDFVocab:enables ControllerService, DataTransmissionService
+]
+
+instance ControllerServiceEnabler : DTDFVocab:Enabler [
+    base:desc "Bang-bang controller statechart implementation on Raspberry Pi managing discrete temperature regulation logic with configurable parameters (LL, UL, H, C)."
+    DTDFVocab:enables ControllerService
+]
+
+// C6: Services
+instance RealTimeVisualizationService : DTDFVocab:Service [
+    base:desc "Real-time dashboard service plotting temperature trends and control states for engineers, operators, and stakeholders. Synchronized with sensor readings via periodic updates."
+    DTDFVocab:provides TemperatureTrendInsight, ControllerStateInsight
+]
+
+instance OnDemandCalibrationService : DTDFVocab:Service [
+    base:desc "Automated calibration service updating Model B parameters using real-time data. Triggered by scheduled events or system reconfiguration to reflect current system behavior."
+    DTDFVocab:provides ModelParameterUpdateAction, ThermalInertiaAdjustmentInsight
+]
+
+instance AnomalyDetectionService : DTDFVocab:Service [
+    base:desc "Anomaly detection service using Kalman filter to correlate sensor data with Model B predictions, identifying unexpected thermal behavior and estimating hidden states."
+    DTDFVocab:provides AnomalyAlertInsight, HeatbedStateEstimationInsight
+]
+
+instance WhatIfSimulationService : DTDFVocab:Service [
+    base:desc "What-if simulation service co-simulating historical/real-time PT data to optimize controller parameters (LL, UL, H, C) and test hypothetical scenarios."
+    DTDFVocab:provides ControllerOptimizationInsight, ScenarioTestingInsight
+]
+
+instance SelfAdaptationService : DTDFVocab:Service [
+    base:desc "Future self-adaptation service implementing closed-loop process for detecting PT behavior changes, recalibrating models, and reconfiguring controllers automatically."
+    DTDFVocab:provides AdaptiveModelUpdateAction, ControllerReconfigurationAction
+]
+
+instance ControllerService : DTDFVocab:Service [
+    base:desc "Service implementing the bang-bang controller logic for temperature regulation."
+]
+
+instance DataTransmissionService : DTDFVocab:Service [
+    base:desc "Service responsible for transmitting data between physical components and digital twin."
+]
+
+instance ModelCalibrationService : DTDFVocab:Service [
+    base:desc "Service for automated calibration of Model B parameters using real-time data."
+    DTDFVocab:provides ModelParameterUpdateAction
+]
+
+instance ControllerOptimizationService : DTDFVocab:Service [
+    base:desc "Service for optimizing controller parameters through what-if simulations."
+    DTDFVocab:provides ControllerOptimizationInsight
+]
+
+// C17: Insights/Actions
+instance TemperatureTrendInsight : DTDFVocab:Insight [
+    base:desc "Visualized time-series data showing internal and external temperature trends for monitoring system performance."
+]
+
+instance ControllerStateInsight : DTDFVocab:Insight [
+    base:desc "Real-time display of controller state transitions including heating durations (H) and cooling delays (C)."
+]
+
+instance AnomalyAlertInsight : DTDFVocab:Insight [
+    base:desc "Alerts generated when Kalman filter detects deviations between predicted (Model B) and actual temperature data, indicating potential system failures."
+]
+
+instance HeatbedStateEstimationInsight : DTDFVocab:Insight [
+    base:desc "Estimated heatbed temperature data derived from Kalman filter processing, providing insights into non-measured internal states."
+]
+
+instance ModelParameterUpdateAction : DTDFVocab:Action [
+    base:desc "Automated update of Model B parameters to reflect current system behavior based on real-time calibration data."
+    DTDFVocab:IsAutomatic true
+]
+
+instance ThermalInertiaAdjustmentInsight : DTDFVocab:Insight [
+    base:desc "Insights into adjusted thermal inertia parameters improving Model B's prediction accuracy for heatbed response."
+]
+
+instance ControllerOptimizationInsight : DTDFVocab:Insight [
+    base:desc "Results from what-if simulations identifying optimal controller parameters (LL, UL, H, C) for stability and performance."
+]
+
+instance ScenarioTestingInsight : DTDFVocab:Insight [
+    base:desc "Predictive analysis of hypothetical scenarios including new loads or environmental conditions to test controller robustness."
+]
+
+instance AdaptiveModelUpdateAction : DTDFVocab:Action [
+    base:desc "Automated recalibration of Model B parameters based on detected PT behavior changes during self-adaptation process."
+    DTDFVocab:IsAutomatic true
+]
+
+instance ControllerReconfigurationAction : DTDFVocab:Action [
+    base:desc "Real-time reconfiguration of controller parameters based on self-adaptation loop insights to optimize system performance."
+    DTDFVocab:IsAutomatic true
+]
+
+// C1: Environment
+instance IncubatorEnvironment : DTDFVocab:Environment [
+    base:desc "Operational environment containing the physical incubator system including styrofoam container, heatbed, fan, and temperature sensors."
+    base:contains HeatbedActuator, FanActuator, InternalTemperatureSensor1, InternalTemperatureSensor2, ExternalTemperatureSensor, LowLevelDriver, Controller
+]
+
+// C5: Components
+instance StyrofoamContainer : DTDFVocab:Component [
+    base:desc "Insulated styrofoam container providing thermal isolation for the incubator system. Contains the heatbed and fan components."
+    base:isContainedIn IncubatorEnvironment
+]
+
+instance LowLevelDriver : DTDFVocab:Component [
+    base:desc "Raspberry Pi-based firmware implementing sensor/actuator abstraction and safety protocols. Periodically reads sensor data and uploads to RabbitMQ."
+    base:isContainedIn IncubatorEnvironment
+]
+
+instance Controller : DTDFVocab:Component [
+    base:desc "Bang-bang controller implementing statechart logic for temperature regulation with configurable parameters (LL, UL, H, C)."
+    base:isContainedIn IncubatorEnvironment
+]
+
+
+instance virtual_to_physical_interaction : DTDFVocab:VirtualToPhysical [
+    base:desc "
+    **Control Flows from Digital Twin (DT) to Physical Twin (PT):**
+    - **Command Types:**
+      - **Actuation Commands:**
+        - **Heatbed Control:** Binary or duration-based signals (e.g., 'turn on heatbed' or 'heat for H duration').
+        - **Fan Control:** Binary signals (e.g., 'activate/deactivate fan').
+      - **Configuration Commands:**
+        - Controller parameter updates (e.g., **LL**, **UL**, **H**, **C** from Document 6: 'controller parameters are: LL – Lower limit for temperature; UL – Upper limit for temperature; H – Heating duration; C – Waiting duration').
+        - **Model Calibration Triggers:** Initiate recalibration of Model B (Document 5: 'run the calibration of Model B for new experiment').
+
+    - **Control Message Formats:**
+      - **Structured Messages:** Implied to be **RabbitMQ message queues** with payloads structured as:
+        - **Command Queue:** JSON-like payloads (inferred from RabbitMQ's flexibility; not explicitly detailed in documents).
+        - **State Queue:** Binary or text-based status updates (e.g., 'heatbed ON/OFF').
+      - **Validation Mechanisms:**
+        - **Safe Protocol:** Low-level driver enforces safety checks before executing commands (Document 6: 'a safe protocol is incorporated into the low-level driver').
+        - **Statechart Logic:** Controller follows a **bang-bang control** statechart (Document 6: Figure 8) with explicit transitions for heating/waiting phases.
+
+    - **Feedback Systems:**
+      - **Closed-Loop Adaptation:** DT detects PT behavior changes (e.g., 'new object placed in incubator') via Kalman filter anomalies (Document 5: 'detect that the plant behavior has changed').
+      - **Reconfiguration Loop:** DT triggers recalibration and controller tuning based on feedback (Document 5: 're-configure Kalman filter with new parameters').
+
+    - **Conflict Resolution:**
+      - **Priority-Based:** Controller commands override low-level driver safety checks only if validated (implied by 'safe protocol' enforcement).
+      - **Human Intervention:** Manual overrides possible via dashboard (Document 5: 'humans (or other algorithms) may decide to make changes').
+
+    - **Command Execution Confirmation:**
+      - **Acknowledgment:** Low-level driver confirms receipt of commands and PT state updates (Document 6: 'The low level driver periodically reads the temperature data... and checks if there are commands').
+
+    **Sources:** Documents 5, 6.
+  "
+]
+
+instance twinning_time_scale : DTDFVocab:TimeScale [
+    base:desc "
+    - **Real-time visualization**: Achieved via continuous data streaming from the low-level driver to a time-series database with unspecified but implied low-latency requirements (e.g., 'periodically reads the temperature data' in Document 6, Section 2.2.2).
+    - **Calibration process**: Triggered 'on demand' (Document 5, Section 5) with no explicit frequency specified, but tied to anomaly detection events.
+    - **Low-level driver updates**: Periodic temperature readings (Document 6, Section 2.2.2) with no explicit interval mentioned, but implied to be frequent enough for real-time control.
+    - **Controller latency**: Implicitly low-latency due to bang-bang control logic (Document 6, Section 2.2.3) with waiting durations (H, C parameters) configurable but not quantified.
+    - **Kalman filter execution**: Real-time state estimation (Document 5, Section 5) with no explicit frequency, but correlated to sensor data updates.
+    - **What-if simulations**: Co-simulations with real-time or historical data (Document 5, Section 5) requiring synchronization with PT updates.
+    - **Self-adaptation loop**: Event-driven (Document 5, Section 5) with steps triggered by anomalies, experiments, and reconfiguration events (no explicit timing).
+  "
+]
+
+instance dt_constellation : DTDFVocab:Constellation [
+    base:desc "
+    **Orchestration and Coordination Patterns:**
+    - **Architecture Pattern:** **Event-Driven Microservices with Message Broker**
+      - Components communicate via asynchronous messages (RabbitMQ) rather than direct calls.
+      - Each DT service (visualization, calibration, anomaly detection) is a loosely coupled module subscribing/publishing to RabbitMQ queues.
+    - **Component Integration:**
+      - **RabbitMQ as Backbone:** Centralizes communication between PT (low-level driver/controller) and DT services. Queues/topics are used to decouple producers (PT) and consumers (DT services).
+      - **Modular Design:** DT services are independently deployable (e.g., visualization dashboard can be updated without affecting calibration logic).
+      - **Co-simulation Integration:** What-if simulations integrate with real-time data via RabbitMQ, enabling hybrid (simulation + PT) workflows.
+    - **Resource Management:**
+      - **No Explicit Scaling:** The system is designed for a single PT-DT pair, with no mention of resource allocation strategies (e.g., load balancing, auto-scaling).
+      - **Hardware Constraints:** PT resources are limited by the Raspberry Pi's capabilities (e.g., processing power for the controller and low-level driver).
+      - **DT Resource Allocation:** Implied to be lightweight (e.g., Kalman filter runs on the same hardware or a connected server).
+    - **System-Wide Coordination:**
+      - **Closed-Loop Control:** The self-adaptation loop coordinates PT and DT actions via:
+        1. Anomaly detection (DT → PT state change request).
+        2. Experiment scheduling (DT → PT controller reconfiguration).
+        3. Model recalibration (DT updates Model B parameters).
+      - **State Synchronization:** The PT's state (temperature, control actions) is continuously published to RabbitMQ, ensuring DT components have a consistent view.
+      - **No Explicit Conflict Resolution:** Assumes deterministic behavior (e.g., no race conditions in controller state transitions).
+
+    **Technologies and Tools:**
+    - **Message Broker:** RabbitMQ (open-source, supports high-throughput, low-latency messaging).
+    - **Simulation Models:** Custom Python-based models (A and B) implemented for temperature prediction.
+    - **State Estimation:** Kalman filter (implemented in Python, likely using libraries like `scipy` or `pysignal`).
+    - **Visualization:** Time-series database (e.g., InfluxDB or similar) + dashboard (e.g., Grafana).
+    - **Controller:** Bang-bang logic implemented as a statechart (Figure 8) on the Raspberry Pi.
+
+    **Assumptions Impacting Constellation:**
+    - **Single PT-DT Pair:** Simplifies coordination but limits scalability.
+    - **Uniform Temperature (Assumption 1):** Reduces complexity in model integration.
+    - **Ignored Heatbed Inertia (Assumption 4):** Simplifies Model A but requires Model B for accuracy.
+  "
+]
+
+instance life_cycle_stages : DTDFVocab:EvolutionStage [
+    base:desc "
+    **Lifecycle Phases and Representations:**
+    - **Development Phase:**
+      - **Model Creation:** Abstract representations of the incubator system are built at multiple levels of abstraction (e.g., CAD for physical structure, dynamic models for temperature prediction). Two simulation models were developed for temperature prediction: Model A (2 free parameters) and Model B (4 free parameters) [Doc 3]. Model B was selected for its superior accuracy in predicting thermal inertia [Doc 5].
+      - **Integration Phase:** Models are integrated into a Digital Twin (DT) framework to enable real-time monitoring, simulation, and optimization. The DT framework includes:
+        - **Data Collection:** Continuous sensor data (temperature inside/outside the box) from the Physical Twin (PT) via RabbitMQ message broker [Doc 6].
+        - **Model Calibration:** Automated calibration processes using experimental data to update model parameters [Doc 5].
+        - **Simulation and Monitoring:** Co-simulation capabilities to run historical or real-time data for predictive analysis [Doc 5].
+
+    - **Operational Phase:**
+      - **Real-Time Monitoring:** The DT listens to controller and low-level driver messages via RabbitMQ, relaying data to a time-series database for visualization [Doc 5].
+      - **Adaptation Loop (Future Goal):** A self-adaptation loop is envisioned to detect anomalies (via Kalman filter), gather new data, recalibrate models, and optimize controller parameters [Doc 5]. This involves:
+        1. Anomaly detection (Kalman filter correlation with Model B).
+        2. Scheduled experiments to gather data under new conditions (e.g., introducing cold objects).
+        3. Recalibration of Model B with new parameters.
+        4. Reconfiguration of the Kalman filter and controller via what-if simulations.
+
+    - **Transition Management:**
+      - **Version Control:** Hardware and software specifications are versioned and publicly available in a GitHub repository ([https://github.com/INTO-CPS-Association/example-incubator](https://github.com/INTO-CPS-Association/example-incubator)) [Doc 2, Doc 5]. This enables traceability and reproducibility of models and calibration processes.
+      - **Model Evolution:** The DT framework supports iterative model refinement (e.g., switching from Model A to Model B) and dynamic reconfiguration of algorithms (e.g., Kalman filter parameters) based on operational feedback [Doc 5].
+
+    - **Lifecycle Governance:**
+      - **Future Work:** Governance is framed around iterative improvement, with explicit goals for:
+        - **Closed-Loop Adaptation:** Automated detection of PT behavior changes and DT-driven controller reconfiguration [Doc 5].
+        - **Compliance and Validation:** Ensuring models and algorithms align with operational requirements (e.g., safety, robustness) through experimental validation [Doc 3, Doc 5].
+      - **No explicit governance frameworks (e.g., ISO/IEC 42010) are mentioned in the documents, but the repository and calibration processes imply a structured approach to versioning and validation.
+  "
+]
+
+instance fidelity_and_validity_considerations : DTDFVocab:FidelityConsideration [
+    base:desc "
+    **Model Fidelity Requirements:**
+    - **Accuracy Trade-offs:** Model B (4 parameters) prioritizes thermal inertia prediction over speed, while Model A (2 parameters) is faster but less accurate.
+    - **Abstraction Levels:** Models are simplified (e.g., assumptions in Section 3) to balance complexity and computational efficiency.
+    - **Simulation Speed:** Accurate models (e.g., Model B) are slower to analyze (e.g., via differential equation solvers).
+
+    **Validation and Verification Methods:**
+    - **Experimental Calibration:** Section 3.3 describes automated calibration using real PT data to adjust model parameters (e.g., thermal inertia coefficients).
+    - **Anomaly Detection:** Kalman filter (Section 5) validates model predictions against sensor data, flagging inconsistencies (e.g., heatbed state deviations).
+    - **What-If Simulations:** Co-simulations (Section 5) compare predicted vs. actual PT behavior under hypothetical scenarios (e.g., controller parameter changes).
+
+    **Uncertainty Sources and Quantification:**
+    - **Environmental Factors:** Ambient temperature (outside sensor) affects PT dynamics; not fully modeled in simplified thermal models.
+    - **Sensor Noise:** Unspecified but implied to impact Model B’s state estimation (e.g., Kalman filter covariance matrices).
+    - **Model Assumptions:** Simplifications (e.g., uniform heat distribution) introduce bias; validated via experimental comparison (Figure 13).
+
+    **Error Detection and Correction:**
+    - **Kalman Filter:** Estimates heatbed temperature (non-measured) and corrects for sensor errors via state estimation.
+    - **Self-Adaptation Loop (Section 5):** Detects PT behavior changes (e.g., cold object insertion) and triggers re-calibration of Model B.
+    - **Controller Reconfiguration:** Adjusts `H`/`C` parameters based on calibration results to maintain stability.
+
+    **Quality Assurance Processes:**
+    - **Open-Source Validation:** Hardware/software specifications available on GitHub ([2]) for third-party verification.
+    - **Reproducibility:** Experimental datasets and calibration methods documented for reproducibility.
+    - **Continuous Monitoring:** Real-time dashboard visualizes PT/DT alignment, enabling manual QA checks.
+  "
+]
+
+instance dt_technical_connection : DTDFVocab:TechnicalConnection [
+    base:desc "
+    **Technical Network Infrastructure:**
+    - **Communication Protocols:**
+      - **Primary:** RabbitMQ (open-source message broker) for inter-component communication (Documents 2, 6).
+      - **Secondary:** Implicit TCP/IP (underlying RabbitMQ protocol).
+
+    - **Network Topology and Architecture:**
+      - **Centralized:** RabbitMQ server acts as a message broker for all components (Document 6).
+      - **Decentralized Listeners:** Digital Twin components listen to RabbitMQ messages (Document 6).
+      - **Physical Twin Components:**
+        - Raspberry Pi (controller).
+        - Low-level driver (sensor/actuator interface).
+        - Temperature sensors (internal/external).
+
+    - **Bandwidth and Latency Requirements:**
+      - **Not Specified:** Documents do not provide explicit bandwidth/latency metrics.
+      - **Implied Low Latency:** Real-time visualization and control suggest minimal delay (Document 5).
+
+    - **Reliability and Redundancy Mechanisms:**
+      - **Not Explicitly Documented:** No mention of failover, load balancing, or redundancy.
+      - **Safe Protocol:** Low-level driver includes safeguards (Document 6).
+
+    - **Security Protocols:**
+      - **Not Specified:** No mention of encryption, authentication, or access control.
+      - **RabbitMQ Security:** Default security (if any) not detailed (Document 6).
+
+    - **Additional Notes:**
+      - **Open-Source Stack:** RabbitMQ is lightweight and scalable (Document 6).
+      - **On-Premises/Cloud Deployment:** RabbitMQ supports both (Document 6).
+  "
+]
+
+instance dt_hosting_deployment : DTDFVocab:Deployment [
+    base:desc "
+    **Deployment Infrastructure:**
+    - **Hosting Platforms:**
+      - **Physical Twin (PT):** Deployed on **Raspberry Pi** (embedded system) (Document 6).
+      - **Digital Twin (DT) Components:**
+        - **RabbitMQ Server:** Deployable on-premises or in the cloud (Document 6).
+        - **Digital Twin Logic:** Components listen to RabbitMQ messages (Document 6).
+
+    - **Computational Requirements:**
+      - **Not Explicitly Quantified:** Documents do not specify CPU/RAM/storage needs.
+      - **Implied Moderate:** Raspberry Pi (PT) and RabbitMQ (DT) suggest low-to-moderate resource usage.
+
+    - **Storage Requirements:**
+      - **Time-Series Data:** Historical data stored for visualization (Document 5).
+      - **Model Storage:** Model B parameters and calibration data (Document 4).
+
+    - **Scalability Mechanisms:**
+      - **Not Documented:** No mention of horizontal scaling, containerization (e.g., Docker), or orchestration (e.g., Kubernetes).
+      - **RabbitMQ Scalability:** Implied support for multiple consumers/producers (Document 6).
+
+    - **Deployment Models Supported:**
+      - **On-Premises:** Raspberry Pi + RabbitMQ (Document 6).
+      - **Cloud:** RabbitMQ cloud deployment (Document 6).
+      - **Hybrid:** PT on-premises, DT components cloud-based (implied).
+
+    - **Availability/Reliability Assurance:**
+      - **Not Explicit:** No SLAs, uptime guarantees, or redundancy mechanisms documented.
+      - **Safe Protocol:** Low-level driver includes basic reliability (Document 6).
+
+    - **Additional Notes:**
+      - **Open-Source Ecosystem:** All components (RabbitMQ, Python, etc.) are open-source (Documents 4, 6).
+      - **Accessible Platform:** Hardware/software specifications publicly available (Document 4).
+  "
+]
+
+instance horizontal_integration : DTDFVocab:HoriIntegration [
+    base:desc "
+    - **Not explicitly documented**: The provided documents (1–7) focus solely on the **incubator case study’s internal DT architecture** (Documents 3–6) and do not mention:
+      - External data exchange protocols (e.g., OPC UA, MQTT, REST).
+      - Interoperability standards (e.g., ISO/IEC 42010, IEEE P2414).
+      - Cloud integration (e.g., AWS IoT, Azure Digital Twins).
+      - Enterprise system dependencies (e.g., ERP, MES).
+      - Cross-DT communication patterns.
+    - **Limited to internal RabbitMQ communication**: All interactions are confined to the RabbitMQ broker (Documents 4, 6), with no references to external systems.
+    - **Open-source hardware/software**: PT-DT components are open-source (Document 4), but no integration with third-party systems is described.
+    - **Assumption**: Horizontal integration is **not applicable** to this case study based on the provided documents.
+  "
+]
+
+instance standardization : DTDFVocab:Standardization [
+    base:desc "
+    **Standardization and Compliance:**
+    - **Industry Standards (Conceptual References Only):**
+      - **IEEE Standards:** Cited in references (Doc 4, Doc 5) but not explicitly adopted in the DT implementation (e.g., [IEEE Transactions on Industrial Informatics](https://ieeexplore.ieee.org/xpl/RecentIssue.jsp?punumber=4612650)).
+      - **IEC Standards:** No evidence of compliance with IEC 62424 (Digital Twin standards) or related frameworks (Doc 4).
+      - **Industry 4.0:** Conceptually aligned with Industry 4.0 principles (Doc 1) but no formal certification or adherence (Doc 10).
+
+    - **Specifications Followed:**
+      - **Open-Source Protocols:** RabbitMQ (message broker) adheres to **AMQP 0-9-1** protocol (Doc 6).
+      - **Hardware/Software Specifications:** Version-controlled in GitHub repository ([https://github.com/INTO-CPS-Association/example-incubator](https://github.com/INTO-CPS-Association/example-incubator)) (Doc 2, Doc 5). Follows **semantic versioning** for software updates.
+      - **Control Logic:** Bang-bang controller parameters (LL, UL, H, C) are empirically defined (Doc 6, Fig. 8). No formal standard (e.g., IEC 61508) for safety-critical control.
+
+    - **Certification Requirements:**
+      - **None Explicitly Mentioned:** No ISO/IEC 15408 (Common Criteria) or other certification frameworks referenced (Doc 4).
+      - **Safety Protocols:** Low-level driver includes **safe state protocols** (Doc 6, Section 2.2.2) but lacks formal safety certification.
+
+    - **Compliance Frameworks:**
+      - **None Formal:** While DT concepts align with **IEEE 2305.1** (Digital Twin Framework) (Doc 4), no compliance testing or certification is documented.
+      - **Interoperability:** RabbitMQ enables **modular interoperability** between PT components (Doc 6). No adherence to **OPC UA** or **ROS 2** standards (Doc 1).
+
+    - **Key Limitation:**
+      - **Lack of Formal Standards:** The case study does not reference or comply with **industry-specific DT standards** (e.g., IEC 62424, ISO 23247). Standards compliance is implied only through conceptual alignment with IEEE/IEC publications (Doc 4, Doc 5).
+  "
+]
