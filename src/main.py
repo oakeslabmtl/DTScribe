@@ -90,11 +90,11 @@ class ExtractionOrchestrator:
                 print(f"🧪 Using separate LLM for judge: {config.judge_model_name}")
                 judge_llm = ChatOllama(
                     model=config.judge_model_name,
-                    temperature=0.2,
-                    top_p=0.9,
-                    top_k=20,
-                    num_ctx=8192,
-                    num_predict=8192,
+                    # temperature=0.2,
+                    # top_p=0.9,
+                    # top_k=20,
+                    # num_ctx=8192,
+                    # num_predict=8192,
                 )
             else:
                 print("🧪 Using same LLM for extraction and judge")
@@ -189,7 +189,6 @@ class ExtractionOrchestrator:
                 total_chunks=quality_metrics.get('total_chunks', 0),
                 processing_time_seconds=characteristics_processing_time,
                 block_processing_times=block_metrics.get('processing_times', {}),
-                # block_memory_usages=block_metrics.get('memory_usages', {}),
                 block_success_rates=block_metrics.get('success_rates', {}),
                 total_input_tokens=total_input_tokens,
                 total_output_tokens=total_output_tokens,
