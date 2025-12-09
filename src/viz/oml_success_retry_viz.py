@@ -45,6 +45,9 @@ if oml_file.exists():
 csv_data = df.to_csv(index=False)
 
 df = pd.read_csv(io.StringIO(csv_data))
+# Ensure oml_valid is boolean
+if df['oml_valid'].dtype == 'object':
+    df['oml_valid'] = df['oml_valid'].map({'True': True, 'False': False, True: True, False: False})
 
 # Expand rows into attempts (failed repetitions + final success)
 expanded_rows = []
@@ -56,7 +59,10 @@ for idx, row in df.iterrows():
 expanded_df = pd.DataFrame(expanded_rows)
 
 # Percentage of success if attempting up to k retries
-max_retry_index = expanded_df['retry_index'].max()
+if 'oml_max_retries' in df.columns:
+    max_retry_index = int(df['oml_max_retries'].max())
+else:
+    max_retry_index = int(expanded_df['retry_index'].max())
 
 # Cumulated success rate calculation
 cumulated_results = []
@@ -87,6 +93,8 @@ for i in range(max_retry_index + 1):
                          "successes": success_at_i.sum(), "failures": failures_at_i.sum()})
 
 step_df = pd.DataFrame(step_results)
+# Filter out steps where no experiments were present (total_at_step == 0)
+step_df = step_df[(step_df['successes'] + step_df['failures']) > 0]
 
 # Create output directory
 output_dir = pathlib.Path(args.exp_path) / "analysis" / "visualizations"
@@ -98,8 +106,7 @@ fig1.subplots_adjust(left=0.12, right=0.95, top=0.88, bottom=0.12)
 
 ax1.plot(cumulated_df['retry_index'], cumulated_df['success_rate_pct'], 
          marker='o', markersize=8, linewidth=2.5, color='steelblue',
-         markerfacecolor='steelblue', markeredgecolor='black', markeredgewidth=1.2,
-         label='Cumulative Success Rate')
+         markerfacecolor='steelblue', markeredgecolor='black', markeredgewidth=1.2)
 
 # Add data labels on points
 for idx, row in cumulated_df.iterrows():
@@ -112,11 +119,10 @@ ax1.set_xlabel("Retry Index (i)", fontsize=14, fontweight='bold')
 ax1.set_ylabel("Cumulative Success Rate $R_i$ (%)", fontsize=14, fontweight='bold')
 ax1.set_title("Cumulative Success Rate vs Retry Index", 
               fontsize=14, fontweight='bold', pad=10)
-ax1.set_ylim(0, 105)
+ax1.set_ylim(0, 115)
 ax1.set_xticks(range(0, int(cumulated_df['retry_index'].max()) + 1))
 ax1.tick_params(labelsize=12)
 ax1.grid(True, alpha=0.3, linewidth=0.8)
-ax1.legend(loc='lower right', fontsize=10)
 
 plt.tight_layout(pad=2.0)
 save_path1 = output_dir / "oml_cumulative_success_rate.png"
@@ -129,8 +135,7 @@ fig2.subplots_adjust(left=0.12, right=0.95, top=0.88, bottom=0.12)
 
 ax2.plot(step_df['retry_index'], step_df['success_rate_pct'], 
          marker='s', markersize=8, linewidth=2.5, color='coral',
-         markerfacecolor='coral', markeredgecolor='black', markeredgewidth=1.2,
-         label='Conditional Success Rate at Step i')
+         markerfacecolor='coral', markeredgecolor='black', markeredgewidth=1.2)
 
 # Add data labels on points
 for idx, row in step_df.iterrows():
@@ -142,11 +147,10 @@ ax2.set_xlabel("Retry Index (i)", fontsize=14, fontweight='bold')
 ax2.set_ylabel("Conditional Success Rate $H_i$ (%)", fontsize=14, fontweight='bold')
 ax2.set_title("Conditional Success Rate", 
               fontsize=14, fontweight='bold', pad=10)
-ax2.set_ylim(0, max(step_df['success_rate_pct'].max() * 1.3, 10))
-ax2.set_xticks(range(0, int(step_df['retry_index'].max()) + 1))
+ax2.set_ylim(0, 115)
+ax2.set_xticks(range(0, max_retry_index + 1))
 ax2.tick_params(labelsize=12)
 ax2.grid(True, alpha=0.3, linewidth=0.8, axis='y')
-ax2.legend(loc='upper right', fontsize=10)
 
 plt.tight_layout(pad=2.0)
 save_path2 = output_dir / "oml_conditional_success_rate.png"
@@ -160,18 +164,16 @@ fig3.subplots_adjust(left=0.08, right=0.95, top=0.88, bottom=0.12, wspace=0.25)
 # Left: Cumulative
 ax3a.plot(cumulated_df['retry_index'], cumulated_df['success_rate_pct'], 
           marker='o', markersize=8, linewidth=2.5, color='steelblue',
-          markerfacecolor='steelblue', markeredgecolor='black', markeredgewidth=1.2,
-          label='Cumulative Success Rate')
+          markerfacecolor='steelblue', markeredgecolor='black', markeredgewidth=1.2)
 ax3a.fill_between(cumulated_df['retry_index'], 0, cumulated_df['success_rate_pct'], 
                   alpha=0.3, color='steelblue')
 ax3a.set_xlabel("Retry Index (i)", fontsize=12, fontweight='bold')
 ax3a.set_ylabel("Cumulative Success Rate $R_i$ (%)", fontsize=12, fontweight='bold')
 ax3a.set_title("Cumulative Success Rate", fontsize=12, fontweight='bold')
-ax3a.set_ylim(0, 105)
+ax3a.set_ylim(0, 115)
 ax3a.set_xticks(range(0, int(cumulated_df['retry_index'].max()) + 1))
 ax3a.tick_params(labelsize=10)
 ax3a.grid(True, alpha=0.3, linewidth=0.8)
-ax3a.legend(loc='lower right', fontsize=9)
 
 # Add data labels on points for Cumulative
 for idx, row in cumulated_df.iterrows():
@@ -182,16 +184,14 @@ for idx, row in cumulated_df.iterrows():
 # Right: Conditional
 ax3b.plot(step_df['retry_index'], step_df['success_rate_pct'], 
           marker='s', markersize=8, linewidth=2.5, color='coral',
-          markerfacecolor='coral', markeredgecolor='black', markeredgewidth=1.2,
-          label='Conditional Success Rate at Retry Index i')
+          markerfacecolor='coral', markeredgecolor='black', markeredgewidth=1.2)
 ax3b.set_xlabel("Retry Index (i)", fontsize=12, fontweight='bold')
 ax3b.set_ylabel("Conditional Success Rate $H_i$ (%)", fontsize=12, fontweight='bold')
 ax3b.set_title("Conditional Success Rate", fontsize=12, fontweight='bold')
-ax3b.set_ylim(0, 105)
-ax3b.set_xticks(range(0, int(step_df['retry_index'].max()) + 1))
+ax3b.set_ylim(0, 115)
+ax3b.set_xticks(range(0, max_retry_index + 1))
 ax3b.tick_params(labelsize=10)
 ax3b.grid(True, alpha=0.3, linewidth=0.8, axis='y')
-ax3b.legend(loc='upper right', fontsize=9)
 
 # Add data labels on points for Conditional
 for idx, row in step_df.iterrows():
