@@ -333,9 +333,9 @@ Digital Twin services: monitoring and simulation, prediction and optimization, d
 Digital Twin enablers: technologies, tools, data acquisition pipeline, modeling and simulation tools, AI/ML components
             """,
             description="""
-system_under_study: Provide a comprehensive description of the Physical Twin system being studied. Include the type of system, its main components, operational domain, and key characteristics that make it suitable for digital twinning.
+system_under_study: Describe the Physical Twin system being studied. Include the type of system, its main components, operational domain, and key characteristics that make it suitable for digital twinning.
 
-dt_services: Detail the specific services that the Digital Twin provides to users and the physical system. Include service types (monitoring, optimization, prediction, control, visualization), target users, and service capabilities.
+dt_services: Describe specific services that the Digital Twin provides to users and the physical system. Include service types (monitoring, optimization, prediction, control, visualization), target users, and service capabilities.
 
 tooling_and_enablers: Describe the specific tools, technologies, frameworks, and enablers used to implement the Digital Twin. Include software platforms, development tools, simulation engines, databases, and any specialized technologies with their roles and functionalities.
             """,
