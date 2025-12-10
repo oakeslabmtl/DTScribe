@@ -13,7 +13,8 @@ from implementations import (
     StateManager, DocumentRetriever, CharacteristicsExtractor,
     PipelineInitializer, OMLGenerator, QualityAnalyzer,
     Block1Processor, Block2Processor, Block3Processor,
-    Block4Processor, Block5Processor, Block6Processor
+    Block4Processor, Block5Processor, Block6Processor,
+    DTCharacteristicsProcessor
 )
 from experiment_tracking import (
     ExperimentConfig, ResultsSaver, ExperimentTracker,
@@ -284,7 +285,11 @@ class ExtractionPipelineFactory:
     """Factory for creating extraction pipeline components."""
     
     @staticmethod
-    def create_orchestrator(with_experiment_tracking: bool = True) -> ExtractionOrchestrator:
+    def create_orchestrator(
+        with_experiment_tracking: bool = True,
+        basdeline_full_doc: bool = False
+        ) -> ExtractionOrchestrator:
+
         """Create a fully configured extraction orchestrator."""
         
         # Create core components
@@ -299,14 +304,20 @@ class ExtractionPipelineFactory:
             experiment_tracker = ExperimentTracker(results_saver)
         
         # Create block processors
-        block_processors = [
-            Block1Processor(),
-            Block2Processor(),
-            Block3Processor(),
-            Block4Processor(),
-            Block5Processor(),
-            Block6Processor()
-        ]
+        if basdeline_full_doc:
+            block_processors = [
+                DTCharacteristicsProcessor()
+            ]
+        
+        else:
+            block_processors = [
+                Block1Processor(),
+                Block2Processor(),
+                Block3Processor(),
+                Block4Processor(),
+                Block5Processor(),
+                Block6Processor()
+            ]
         
         # Create a wrapper that handles the OML generator creation
         class DeferredOMLGenerator:
@@ -381,7 +392,10 @@ def main():
     parser.add_argument("--no-save", action="store_true", help="Do not persist results")
     parser.add_argument("--max-judge-retries", type=int, default=2, help="Maximum retries for low-confidence judge evaluations. Set to 0 to disable judging.")
     parser.add_argument("--max-oml-retries", type=int, default=3, help="Maximum retries for OML generation validation. Set to 0 to skip validation.")
+    parser.add_argument("--baseline-full-doc", action="store_true", help="Use baseline mode: no chunking/RAG. Feed the full document to the LLM and extract the 21 DT characteristics at once (DTCharacteristics).")
+    parser.add_argument("--baseline-max-chars", type=int, default=24000, help="Maximum number of characters to read from the document in baseline full-doc mode.")
     args = parser.parse_args()
+
 
     config = ExtractionPipelineFactory.create_config(
         model_name=args.model_name,
@@ -392,11 +406,18 @@ def main():
         max_judge_retries=args.max_judge_retries,
         max_oml_retries=args.max_oml_retries,
         judge_model_name=args.judge_model_name,
-        custom_params={"cli": True}
+        custom_params={
+            "cli": True,
+            "baseline_full_doc": args.baseline_full_doc,
+            "baseline_max_chars": args.baseline_max_chars,
+        }
     )
     print("Using configuration:", config)
 
-    orchestrator = ExtractionPipelineFactory.create_orchestrator(with_experiment_tracking=True)
+    orchestrator = ExtractionPipelineFactory.create_orchestrator(
+        with_experiment_tracking=True,
+        basdeline_full_doc=args.baseline_full_doc
+    )
     orchestrator.initialize_pipeline(args.input_path, config=config)
 
     extraction_results = {}

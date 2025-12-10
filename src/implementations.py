@@ -20,6 +20,9 @@ from models.schemas import (
     Block4Characteristics, Block5Characteristics, Block6Characteristics
 )
 from judge_evaluator import JudgeEvaluator
+from langchain_core.documents import Document
+
+BASELINE_MAX_CHARS = 24_000 # size limit for document ingestion w/o RAG, (approx. 6000 tokens, assuming 4 chars/token)
 
 class StateManager(IStateManager):
     """Manages pipeline state following SRP."""
@@ -42,6 +45,20 @@ class StateManager(IStateManager):
         return self._state.copy()
 
 
+# class DocumentRetriever(IDocumentRetriever):
+#     """Handles document retrieval operations."""
+    
+#     def __init__(self, rag_pipeline: EnhancedRAGPipeline, vectordb):
+#         self._rag_pipeline = rag_pipeline
+#         self._vectordb = vectordb
+    
+#     def retrieve_documents(self, query: str, k: int = 5) -> List[Any]:
+        
+#         return self._rag_pipeline.enhanced_retrieval(
+#             self._vectordb, query, k=k
+#         )
+    
+
 class DocumentRetriever(IDocumentRetriever):
     """Handles document retrieval operations."""
     
@@ -50,7 +67,15 @@ class DocumentRetriever(IDocumentRetriever):
         self._vectordb = vectordb
     
     def retrieve_documents(self, query: str, k: int = 5) -> List[Any]:
+
+        full_doc = getattr(self._rag_pipeline, "full_corpus_doc", None)
+
+        # Baseline
+        if self._vectordb is None and full_doc is not None:
+            # pipeline expects a list of tuples (Document, score), score being the similarity score (1  here as a dummy value)
+            return [(full_doc, 1.0)]
         
+        # Original
         return self._rag_pipeline.enhanced_retrieval(
             self._vectordb, query, k=k
         )
@@ -77,7 +102,7 @@ class CharacteristicsExtractor(ICharacteristicsExtractor):
 
 
 class PipelineInitializer(IPipelineInitializer):
-    """Initializes the RAG pipeline."""
+    """Initializes the pipeline."""
     
     def __init__(self):
         self._rag_pipeline = None
@@ -86,8 +111,65 @@ class PipelineInitializer(IPipelineInitializer):
         if not Path(input_path).exists():
             raise FileNotFoundError(f"PDF source not found: {input_path}")
         
-        print("🚀 Initializing RAG pipeline...")
+        raw_custom = getattr(config, "custom_params", {}) or {}
+        cli_custom = raw_custom.get("custom_params", raw_custom)
+
+        baseline_full_doc = bool(cli_custom.get("baseline_full_doc", False))
+        baseline_max_chars = cli_custom.get("baseline_max_chars", BASELINE_MAX_CHARS)
+
         self._rag_pipeline = EnhancedRAGPipeline(model_name=model_name, embedding_model=embedding_model)
+        
+        #BASELINE:
+        if baseline_full_doc:
+            print("🚀 Initializing BASELINE full-doc pipeline (no chunking, no vector DB)...")
+
+            print("📄 Processing source (full document)...")
+            docs = self._rag_pipeline.load_documents(input_path)
+
+            combined_text = "\n\n".join(doc.page_content for doc in docs)
+            original_len = len(combined_text)
+
+            if original_len > baseline_max_chars:
+                truncated_text = combined_text[:baseline_max_chars]
+                print(
+                    f"✂️ Baseline truncation applied: {original_len} → "
+                    f"{len(truncated_text)} characters (limit={baseline_max_chars})."
+                )
+            else:
+                truncated_text = combined_text
+                print(f"✅ No truncation needed (len={original_len} chars).")
+
+            # create a single docuemnt with the full/truncated content
+            baseline_doc = Document(
+                page_content=truncated_text,
+                metadata={
+                    "source": str(input_path),
+                    "type": "baseline_full_document",
+                    "baseline_truncated": original_len > baseline_max_chars,
+                    "baseline_max_chars": baseline_max_chars,
+                    "original_char_count": original_len,
+                },
+            )
+
+            # store in rag_pipeline to be used by DocumentRetriever
+            self._rag_pipeline.full_corpus_doc = baseline_doc
+
+            # print(f"\n\n\n{'---'*10}BASELINE DOC:{'---'*10}\n{baseline_doc}{'---'*30}\n\n\n")
+
+            print("✅ Baseline full-doc pipeline initialized successfully")
+            return {
+                "vectordb": None,
+                "rag_pipeline": self._rag_pipeline,
+                "extraction_metadata": {
+                    "total_chunks": 1,
+                    "baseline_original_chars": original_len,
+                    "baseline_truncated_chars": len(truncated_text),
+                    "baseline_max_chars": baseline_max_chars,
+                },
+            }
+
+        # RAG
+        print("🚀 Initializing RAG pipeline...")
         
         # # Show PDF information
         # print("📊 Analyzing PDF...")
@@ -264,11 +346,11 @@ class BaseBlockProcessor(IBlockProcessor, ABC):
                         print(f"    Reasoning: {res.get('reasoning')}\n")
 
                     # Determine if any characteristic <= 3
-                    # low_quality = any((r.get("score", 0) or 0) <= 3 for r in judge_results)
+
                     low_quality = any(int(r.get("score", 0)) <= 3 for r in judge_results)
 
                     if low_quality and retries < max_retries:
-                        # low_score_names = [r.get("characteristic") for r in judge_results if (r.get("score", 0) or 0) <= 3]
+
                         low_score_names = [
                             r.get("characteristic")
                             for r in judge_results
@@ -478,3 +560,165 @@ security_and_safety_considerations: Describe security and safety measures includ
 
     def get_schema(self) -> Type[BaseModel]:
         return Block6Characteristics
+
+
+class DTCharacteristicsProcessor(BaseBlockProcessor):
+    """
+    Single-block processor that extracts all 21 Digital Twin characteristics
+    at once using the DTCharacteristics schema.
+    """
+
+    block_index = 1
+    block_label = "All 21 DT characteristics (baseline)"
+
+    def get_config(self) -> ExtractionConfig:
+        return ExtractionConfig(
+            query="",
+            description=basic_description,
+            k=0,
+        )
+
+    def get_schema(self) -> Type[BaseModel]:
+
+        return DTCharacteristics
+
+detailed_description = """
+You must extract a structured description for the following 21 Digital Twin
+characteristics for a single Digital Twin system. For each characteristic,
+write one coherent description in English that is as specific and technical
+as possible and grounded ONLY in the provided documents. If the information
+for a characteristic is not available in the documents, return exactly the
+string "Not in Document" for that field.
+
+system_under_study: Describe the physical system being twinned (purpose,
+  main components, operating environment, key variables, and performance
+  objectives).
+
+physical_acting_components: Describe the actuators, machines, or devices
+  that apply actions in the physical system, including what they control
+  and any relevant technical specifications.
+
+physical_sensing_components: Describe sensors and measurement devices,
+  what they measure, where they are located, sampling characteristics,
+  and important limitations.
+
+physical_to_virtual_interaction: Explain how data flows from the physical
+  system to the Digital Twin (signals, preprocessing, communication
+  protocols, data pipelines, and update frequencies).
+
+virtual_to_physical_interaction: Explain how the Digital Twin can influence
+  or control the physical system (control loops, setpoints, decision logic,
+  human-in-the-loop interactions, etc.).
+
+dt_services: Describe the services and functionalities provided by the
+  Digital Twin to users or other systems (monitoring, prediction,
+  optimization, diagnostics, visualization, decision support, etc.).
+
+twinning_time_scale: Describe the time scales and synchronization between
+  physical and virtual (real-time, near-real-time, offline, batch) and any
+  latency or freshness requirements.
+
+multiplicities: Describe whether there are multiple twins, components,
+  or hierarchical levels, and how they relate (e.g., fleet twins,
+  line-cell-machine hierarchies, multi-level or distributed twins).
+
+life_cycle_stages: Describe in which lifecycle stages of the physical
+  system the Digital Twin is used (design, engineering, commissioning,
+  operation, maintenance, end-of-life).
+
+dt_models_and_data: Describe the models, simulations, and data structures
+  used in the Digital Twin (types of models, inputs/outputs, data sources,
+  storage approaches, and schemas).
+
+tooling_and_enablers: Describe software tools, platforms, middleware, and
+  other enablers used to build and operate the Digital Twin (simulation
+  tools, cloud platforms, data platforms, integration frameworks).
+
+dt_constellation: Describe how this Digital Twin is related to other twins
+  or systems in a broader constellation or ecosystem (federations, networks
+  of twins, or system-of-systems structures).
+
+twinning_process_and_dt_evolution: Describe how the Digital Twin is created,
+  calibrated, updated, and evolved over time, including configuration
+  management, model updates, and data-driven refinement procedures.
+
+fidelity_and_validity_considerations: Describe model fidelity and accuracy,
+  validation and verification procedures, uncertainty handling, and known
+  limitations of the Digital Twin representations.
+
+dt_technical_connection: Describe the technical connectivity between
+  physical and virtual (network technologies, fieldbuses, protocols,
+  interfaces, APIs, and any security mechanisms applied to the connection).
+
+dt_hosting_deployment: Describe how and where the Digital Twin is deployed
+  (on-premise, cloud, edge, hybrid), including runtime infrastructure and
+  deployment patterns (microservices, containers, etc.).
+
+insights_and_decision_making: Describe the kinds of insights, KPIs, or
+  decisions that the Digital Twin supports, who uses them, and how they
+  are integrated into operational or strategic decision processes.
+
+horizontal_integration: Describe how the Digital Twin integrates horizontally
+  with other enterprise systems (MES, ERP, PLM, other DTs, external services)
+  and the main data or process flows involved.
+
+data_ownership_and_privacy: Describe who owns the data, how it is governed,
+  any privacy policies or constraints mentioned, and how data access and
+  sharing are managed.
+
+standardization: Describe any standards, or guidelines that the Digital Twin design claims to follow.
+
+security_and_safety_considerations: Describe cybersecurity and safety
+  considerations related to the Digital Twin (threats, mitigations, safety
+  functions, risk assessment approaches, and safety-critical aspects).
+            """
+
+basic_description = """
+You must extract a structured description for the following 21 Digital Twin
+characteristics for a single Digital Twin system. For each characteristic,
+write one coherent description in English that is as specific and technical
+as possible and grounded ONLY in the provided documents. If the information
+for a characteristic is not available in the documents, return exactly the
+string "Not in Document" for that field.
+
+System under study: Describes the SUS, i.e., the PT, of the system of interest.
+
+Physical acting components: Describes the available acting components in the DT constellation, i.e., the mechanisms the DT can use to act on the PT.
+
+Physical sensing components: Describes the available sensing components in the DT constellation, i.e., the mechanisms the PT can use to transfer data to the DT.
+
+Physical-to-virtual interaction: Describes the interactions from the physical world to the virtual world, i.e., the data transmitted from PT to DT, including inputs and events that the DT processes.
+
+Virtual-to-physical interaction: Describes the interactions from the virtual world to the physical world, i.e., the data transmitted from DT to PT, including outputs the DT generates as part of its services.
+
+DT services: Describes the services, such as optimization, task planning, and visualization, which the DT provides to the users and the physical system.
+
+Twinning time-scale: Describes the time-scale use and the time rates for the DT services and DT-to-PT synchronization.
+
+Multiplicities: Describes the multiplicities, i.e., the internal twins that compose the DT system, which can be implemented in a centralized or decentralized way.
+
+Life-cycle stages: Describes the lifecycle phases in which the DT takes place. It also informs which representation phase the DT covers of its physical counterpart, i.e., as designed (ideal), as manufactured, or as operated.
+
+DT models and data: Describes the DT components, including available models and data, and their role in the DT constellation"
+Tooling and enablers: Describes the tools or enablers that are used to achieve the goals of the DT, i.e., they enable the DT to provide the DT services.
+
+DT constellation: Describes the orchestration of the DT system, components, and services as a whole.
+
+Twinning process and DT evolution: Describes the engineering process involved in the DT implementation, including the development process, quality assurance, and definition of requirements. It also informs on the milestones of the DT engineering process over time and intended upgrades.
+
+Fidelity and validity considerations: Describes the fidelity and validity considerations behind the models that constitute the DT, including verification and validation mechanisms, uncertainty, and errors.
+
+DT technical connection: Describes the technical network connection details between PT and DT, including the network protocols and architectures.
+
+DT hosting/deployment: Describes the technical hosting aspects of the DT and the associated technology.
+
+Insights and decision making: Defines the insights and decision making, i.e., indirect outputs of the DT, which have no direct effect on the PT, such as update of parameters, plans, and so on.
+
+Horizontal integration: Describes the information exchange with external information systems not limited to other DTs.
+
+Data ownership and privacy: Refers to the ethical and technical aspects regarding data ownership and data privacy. Is the data owned by the PT owner or by the DT service provider?
+
+Standardization: Refers to the standards being followed for the engineering of the DT and its components.
+
+Security and safety considerations: Refers to the ethical and technical aspects regarding data cybersecurity and safety on operation. Can a DT execute operations remotely on a PT where there may be accidents with humans?
+"""
