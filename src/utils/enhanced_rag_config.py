@@ -546,16 +546,13 @@ JSON:
                         ) -> tuple[str, int, int]:
         """
         OML generation workflow with retries and validation.
-        
-        Returns:
-            tuple: (oml_content, generation_loops, oml_repetition_count)
-                - oml_content: The generated OML string (or None if failed)
-                - generation_loops: The number of generation loops attempted
-                - oml_repetition_count: 1 if validated successfully, 0 if failed
         """
         if writer is None:
             writer = OMLFileWriter()
 
+        start_time = time.perf_counter()
+
+        # --- 1. PREPARATION ---
         # Define description-based vocab mapping
         description_based_vocab_mapping = {
             "virtual_to_physical_interaction": "VirtualToPhysical",
@@ -571,101 +568,97 @@ JSON:
             "security_and_safety_considerations": "SecuritySafety",
         }
         comma_separated_description_based_vocab_mapping_keys = ", ".join(description_based_vocab_mapping.keys())
-        # Keys not in description-based characteristics will be considered component-based
+        
+        # Partition characteristics
         component_based_characteristics_keys = {key for key in characteristics if key not in description_based_vocab_mapping}
-        # Create description-based dictionary
         description_based_characteristics = {key: characteristics[key] for key in description_based_vocab_mapping if key in characteristics}
-        # Create component-based dictionary
         component_based_characteristics = {key: characteristics[key] for key in component_based_characteristics_keys if key in characteristics}
-        # Generate both OML parts
+
+        # --- 2. INITIAL GENERATION ---
         description_based_oml = self.generate_description_based_oml(description_based_characteristics, description_based_vocab_mapping)
         component_based_oml = self.generate_component_based_oml(component_based_characteristics, vocab_files, comma_separated_description_based_vocab_mapping_keys)
 
         oml_repetition_count = 0
-        # Reasoner feedback loop with retries
-        if max_retries > 0:
-            attempt_start = time.perf_counter()
-            # Retry mechanism for component-based OML generation
-            print("🔄 Retrying component-based OML generation...")
-            for attempt in range(max_retries):
-                try:
-                    print(f"📝 Attempt {attempt + 1}/{max_retries}: Generating OML...")
-
-                    # Check if component-based OML is empty but characteristics exist
-                    if component_based_characteristics and (not component_based_oml or not component_based_oml.strip()):
-                        print(f"❌ Attempt {attempt + 1}: Component-based OML is empty despite having characteristics. Regenerating...")
-                        component_based_oml = self.generate_component_based_oml(component_based_characteristics, vocab_files, comma_separated_description_based_vocab_mapping_keys)
-                        continue
-
-                    # Combine both OML description-based and component-based characteristics
-                    combined_oml = f"{component_based_oml}\n\n{description_based_oml}"
-                    combined_oml = self._clean_llm_response(combined_oml)
-
-                    has_proper_brackets = combined_oml.count('[') == combined_oml.count(']')
-                    if not has_proper_brackets:
-                        print(f"❌ Attempt {attempt + 1}: OML syntax error - mismatched brackets")
-                        description_based_oml = self.generate_description_based_oml(description_based_characteristics, description_based_vocab_mapping)
-                        component_based_oml = self.generate_component_based_oml(component_based_characteristics, vocab_files, comma_separated_description_based_vocab_mapping_keys)
-                        continue  # Retry with the fixed component-based OML
-                    
-                    # Write the OML content to file
-                    write_success = writer.write_oml(combined_oml, output_path)
-                    if not write_success:
-                        elapsed = time.perf_counter() - attempt_start
-                        print(f"❌ Attempt {attempt + 1}: Failed to write OML to file (⏱️ {elapsed:.2f}s)")
-                        continue
-                    
-                    # Validate the written OML file with OpenCAESAR
-                    is_valid, validation_output = self._validate_oml_with_opencaesar(catalog_parent_path)
-
-                    if is_valid:
-                        elapsed = time.perf_counter() - attempt_start
-                        print(f"✅ Attempt {attempt + 1}: Written OML file validation with OpenCAESAR successful! (⏱️ {time.perf_counter() - attempt_start:.2f}s)")
-                        break  # Exit loop on successful validation
-                    else:
-                        print(f"❌ Attempt {attempt + 1}: Written OML file validation with OpenCAESAR failed")
-                        # Try to fix the OML based on validation feedback
-                        component_based_oml = self._fix_oml_with_feedback(
-                            component_based_oml, 
-                            validation_output, 
-                            component_based_characteristics, 
-                            vocab_files,
-                            writer=writer
-                        )
-                        oml_repetition_count += 1
-                        continue  # Retry with the fixed component-based OML
-                except Exception as e:
-                    # attempt_start may not be defined if exception occurs before set; guard against that
-                    if 'attempt_start' in locals():
-                        elapsed = time.perf_counter() - attempt_start
-                    else:
-                        elapsed = float('nan')
-                    print(f"❌ Attempt {attempt + 1}: Unexpected error: {str(e)} (⏱️ {elapsed:.2f}s)")
-                    if attempt < max_retries:
-                        print("🔄 Retrying due to unexpected error...")
-                        continue
-                    else:
-                        print("❌ Failed due to persistent errors")
-                        return None, oml_repetition_count, 0
-        else:
-            print("⏭️ Skipping retries as max_retries is set to 0")
         
-        combined_oml = f"{component_based_oml}\n\n{description_based_oml}"
-        combined_oml = self._clean_llm_response(combined_oml)
-        write_success = writer.write_oml(combined_oml, output_path)
-        if not write_success:
-            print("❌ Failed to write OML to file")
-            return None, oml_repetition_count, 0
+        # --- 3. VALIDATION & REPAIR LOOP ---
+        # We loop (max_retries + 1) times. 
+        # e.g., if max_retries=3, we try: Initial, Retry 1, Retry 2, Retry 3.
+        total_attempts = max_retries + 1
         
-        # Attempt to start Fuseki and load the OML
-        fuseki_ok, fuseki_output = self._load_oml_into_fuseki(catalog_parent_path)
-        if fuseki_ok:
-            print("✅ Fuseki start & OML load successful")
-            return combined_oml, oml_repetition_count, 1
-        else:
-            print("⚠️ Fuseki load sequence failed:")
-            print(fuseki_output)
-            return combined_oml, oml_repetition_count, 0
+        print(f"🔄 Starting OML Generation & Validation Loop (Max Attempts: {total_attempts})...")
+
+        for attempt in range(total_attempts):
+            loop_start = time.perf_counter()
+            print(f"📝 Attempt {attempt + 1}/{total_attempts}...")
+
+            # A. Sanity Check: Ensure OML isn't empty
+            if component_based_characteristics and (not component_based_oml or not component_based_oml.strip()):
+                print(f"❌ Attempt {attempt + 1}: Component-based OML is empty. Regenerating...")
+                component_based_oml = self.generate_component_based_oml(component_based_characteristics, vocab_files, comma_separated_description_based_vocab_mapping_keys)
+                # We don't 'continue' here because we want to try validating this new generation immediately in this loop iteration
+
+            # B. Combine OML
+            combined_oml = f"{component_based_oml}\n\n{description_based_oml}"
+            combined_oml = self._clean_llm_response(combined_oml)
+
+            # C. Syntax Check (Brackets)
+            if combined_oml.count('[') != combined_oml.count(']'):
+                print(f"❌ Attempt {attempt + 1}: Syntax error (mismatched brackets). Repairing...")
+                # Regenerate and force a retry
+                component_based_oml = self.generate_component_based_oml(component_based_characteristics, vocab_files, comma_separated_description_based_vocab_mapping_keys)
+                continue 
+
+            # D. Write to File
+            if not writer.write_oml(combined_oml, output_path):
+                print(f"❌ Attempt {attempt + 1}: File write failed.")
+                continue
+
+            # E. Validate (OpenCAESAR)
+            is_valid, validation_output = self._validate_oml_with_opencaesar(catalog_parent_path)
+
+            if is_valid:
+                # --- PHASE: DEPLOYMENT (SUCCESS) ---
+                print(f"✅ Attempt {attempt + 1}: Validation Successful! (⏱️ {time.perf_counter() - loop_start:.2f}s)")
+                
+                # Deploy to Fuseki immediately
+                fuseki_ok, fuseki_output = self._load_oml_into_fuseki(catalog_parent_path)
+                
+                if fuseki_ok:
+                    print("🚀 Fuseki start & OML load successful.")
+                    return combined_oml, oml_repetition_count, 1
+                else:
+                    print("⚠️ Validation passed, but Fuseki load failed:")
+                    print(fuseki_output)
+                    # Even if Fuseki fails, the OML is valid, so we might return success (1) or failure (0)
+                    return combined_oml, oml_repetition_count, 0
+
+            # --- PHASE: REPAIR (FAILURE) ---
+            print(f"❌ Attempt {attempt + 1}: Validation failed.")
+            
+            # If this was the last attempt, we fail gracefully
+            if attempt == total_attempts - 1:
+                print("❌ Retries exhausted. Final validation failed.")
+                break # Exit loop to return failure
+
+            # Otherwise, use the Reasoner report to repair
+            print("🔧 Repairing OML with reasoner feedback...")
+            try:
+                component_based_oml = self._fix_oml_with_feedback(
+                    component_based_oml, 
+                    validation_output, 
+                    component_based_characteristics, 
+                    vocab_files,
+                    writer=writer
+                )
+                oml_repetition_count += 1
+            except Exception as e:
+                print(f"❌ Error during repair: {e}")
+                # Try a raw regeneration if repair crashes
+                component_based_oml = self.generate_component_based_oml(component_based_characteristics, vocab_files, comma_separated_description_based_vocab_mapping_keys)
+
+        # --- 4. FAILURE EXIT ---
+        # If we reach here, we exhausted retries without returning success
+        return None, oml_repetition_count, 0
 
     def generate_description_based_oml(self, characteristics: Dict[str, Any], vocab_mapping: Dict[str, str]) -> str:
         """Generate OML based on characteristics description."""
