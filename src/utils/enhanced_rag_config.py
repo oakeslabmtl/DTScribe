@@ -152,10 +152,10 @@ class EnhancedRAGPipeline:
             # Case 1: PDF -> process as Markdown
             if ext == ".pdf":
                 try:
-                    print("🧾 Extracting PDF as Markdown using pymupdf4llm...")
+                    # print("🧾 Extracting PDF as Markdown using pymupdf4llm...")
                     md_text = pymupdf4llm.to_markdown(str(path))
 
-                    # Crear un único documento LangChain con metadatos limpios
+                    # creating a single LangChain document with clean metadata
                     doc = Document(
                         metadata={
                             "source": str(path),

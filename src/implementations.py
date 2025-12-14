@@ -294,6 +294,8 @@ class BaseBlockProcessor(IBlockProcessor, ABC):
             retry_candidates = set()        # set[str]
             locked = set()                  # set[str]
             last_scores = {}                # dict[str, int]
+            locked_judge_snapshot = {}      # cname -> {characteristic, score, reasoning, locked_at_attempt}
+            last_judge_item_map = {} 
 
             while True:
                 print(f"🧠 Extracting {label} (attempt {retries+1})...")
@@ -340,6 +342,14 @@ class BaseBlockProcessor(IBlockProcessor, ABC):
                     print(f"🔬 Performing LLM evaluation of {label} (attempt {retries+1})...")
                     judge_results = judge.evaluate(extracted_dict, retrieved_docs, config.description)
 
+                    judge_item_map = {
+                        r.get("characteristic"): r
+                        for r in judge_results
+                        if r.get("characteristic")
+                    }
+
+                    last_judge_item_map = judge_item_map
+
                     # --- debug prints ---
                     # print(f"\n\n Extracted dict:")
                     # for k, v in extracted_dict.items():
@@ -372,12 +382,26 @@ class BaseBlockProcessor(IBlockProcessor, ABC):
                             initial_low_set = {c for c in all_names if score_map.get(c, 0) < 4}
                             locked = {c for c in all_names if c not in initial_low_set}  # >=4
                             retry_candidates = set(initial_low_set)
+
+                            for c in locked:
+                                if c in judge_item_map and c not in locked_judge_snapshot:
+                                    locked_judge_snapshot[c] = {
+                                        **judge_item_map[c],
+                                        "locked_at_attempt": retries + 1
+                                    }
+
                         # only retry for initial_low_set and lock those that reached >=4
                         else:
                             for c in list(retry_candidates):
                                 if score_map.get(c, 0) >= 4:
                                     locked.add(c)
                                     retry_candidates.remove(c)
+
+                                    if c in judge_item_map and c not in locked_judge_snapshot:
+                                        locked_judge_snapshot[c] = {
+                                            **judge_item_map[c],
+                                            "locked_at_attempt": retries + 1
+                                        }
 
                     retry_candidates = {c for c in retry_candidates if score_map.get(c, 0) < 4}
 
@@ -392,7 +416,26 @@ class BaseBlockProcessor(IBlockProcessor, ABC):
                         retries += 1
                         continue
 
+                judge_results_to_log = []
+                for cname in extracted_dict.keys():
+                    if cname in locked_judge_snapshot:
+                        judge_results_to_log.append(locked_judge_snapshot[cname])
+                    elif cname in last_judge_item_map:
+                        # never locked (retries exhausted or <4 )
+                        judge_results_to_log.append(last_judge_item_map[cname])
+                    else:
+                        # if judge missing info for this characteristic
+                        judge_results_to_log.append({
+                            "characteristic": cname,
+                            "score": None,
+                            "reasoning": None,
+                            "locked_at_attempt": None
+                        })
+
                 break  # acceptable quality, no judge, or retries exhausted
+
+
+            print(f"✅ Extraction for {label} completed successfully.")
 
             processing_time = time.time() - start_time
             meta = {
@@ -403,8 +446,8 @@ class BaseBlockProcessor(IBlockProcessor, ABC):
                 f"{meta_prefix}_output_tokens": last_metadata.get('eval_count', 0),
                 f"{meta_prefix}_retries": retries,
             }
-            if judge_results:
-                meta[f"{meta_prefix}_judge"] = judge_results
+            if judge_results_to_log:
+                meta[f"{meta_prefix}_judge"] = judge_results_to_log
             if preserved_info:
                 meta[f"{meta_prefix}_retry_preserve_info"] = preserved_info
 
