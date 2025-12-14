@@ -91,7 +91,8 @@ class ExtractionOrchestrator:
                 print(f"🧪 Using separate LLM for judge: {config.judge_model_name}")
                 judge_llm = ChatOllama(
                     model=config.judge_model_name,
-                    # temperature=0.2,
+                    temperature=0.0,
+                    # seed=42,
                     # top_p=0.9,
                     # top_k=20,
                     # num_ctx=8192,
@@ -287,7 +288,7 @@ class ExtractionPipelineFactory:
     @staticmethod
     def create_orchestrator(
         with_experiment_tracking: bool = True,
-        basdeline_full_doc: bool = False
+        baseline_full_doc: bool = False
         ) -> ExtractionOrchestrator:
 
         """Create a fully configured extraction orchestrator."""
@@ -304,7 +305,7 @@ class ExtractionPipelineFactory:
             experiment_tracker = ExperimentTracker(results_saver)
         
         # Create block processors
-        if basdeline_full_doc:
+        if baseline_full_doc:
             block_processors = [
                 DTCharacteristicsProcessor()
             ]
@@ -416,7 +417,7 @@ def main():
 
     orchestrator = ExtractionPipelineFactory.create_orchestrator(
         with_experiment_tracking=True,
-        basdeline_full_doc=args.baseline_full_doc
+        baseline_full_doc=args.baseline_full_doc
     )
     orchestrator.initialize_pipeline(args.input_path, config=config)
 

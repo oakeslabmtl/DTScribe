@@ -289,83 +289,110 @@ class BaseBlockProcessor(IBlockProcessor, ABC):
             judge_results = []
             preserved_info = {}
 
+            # retry/lock state
+            initial_low_set = None          # set[str]
+            retry_candidates = set()        # set[str]
+            locked = set()                  # set[str]
+            last_scores = {}                # dict[str, int]
+
             while True:
                 print(f"🧠 Extracting {label} (attempt {retries+1})...")
                 output, response_metadata = extractor.extract(
                     config.description, retrieved_docs, self.get_schema(), judge_results
                 )
-                # extracted_dict = output.model_dump(exclude_none=True)
                 extracted_dict = output.model_dump()
 
                 # Clean up escaped quotes in strings
                 for key, value in extracted_dict.items():
                     if isinstance(value, str):
                         extracted_dict[key] = value.replace('\"', "'")
-                
+
                 # Update output with cleaned values
                 output = self.get_schema()(**extracted_dict)
 
-                # if it's a retry, preserve high score characteristics from previous output
-                if retries > 0 and last_output is not None and judge_results:
-                    # prev_dict = last_output.model_dump(exclude_none=True)
+                # if it's a retry preserve locked characteristics from previous output
+                # only allow retry_candidates to be replaced by the new extraction
+                if retries > 0 and last_output is not None:
                     prev_dict = last_output.model_dump()
                     preserved = []
                     retried = []
-                    for jr in judge_results:
-                        cname = jr.get("characteristic")
-                        score = jr.get("score", 0)
-                        if score > 3 and cname in prev_dict:
+
+                    for cname in extracted_dict.keys():
+                        score = int(last_scores.get(cname, 0))
+                        item = {"characteristic": cname, "score": score}
+
+                        if cname in locked and cname in prev_dict:
                             extracted_dict[cname] = prev_dict[cname]
-                            preserved.append(cname)
+                            preserved.append(item)
+                        elif cname in retry_candidates:
+                            retried.append(item)
                         else:
-                            retried.append(cname)
-                    preserved_info[f"retry_{retries}"] = {
-                        "preserved": preserved,
-                        "retried": retried
-                    }
-                    # rebuild schema
+                            preserved.append(item)
+
+                    preserved_info[f"retry_{retries}"] = {"preserved": preserved, "retried": retried}
                     output = self.get_schema()(**extracted_dict)
 
                 last_output = output
                 last_metadata = response_metadata
 
                 # Judge step
-                low_quality = False
                 if judge is not None:
                     print(f"🔬 Performing LLM evaluation of {label} (attempt {retries+1})...")
-                    judge_results = judge.evaluate(
-                        extracted_dict, retrieved_docs, config.description
-                    )
+                    judge_results = judge.evaluate(extracted_dict, retrieved_docs, config.description)
 
-                    # print(f"\n\njudge results in process:implementations.py:237: {type(judge_results),judge_results}\n\n")
+                    # --- debug prints ---
+                    # print(f"\n\n Extracted dict:")
+                    # for k, v in extracted_dict.items():
+                    #     print(f" - {k}: {v}\n")
 
-                    print(f"💡 LLM evaluation results for {label}:")
-                    for res in judge_results:
-                        print(f"  - Characteristic: {res.get('characteristic')}")
-                        print(f"    Score: {res.get('score')}")
-                        print(f"    Reasoning: {res.get('reasoning')}\n")
+                    # print(f"💡 LLM evaluation results for {label}:")
+                    # for res in judge_results:
+                    #     print(f"  - Characteristic: {res.get('characteristic')}")
+                    #     print(f"    Score: {res.get('score')}")
+                    #     print(f"    Reasoning: {res.get('reasoning')}\n")
+                    # -------------------
 
-                    # Determine if any characteristic <= 3
+                    score_map = {
+                        r.get("characteristic"): int(r.get("score", 0))
+                        for r in judge_results
+                        if r.get("characteristic")
+                    }
 
-                    low_quality = any(int(r.get("score", 0)) <= 3 for r in judge_results)
+                    # Fallback: if judge retutns ALL_BLOCK (parse fail) retry all characteristics
+                    if any(r.get("characteristic") == "ALL_BLOCK" for r in judge_results):
+                        if initial_low_set is None:
+                            initial_low_set = set(extracted_dict.keys())
+                            locked = set()
+                            retry_candidates = set(extracted_dict.keys())
+                    else:
+                        # first retry: build initial low set and locked set
+                        if initial_low_set is None:
+                            all_names = list(extracted_dict.keys())
 
-                    if low_quality and retries < max_retries:
+                            initial_low_set = {c for c in all_names if score_map.get(c, 0) < 4}
+                            locked = {c for c in all_names if c not in initial_low_set}  # >=4
+                            retry_candidates = set(initial_low_set)
+                        # only retry for initial_low_set and lock those that reached >=4
+                        else:
+                            for c in list(retry_candidates):
+                                if score_map.get(c, 0) >= 4:
+                                    locked.add(c)
+                                    retry_candidates.remove(c)
 
-                        low_score_names = [
-                            r.get("characteristic")
-                            for r in judge_results
-                            if int(r.get("score", 0)) <= 3
-                        ]
-                        
+                    retry_candidates = {c for c in retry_candidates if score_map.get(c, 0) < 4}
+
+                    # save scores for next iteration
+                    last_scores = score_map
+
+                    if retry_candidates and retries < max_retries:
                         print(
                             f"⚠️ Low judge score detected in {label}. "
-                            f"Retrying extraction for {low_score_names} (low-score items)..."
+                            f"Retrying extraction for: {sorted(retry_candidates)}"
                         )
                         retries += 1
                         continue
-                break  # could be no judge or acceptable quality or retries exhausted
 
-            
+                break  # acceptable quality, no judge, or retries exhausted
 
             processing_time = time.time() - start_time
             meta = {
@@ -382,12 +409,11 @@ class BaseBlockProcessor(IBlockProcessor, ABC):
                 meta[f"{meta_prefix}_retry_preserve_info"] = preserved_info
 
             return ExtractionResult(
-                # characteristics=last_output.model_dump(exclude_none=True),
                 characteristics=last_output.model_dump(),
                 metadata=meta,
                 success=True
             )
-
+    
         except Exception as e:
             processing_time = time.time() - start_time
             print(f"❌ Error processing {meta_prefix}: {e}")
