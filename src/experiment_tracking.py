@@ -222,6 +222,8 @@ class ResultsSaver:
             'oml_repetition_count': result.oml_repetition_count,
             'oml_max_retries': result.oml_max_retries,
             'generation_time_seconds': result.generation_time_seconds,
+            'total_input_tokens': result.total_input_tokens,
+            'total_output_tokens': result.total_output_tokens,
             'error_count': len(result.errors),
             'warning_count': len(result.warnings)
         }

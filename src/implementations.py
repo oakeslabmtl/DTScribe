@@ -54,7 +54,7 @@ class StateManager(IStateManager):
     
 #     def retrieve_documents(self, query: str, k: int = 5) -> List[Any]:
         
-#         return self._rag_pipeline.enhanced_retrieval(
+#         return self._rag_pipeline.chunk_retrieval(
 #             self._vectordb, query, k=k
 #         )
     
@@ -76,7 +76,7 @@ class DocumentRetriever(IDocumentRetriever):
             return [(full_doc, 1.0)]
         
         # Original
-        return self._rag_pipeline.enhanced_retrieval(
+        return self._rag_pipeline.chunk_retrieval(
             self._vectordb, query, k=k
         )
 
@@ -87,15 +87,13 @@ class CharacteristicsExtractor(ICharacteristicsExtractor):
     def __init__(self, rag_pipeline: EnhancedRAGPipeline):
         self._rag_pipeline = rag_pipeline
 
-    def extract(self, description: str, documents: List[Any], schema: Type[BaseModel], judge_results: List[dict[str, Any]]) -> BaseModel:
-        # import traceback
+    def extract(self, description: str, documents: List[Any], schema: Type[BaseModel], judge_results: List[dict[str, Any]]) -> tuple[BaseModel, dict]:
         try:
-            return self._rag_pipeline.generate_with_cot_and_validation(
+            return self._rag_pipeline.extract_characteristics_with_schema(
                 description, documents, schema, judge_results
             )
         except Exception as e:
             print(f"⚠️  Structured output failed, trying manual parsing: {e}")
-            # traceback.print_exc() 
             return self._rag_pipeline.generate_with_manual_parsing(
                 description, documents, schema, judge_results
             )
@@ -203,12 +201,7 @@ class OMLGenerator(IOMLGenerator):
 
     def generate(self, characteristics: Dict[str, Any], vocab_files: Dict[str, str], max_retries: int = 3):
         print("🏗️ Generating OML description...")
-        oml_output, oml_repetition_count, validation_status = self._rag_pipeline.generate_oml(characteristics, vocab_files, max_retries=max_retries)
-        if oml_output and oml_output.strip() != "":
-            print("OML generation completed")
-        else:
-            print("⚠️ OML generation failed or produced empty output")
-        return oml_output, oml_repetition_count, validation_status
+        return self._rag_pipeline.generate_oml(characteristics, vocab_files, max_retries=max_retries)
 
 
 class QualityAnalyzer(IQualityAnalyzer):

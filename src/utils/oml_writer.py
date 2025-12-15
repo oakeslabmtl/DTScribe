@@ -80,7 +80,7 @@ class OMLFileWriter(IOMLWriter):
                     # If the line doesn't match expected pattern, attach it as a general note to line 1
                     line_errors.setdefault(1, []).append(raw)
                     continue
-                line_num = int(m.group(1)) - 6  # Adjust index for header lines
+                line_num = max(1, int(m.group(1)) - 6)  # Adjust index for header lines and clamp to 1
                 col_num = int(m.group(2))
                 message = m.group(3).strip()
                 # Compose concise inline comment keeping column info

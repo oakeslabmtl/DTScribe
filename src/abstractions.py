@@ -37,7 +37,7 @@ class ICharacteristicsExtractor(ABC):
     """Interface for characteristics extraction."""
     
     @abstractmethod
-    def extract(self, description: str, documents: List[Any], schema: Type[BaseModel], judge_results: List[dict[str, Any]]) -> BaseModel:
+    def extract(self, description: str, documents: List[Any], schema: Type[BaseModel], judge_results: List[dict[str, Any]]) -> tuple[BaseModel, dict]:
         """Extract characteristics from documents."""
         pass
 
@@ -69,7 +69,7 @@ class IIngestor(ABC):
 
 class IPipelineInitializer(ABC):
     @abstractmethod
-    def initialize(self, input_path: str, config: ExtractionConfig, model_name: str) -> Dict[str, Any]:
+    def initialize(self, input_path: str, config: ExtractionConfig, model_name: str, embedding_model: str) -> Dict[str, Any]:
         """Initialize the pipeline with a file or directory path."""
         pass
 

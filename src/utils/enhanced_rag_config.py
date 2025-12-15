@@ -234,12 +234,8 @@ class EnhancedRAGPipeline:
         print("📦 Vector DB created and ready for retrieval.")
         return vectordb
 
-    def enhanced_retrieval(self, vectordb: Chroma, query: str, k: int = 5) -> List:
-        """
-        Enhanced retrieval with multiple strategies and query expansion.
-        """ 
-
-        # Standard similarity search
+    def chunk_retrieval(self, vectordb: Chroma, query: str, k: int = 5) -> List:
+      # Standard similarity search
         docs = vectordb.similarity_search_with_relevance_scores(query=query, k=k) # output relevance scores, they are already ranked by relevance
         # print(f"\n\nsimilarity_search_with_relevance_scores. \ntype(docs):{type(docs)} \n\nDOCS:{docs}\n\n") # debug print
         
@@ -260,10 +256,10 @@ class EnhancedRAGPipeline:
 
     #     return sorted(docs, key=score_document, reverse=True)
     
-    def generate_with_cot_and_validation(self, description: str, retrieved_docs: List, 
-                                       schema: Type[BaseModel], judge_results: List[dict[str, Any]]) -> BaseModel:
+    def extract_characteristics_with_schema(self, description: str, retrieved_docs: List, 
+                                       schema: Type[BaseModel], judge_results: List[dict[str, Any]]) -> tuple[BaseModel, dict]:
         """
-        Enhanced generation with Chain of Thought reasoning and self-validation.
+        LLM generation with Chain of Thought prompting and validation.
         """
         
         docs_content = "\n\n".join([
@@ -287,7 +283,6 @@ class EnhancedRAGPipeline:
 
         # print(f"\n\njudge_results_str:\n{judge_results_str}\n\n")  # debug print
 
-        # Enhanced prompt with Chain of Thought reasoning and strict output format
         cot_prompt = PromptTemplate.from_template("""
 You are an expert in Digital Twin systems and ontology modeling. Your task is to extract detailed characteristics from technical documents.
 
@@ -370,9 +365,25 @@ Remember: Be highly specific and technical. Include exact technologies, methods,
                 
                 if attempt < max_retries - 1:
                     # Try with a simpler prompt on retry
-                    simple_prompt = self._create_simple_fallback_prompt(description, docs_content, schema)
+                    parser = PydanticOutputParser(pydantic_object=schema)
+                    simpler_prompt = f"""
+Extract Digital Twin characteristics from the provided documents.
+
+DOCUMENTS:
+{docs_content}
+
+TASK: Extract the following characteristics and return as valid JSON only:
+{description}
+
+For each characteristic, provide a detailed description based on the documents, or "Not in Document" if no information exists.
+
+RETURN ONLY VALID JSON IN THIS FORMAT:
+{parser.get_format_instructions()}
+
+JSON OUTPUT:
+"""
                     try:
-                        response = self.llm.invoke(simple_prompt)
+                        response = self.llm.invoke(simpler_prompt)
                         response_text = response.content if hasattr(response, 'content') else str(response)
                         response_metadata = getattr(response, 'response_metadata', {})
                         cleaned_text = self._clean_llm_response(response_text)
@@ -438,29 +449,7 @@ Remember: Be highly specific and technical. Include exact technologies, methods,
         # If no JSON object found, return the cleaned text as-is
         return response_text
 
-    def _create_simple_fallback_prompt(self, description: str, docs_content: str, 
-                                     schema: Type[BaseModel]) -> str:
-        """Create a simpler prompt as fallback when structured output fails."""
-        parser = PydanticOutputParser(pydantic_object=schema)
-        
-        prompt = f"""
-Extract Digital Twin characteristics from the provided documents.
 
-DOCUMENTS:
-{docs_content}
-
-TASK: Extract the following characteristics and return as valid JSON only:
-{description}
-
-For each characteristic, provide a detailed description based on the documents, or "Not in Document" if no information exists.
-
-RETURN ONLY VALID JSON IN THIS FORMAT:
-{parser.get_format_instructions()}
-
-JSON OUTPUT:
-"""
-        return prompt
-    
     def _create_fallback_output(self, schema: Type[BaseModel]) -> BaseModel:
         """Create a fallback output when all parsing attempts fail."""
         # Get field names from schema
@@ -473,7 +462,7 @@ JSON OUTPUT:
         return schema(**fallback_data)
     
     def generate_with_manual_parsing(self, description: str, retrieved_docs: List, 
-                                   schema: Type[BaseModel], judge_results: List[dict[str, Any]]) -> BaseModel:
+                                   schema: Type[BaseModel], judge_results: List[dict[str, Any]]) -> tuple[BaseModel, dict]:
         """
         Alternative generation method with manual JSON parsing as fallback.
         """
@@ -551,6 +540,8 @@ JSON:
             writer = OMLFileWriter()
 
         start_time = time.perf_counter()
+        total_input_tokens = 0
+        total_output_tokens = 0
 
         # --- 1. PREPARATION ---
         # Define description-based vocab mapping
@@ -576,7 +567,10 @@ JSON:
 
         # --- 2. INITIAL GENERATION ---
         description_based_oml = self.generate_description_based_oml(description_based_characteristics, description_based_vocab_mapping)
-        component_based_oml = self.generate_component_based_oml(component_based_characteristics, vocab_files, comma_separated_description_based_vocab_mapping_keys)
+        component_based_oml, response_metadata = self.generate_component_based_oml(component_based_characteristics, vocab_files, comma_separated_description_based_vocab_mapping_keys)
+        
+        total_input_tokens += response_metadata.get('prompt_eval_count', 0)
+        total_output_tokens += response_metadata.get('eval_count', 0)
 
         oml_repetition_count = 0
         
@@ -594,7 +588,9 @@ JSON:
             # A. Sanity Check: Ensure OML isn't empty
             if component_based_characteristics and (not component_based_oml or not component_based_oml.strip()):
                 print(f"❌ Attempt {attempt + 1}: Component-based OML is empty. Regenerating...")
-                component_based_oml = self.generate_component_based_oml(component_based_characteristics, vocab_files, comma_separated_description_based_vocab_mapping_keys)
+                component_based_oml, response_metadata = self.generate_component_based_oml(component_based_characteristics, vocab_files, comma_separated_description_based_vocab_mapping_keys)
+                total_input_tokens += response_metadata.get('prompt_eval_count', 0)
+                total_output_tokens += response_metadata.get('eval_count', 0)
                 # We don't 'continue' here because we want to try validating this new generation immediately in this loop iteration
 
             # B. Combine OML
@@ -605,7 +601,9 @@ JSON:
             if combined_oml.count('[') != combined_oml.count(']'):
                 print(f"❌ Attempt {attempt + 1}: Syntax error (mismatched brackets). Repairing...")
                 # Regenerate and force a retry
-                component_based_oml = self.generate_component_based_oml(component_based_characteristics, vocab_files, comma_separated_description_based_vocab_mapping_keys)
+                component_based_oml, response_metadata = self.generate_component_based_oml(component_based_characteristics, vocab_files, comma_separated_description_based_vocab_mapping_keys)
+                total_input_tokens += response_metadata.get('prompt_eval_count', 0)
+                total_output_tokens += response_metadata.get('eval_count', 0)
                 continue 
 
             # D. Write to File
@@ -625,12 +623,20 @@ JSON:
                 
                 if fuseki_ok:
                     print("🚀 Fuseki start & OML load successful.")
-                    return combined_oml, oml_repetition_count, 1
+                    if combined_oml and combined_oml.strip() != "":
+                        print("OML generation completed")
+                    else:
+                        print("⚠️ OML generation failed or produced empty output")
+                    return combined_oml, oml_repetition_count, 1, total_input_tokens, total_output_tokens
                 else:
                     print("⚠️ Validation passed, but Fuseki load failed:")
                     print(fuseki_output)
                     # Even if Fuseki fails, the OML is valid, so we might return success (1) or failure (0)
-                    return combined_oml, oml_repetition_count, 0
+                    if combined_oml and combined_oml.strip() != "":
+                        print("OML generation completed")
+                    else:
+                        print("⚠️ OML generation failed or produced empty output")
+                    return combined_oml, oml_repetition_count, 0, total_input_tokens, total_output_tokens
 
             # --- PHASE: REPAIR (FAILURE) ---
             print(f"❌ Attempt {attempt + 1}: Validation failed.")
@@ -654,14 +660,17 @@ JSON:
             except Exception as e:
                 print(f"❌ Error during repair: {e}")
                 # Try a raw regeneration if repair crashes
-                component_based_oml = self.generate_component_based_oml(component_based_characteristics, vocab_files, comma_separated_description_based_vocab_mapping_keys)
+                component_based_oml, response_metadata = self.generate_component_based_oml(component_based_characteristics, vocab_files, comma_separated_description_based_vocab_mapping_keys)
+                total_input_tokens += response_metadata.get('prompt_eval_count', 0)
+                total_output_tokens += response_metadata.get('eval_count', 0)
 
         # --- 4. FAILURE EXIT ---
         # If we reach here, we exhausted retries without returning success
-        return None, oml_repetition_count, 0
+        print("⚠️ OML generation failed or produced empty output")
+        return None, oml_repetition_count, 0, total_input_tokens, total_output_tokens
 
     def generate_description_based_oml(self, characteristics: Dict[str, Any], vocab_mapping: Dict[str, str]) -> str:
-        """Generate OML based on characteristics description."""
+        """Generate OML of description characteristics programmatically."""
         print("🏗️ Generating description-based OML...")
         # Generate OML for each characteristic
         oml_parts = []
@@ -673,8 +682,8 @@ JSON:
         return self._clean_llm_response(joined_parts)
     
     def generate_component_based_oml(self, characteristics: Dict[str, Any], 
-                                    vocab_files: Dict[str, str], description_based_vocab_mapping: str) -> str:
-        """Generate OML based on components and vocabulary files."""
+                                    vocab_files: Dict[str, str], description_based_vocab_mapping: str) -> tuple[str, dict]:
+        """Generate OML of component characteristics with an LLM."""
         print("🏗️ Generating component-based OML...")
         # Load vocabulary files
         vocab_context = ""
@@ -761,10 +770,11 @@ Generate ONLY the OML code with no additional explanations:
         )
         
         response = self.llm.invoke(formatted_prompt)
-        oml_content = response.content if hasattr(response, 'content') else str(response)
-        oml_content = self._clean_llm_response(oml_content)
-        oml_content = oml_content.replace("<", "").replace(">", "")  # Remove any stray angle brackets for components
-        return oml_content
+        response_text = response.content if hasattr(response, 'content') else str(response)
+        response_metadata = getattr(response, 'response_metadata', {})
+        response_text = self._clean_llm_response(response_text)
+        response_text = response_text.replace("<", "").replace(">", "")  # Remove any stray angle brackets for components
+        return response_text, response_metadata
 
     def _fix_oml_with_feedback(self, oml_content: str, validation_output: str, 
                               characteristics: Dict[str, Any], vocab_files: Dict[str, str], writer: IOMLWriter = None,) -> str:
@@ -904,13 +914,13 @@ Generate ONLY the corrected OML code with no explanations or comments:
         
         try:
             response = self.llm.invoke(formatted_prompt)
-            fixed_oml = response.content if hasattr(response, 'content') else str(response)
-            fixed_oml = self._clean_llm_response(fixed_oml)
-            fixed_oml = fixed_oml.replace("<", "").replace(">", "").replace(";", "")  # Remove any stray characters
+            response_text = response.content if hasattr(response, 'content') else str(response)
+            response_metadata = getattr(response, 'response_metadata', {})
+            response_text = self._clean_llm_response(response_text)
+            response_text = response_text.replace("<", "").replace(">", "").replace(";", "")  # Remove any stray characters
 
             print("🔧 Fixed OML generated based on validation feedback")
-            return fixed_oml
-            
+            return response_text, response_metadata
         except Exception as e:
             print(f"❌ Error fixing OML with feedback: {e}")
             return oml_content  # Return original if fixing fails
@@ -968,7 +978,6 @@ Generate ONLY the corrected OML code with no explanations or comments:
 
             # Prepare validation output for feedback
             validation_output = f"Return code: {result.returncode}\n"
-            # validation_output += f"Stdout:\n{result.stdout}\n"
             if result.stderr:
                 # regex to match the diagnostic lines with line/col and unresolved reference
                 pattern = re.compile(r"\[\d+,\s*\d+\]: Couldn't resolve reference to .*")

@@ -243,7 +243,7 @@ class ExtractionOrchestrator:
                 "DTDFVocab": "data/oml/DTDF/vocab/DTDFVocab.oml",
                 "base": "data/oml/DTDF/vocab/base.oml"
             }
-            oml_output, oml_repetition_count, validation_status = self._oml_generator.generate(characteristics, vocab_files, max_retries=config.max_oml_retries)
+            oml_output, oml_repetition_count, validation_status, total_input_tokens, total_output_tokens = self._oml_generator.generate(characteristics, vocab_files, max_retries=config.max_oml_retries)
             self._state_manager.update_state({"oml_output": oml_output})
         except Exception as e:
             oml_error = f"OML generation failed: {str(e)}"
@@ -270,8 +270,8 @@ class ExtractionOrchestrator:
                 oml_valid=(validation_status == 1),
                 oml_line_count=len(oml_output.splitlines()),
                 oml_instance_count=oml_output.count("instance"),
-                total_input_tokens=0,
-                total_output_tokens=0,
+                total_input_tokens=total_input_tokens,
+                total_output_tokens=total_output_tokens,
             )
             saved_oml_path = self._experiment_tracker.results_saver.save_oml_results(oml_result)
             print(f"💾 OML results saved to: {saved_oml_path}")
