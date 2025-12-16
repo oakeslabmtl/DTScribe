@@ -649,13 +649,15 @@ JSON:
             # Otherwise, use the Reasoner report to repair
             print("🔧 Repairing OML with reasoner feedback...")
             try:
-                component_based_oml = self._fix_oml_with_feedback(
+                component_based_oml, response_metadata = self._fix_oml_with_feedback(
                     component_based_oml, 
                     validation_output, 
                     component_based_characteristics, 
                     vocab_files,
                     writer=writer
                 )
+                total_input_tokens += response_metadata.get('prompt_eval_count', 0)
+                total_output_tokens += response_metadata.get('eval_count', 0)
                 oml_repetition_count += 1
             except Exception as e:
                 print(f"❌ Error during repair: {e}")
