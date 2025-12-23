@@ -43,20 +43,6 @@ class StateManager(IStateManager):
     
     def get_all_state(self) -> Dict[str, Any]:
         return self._state.copy()
-
-
-# class DocumentRetriever(IDocumentRetriever):
-#     """Handles document retrieval operations."""
-    
-#     def __init__(self, rag_pipeline: EnhancedRAGPipeline, vectordb):
-#         self._rag_pipeline = rag_pipeline
-#         self._vectordb = vectordb
-    
-#     def retrieve_documents(self, query: str, k: int = 5) -> List[Any]:
-        
-#         return self._rag_pipeline.chunk_retrieval(
-#             self._vectordb, query, k=k
-#         )
     
 
 class DocumentRetriever(IDocumentRetriever):
@@ -112,9 +98,10 @@ class PipelineInitializer(IPipelineInitializer):
         raw_custom = getattr(config, "custom_params", {}) or {}
         cli_custom = raw_custom.get("custom_params", raw_custom)
 
-        baseline_full_doc = bool(cli_custom.get("baseline_full_doc", False))
-        baseline_max_chars = cli_custom.get("baseline_max_chars", BASELINE_MAX_CHARS)
-
+        # Baseline mode (get from config fields, fallback to custom_params (as it was before))
+        baseline_full_doc = bool(getattr(config, "baseline_full_doc", cli_custom.get("baseline_full_doc", False)))
+        baseline_max_chars = int(getattr(config, "baseline_max_chars", cli_custom.get("baseline_max_chars", BASELINE_MAX_CHARS)))
+         
         self._rag_pipeline = EnhancedRAGPipeline(model_name=model_name, embedding_model=embedding_model)
         
         #BASELINE:
@@ -631,7 +618,7 @@ class DTCharacteristicsProcessor(BaseBlockProcessor):
     """
 
     block_index = 1
-    block_label = "All 21 DT characteristics (baseline)"
+    block_label = "DT characteristics (baseline)"
 
     def get_config(self) -> ExtractionConfig:
         return ExtractionConfig(

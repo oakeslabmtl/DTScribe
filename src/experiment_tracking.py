@@ -27,6 +27,8 @@ class ExperimentConfig:
     max_judge_retries: int
     max_oml_retries: int
     judge_model_name: str
+    baseline_full_doc: bool = False
+    baseline_max_chars: int = 24000
     custom_params: Optional[Dict[str, Any]] = None
 
 

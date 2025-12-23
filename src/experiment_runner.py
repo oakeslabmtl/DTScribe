@@ -298,6 +298,8 @@ def main():
         'judge_model_name': ["deepseek-v3.1:671b-cloud"],
         "max_judge_retries": [3],
         "max_oml_retries": [5],
+        "baseline_full_doc": [False, True],
+        "baseline_max_chars": [24000],
     }
     runner.run_experiment_batch(
         max_experiments=-1,

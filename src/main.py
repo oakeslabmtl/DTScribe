@@ -34,6 +34,7 @@ class ExtractionOrchestrator:
         oml_generator: IOMLGenerator,
         quality_analyzer: IQualityAnalyzer,
         block_processors: List[IBlockProcessor],
+        baseline_block_processors: Optional[List[IBlockProcessor]] = None,
         experiment_tracker: ExperimentTracker = None,
     ):
         """Initialize orchestrator with its collaborating components."""
@@ -42,6 +43,7 @@ class ExtractionOrchestrator:
         self._oml_generator = oml_generator
         self._quality_analyzer = quality_analyzer
         self._block_processors = block_processors
+        self._baseline_block_processors = baseline_block_processors or []
         self._experiment_tracker = experiment_tracker
 
         self._retriever: IDocumentRetriever = None
@@ -116,8 +118,15 @@ class ExtractionOrchestrator:
         total_input_tokens = 0
         total_output_tokens = 0
 
+        # Decide which processors to run (baseline or standard)
+        raw_custom = getattr(config, "custom_params", {}) or {}
+        cli_custom = raw_custom.get("custom_params", raw_custom)
+        baseline_full_doc = bool(getattr(config, "baseline_full_doc", cli_custom.get("baseline_full_doc", False)))
+        active_processors = self._baseline_block_processors if baseline_full_doc else self._block_processors
+
         # Process all blocks
-        for i, processor in enumerate(self._block_processors, 1):
+        for i, processor in enumerate(active_processors, 1):
+            
             print(f"\n--- Processing Block {i} ---")
 
             result = processor.process(self._retriever, self._extractor, judge=judge, max_retries=config.max_judge_retries)
@@ -288,7 +297,6 @@ class ExtractionPipelineFactory:
     @staticmethod
     def create_orchestrator(
         with_experiment_tracking: bool = True,
-        baseline_full_doc: bool = False
         ) -> ExtractionOrchestrator:
 
         """Create a fully configured extraction orchestrator."""
@@ -305,20 +313,15 @@ class ExtractionPipelineFactory:
             experiment_tracker = ExperimentTracker(results_saver)
         
         # Create block processors
-        if baseline_full_doc:
-            block_processors = [
-                DTCharacteristicsProcessor()
-            ]
-        
-        else:
-            block_processors = [
-                Block1Processor(),
-                Block2Processor(),
-                Block3Processor(),
-                Block4Processor(),
-                Block5Processor(),
-                Block6Processor()
-            ]
+        block_processors = [
+            Block1Processor(),
+            Block2Processor(),
+            Block3Processor(),
+            Block4Processor(),
+            Block5Processor(),
+            Block6Processor()
+        ]
+        baseline_block_processors = [DTCharacteristicsProcessor()]
         
         # Create a wrapper that handles the OML generator creation
         class DeferredOMLGenerator:
@@ -343,6 +346,7 @@ class ExtractionPipelineFactory:
             oml_generator=oml_generator,
             quality_analyzer=quality_analyzer,
             block_processors=block_processors,
+            baseline_block_processors=baseline_block_processors,
             experiment_tracker=experiment_tracker
         )
     
@@ -358,6 +362,8 @@ class ExtractionPipelineFactory:
         max_judge_retries: int = 2,
         max_oml_retries: int = 3,
         judge_model_name: Optional[str] = None,
+        baseline_full_doc: bool = False,
+        baseline_max_chars: int = 24000,
         **custom_params
     ) -> ExperimentConfig:
         """Create an experiment configuration."""
@@ -375,6 +381,8 @@ class ExtractionPipelineFactory:
             max_judge_retries=max_judge_retries,
             max_oml_retries=max_oml_retries,
             judge_model_name=judge_model_name,
+            baseline_full_doc=baseline_full_doc,
+            baseline_max_chars=baseline_max_chars,
             custom_params=custom_params
         )
 
@@ -407,18 +415,16 @@ def main():
         max_judge_retries=args.max_judge_retries,
         max_oml_retries=args.max_oml_retries,
         judge_model_name=args.judge_model_name,
-        custom_params={
-            "cli": True,
-            "baseline_full_doc": args.baseline_full_doc,
-            "baseline_max_chars": args.baseline_max_chars,
-        }
+        baseline_full_doc=args.baseline_full_doc,
+        baseline_max_chars=args.baseline_max_chars,
+        custom_params={"cli": True}
     )
     print("Using configuration:", config)
 
     orchestrator = ExtractionPipelineFactory.create_orchestrator(
         with_experiment_tracking=True,
-        baseline_full_doc=args.baseline_full_doc
     )
+    
     orchestrator.initialize_pipeline(args.input_path, config=config)
 
     extraction_results = {}
