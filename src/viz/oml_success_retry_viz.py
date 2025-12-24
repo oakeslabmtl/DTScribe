@@ -6,13 +6,11 @@ import seaborn as sns
 import argparse
 import json
 
-# Set style for publication-quality plots (double column)
 sns.set_style("whitegrid")
-sns.set_context("paper", font_scale=1.5)  # Increase font sizes for readability
+sns.set_context("paper", font_scale=1.5)
 
-# Configure matplotlib for publication quality
 plt.rcParams.update({
-    'figure.figsize': (7, 4.5),  # Double column width (~3.5" each, 7" total)
+    'figure.figsize': (7, 4.5),
     'figure.dpi': 300,
     'font.size': 10,
     'axes.labelsize': 11,
@@ -31,7 +29,7 @@ plt.rcParams.update({
     'ytick.major.width': 1.0,
     'font.family': 'serif',
     'font.serif': ['Times New Roman', 'DejaVu Serif'],
-    'text.usetex': False,  # Set to True if LaTeX is available
+    'text.usetex': False,
     'axes.formatter.use_mathtext': True,
 })
 
