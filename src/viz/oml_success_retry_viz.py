@@ -4,6 +4,7 @@ import pathlib
 import io
 import seaborn as sns
 import argparse
+import json
 
 # Set style for publication-quality plots (double column)
 sns.set_style("whitegrid")
@@ -34,17 +35,66 @@ plt.rcParams.update({
     'axes.formatter.use_mathtext': True,
 })
 
+def load_data_from_jsons(exp_path):
+    """Load data directly from OML generation JSON files."""
+    json_dir = pathlib.Path(exp_path) / "oml_generation"
+    data = []
+    
+    # Look for files ending in _oml.json based on the provided file list
+    json_files = list(json_dir.glob("*_oml.json"))
+    
+    if not json_files:
+        return pd.DataFrame()
+
+    print(f"Found {len(json_files)} JSON files in {json_dir}")
+
+    for jf in json_files:
+        try:
+            with open(jf, 'r', encoding='utf-8') as f:
+                d = json.load(f)
+                row = {}
+                
+                # Map JSON fields to expected DataFrame columns
+                # Check for 'oml_valid' or 'valid'
+                if 'oml_valid' in d:
+                    row['oml_valid'] = d['oml_valid']
+                elif 'valid' in d:
+                    row['oml_valid'] = d['valid']
+                
+                # Check for 'oml_repetition_count' or 'repetition_count'
+                if 'oml_repetition_count' in d:
+                    row['oml_repetition_count'] = d['oml_repetition_count']
+                elif 'repetition_count' in d:
+                    row['oml_repetition_count'] = d['repetition_count']
+                elif 'retries' in d:
+                     row['oml_repetition_count'] = d['retries']
+
+                # Check for max retries
+                if 'oml_max_retries' in d:
+                    row['oml_max_retries'] = d['oml_max_retries']
+                elif 'max_retries' in d:
+                    row['oml_max_retries'] = d['max_retries']
+                
+                # Only add if we have the essential data
+                if 'oml_valid' in row and 'oml_repetition_count' in row:
+                    data.append(row)
+                    
+        except Exception as e:
+            print(f"Warning: Error reading {jf.name}: {e}")
+            
+    return pd.DataFrame(data)
+
 parser = argparse.ArgumentParser(description="Oml Success Retry Visualization")
 parser.add_argument("--exp-path", default="experiments", help="Path to the experiments directory")
 args = parser.parse_args()
 
-# Load the provided CSV data into a DataFrame
-oml_file = pathlib.Path(args.exp_path) / "analysis" / "oml_summary.csv"
-if oml_file.exists():
-    df = pd.read_csv(oml_file)
-csv_data = df.to_csv(index=False)
+print("Attempting to load raw JSON data...")
+df = load_data_from_jsons(args.exp_path)
 
-df = pd.read_csv(io.StringIO(csv_data))
+if df.empty:
+    print("No valid JSON data found. Exiting.")
+    exit(1)
+
 # Ensure oml_valid is boolean
 if df['oml_valid'].dtype == 'object':
     df['oml_valid'] = df['oml_valid'].map({'True': True, 'False': False, True: True, False: False})
@@ -52,7 +102,7 @@ if df['oml_valid'].dtype == 'object':
 # Expand rows into attempts (failed repetitions + final success)
 expanded_rows = []
 for idx, row in df.iterrows():
-    for rep in range(row['oml_repetition_count']):
+    for rep in range(int(row['oml_repetition_count'])):
         expanded_rows.append({"retry_index": rep, "success": 0})
     expanded_rows.append({"retry_index": int(row['oml_repetition_count']), "success": int(row['oml_valid'])})
 
@@ -85,7 +135,7 @@ for i in range(max_retry_index + 1):
     # 2. Experiments that stopped at i but failed (oml_repetition_count == i and not oml_valid)
     failures_at_i = df.apply(lambda r: int(r['oml_repetition_count'] > i or (r['oml_repetition_count'] == i and not r['oml_valid'])), axis=1)
     
-    print(f"Retry index: {i}, Successes at index: {success_at_i.sum()}, Failures at index: {failures_at_i.sum()}")
+    # print(f"Retry index: {i}, Successes at index: {success_at_i.sum()}, Failures at index: {failures_at_i.sum()}")
     # Success rate at this specific step (out of attempts that reached this step)
     total_at_step = success_at_i.sum() + failures_at_i.sum()
     success_rate = success_at_i.sum() / total_at_step * 100 if total_at_step > 0 else 0
