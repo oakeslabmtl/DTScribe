@@ -7,6 +7,7 @@ from abc import ABC, abstractmethod
 from pydantic import BaseModel
 from pathlib import Path
 import time
+import json
 
 from abstractions import (
     IDocumentRetriever, ICharacteristicsExtractor, IBlockProcessor,
@@ -284,9 +285,11 @@ class BaseBlockProcessor(IBlockProcessor, ABC):
                 )
                 extracted_dict = output.model_dump()
 
-                # Clean up escaped quotes in strings
+                # Clean up escaped quotes in strings and serialize complex types
                 for key, value in extracted_dict.items():
-                    if isinstance(value, str):
+                    if isinstance(value, (dict, list)):
+                        extracted_dict[key] = json.dumps(value)
+                    elif isinstance(value, str):
                         extracted_dict[key] = value.replace('\"', "'")
 
                 # Update output with cleaned values

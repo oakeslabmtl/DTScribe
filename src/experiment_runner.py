@@ -2,6 +2,7 @@
 Runs multiple experiments with different configurations.
 """
 
+import argparse
 import itertools
 from pathlib import Path
 import pandas as pd
@@ -264,43 +265,36 @@ def visualize_results(csv_file_path: str = None, output_dir: str = None):
 
 def main():
     import sys
-    
-    # Configuration
-    input_path = "data/papers/The Incubator Case Study for Digital Twin Engineering.pdf"
 
-    print("🧪 Starting Parameter Exploration for Digital Twin Characteristics Extraction")
+    # Configuration
+    parser = argparse.ArgumentParser(description="Experiment Runner for Digital Twin Characteristics Extraction")
+    parser.add_argument("--output-dir", default="experiments", help="Path to the experiments directory")
+    args = parser.parse_args()
+    experiment_name = args.output_dir
+
+    parser.add_argument("--input-path", default="data/papers/The Incubator Case Study for Digital Twin Engineering.pdf", help="Path to the input PDF or directory")
+    args = parser.parse_args()
+    input_path = args.input_path
+
     print("=" * 80)
     
     # Create experiment runner
-    orchestrator = ExtractionPipelineFactory.create_orchestrator(with_experiment_tracking=True)
+    orchestrator = ExtractionPipelineFactory.create_orchestrator(with_experiment_tracking=True, output_dir=args.output_dir)
     runner = ExperimentRunner(input_path, orchestrator=orchestrator)
 
-    # Run experiments
-    # param_grid = {
-    #     'model_name': ["qwen3:8b"],
-    #     'chunk_size': [1000, 1500, 2000, 2500, 3000, 3500],
-    #     'temperature': [0.1, 0.15, 0.2, 0.25, 0.3],
-    #     "embedding_model": ["embeddinggemma"],
-    #     "chunk_overlap": [200, 300, 400],
-    # }
-
-    experiment_name = "gpt-oss_120b_runs"
-    experiment_name = "mistral_test_runs"
     param_grid = {
-        # 'model_name': ["gpt-oss:120b-cloud"],
-        'model_name': ["ministral-3:14b-cloud"],
+        'model_name': ["gpt-oss:20b-cloud", "ministral-3:14b-cloud", "ministral-3:8b-cloud", "ministral-3:3b-cloud"],
         'temperature': [1.0],
         'top_p': [1.0],
         'top_k': [0],
         "embedding_model": ["embeddinggemma"],
         'chunk_size': [3000],
         "chunk_overlap": [500],
-        'judge_model_name': ["deepseek-v3.1:671b-cloud"],
-        "max_judge_retries": [3],
-        "max_oml_retries": [5],
+        'judge_model_name': ["deepseek-v3.2:cloud"],
         "baseline_full_doc": [False, True],
         "baseline_max_chars": [24000],
     }
+
     runner.run_experiment_batch(
         max_experiments=-1,
         repeat_experiments=5,
