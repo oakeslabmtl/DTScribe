@@ -351,6 +351,20 @@ Remember: Be highly specific and technical. Include exact technologies, methods,
                 # Clean the response to remove thinking tags
                 cleaned_text = self._clean_llm_response(response_text)
 
+                # Pre-process JSON to handle complex types where strings are expected
+                try:
+                    data = json.loads(cleaned_text)
+                    if isinstance(data, dict):
+                        modified = False
+                        for key, value in data.items():
+                            if isinstance(value, (dict, list)):
+                                data[key] = json.dumps(value)
+                                modified = True
+                        if modified:
+                            cleaned_text = json.dumps(data)
+                except json.JSONDecodeError:
+                    pass
+
                 # print(f"\n\n {'---'*10}🔴CLEANED TEXT🔴{'---'*10}:\n{cleaned_text}\n\n{'---'*10}\n\n") 
                 
                 # Parse the cleaned response
@@ -387,6 +401,21 @@ JSON OUTPUT:
                         response_text = response.content if hasattr(response, 'content') else str(response)
                         response_metadata = getattr(response, 'response_metadata', {})
                         cleaned_text = self._clean_llm_response(response_text)
+
+                        # Pre-process JSON to handle complex types where strings are expected
+                        try:
+                            data = json.loads(cleaned_text)
+                            if isinstance(data, dict):
+                                modified = False
+                                for key, value in data.items():
+                                    if isinstance(value, (dict, list)):
+                                        data[key] = json.dumps(value)
+                                        modified = True
+                                if modified:
+                                    cleaned_text = json.dumps(data)
+                        except json.JSONDecodeError:
+                            pass
+
                         output = parser.parse(cleaned_text)
                         validated_output = self._self_validate_output(output, retrieved_docs)
                         print(f"Success with fallback prompt on attempt {attempt + 1}")
