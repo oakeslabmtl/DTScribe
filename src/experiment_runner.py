@@ -28,7 +28,15 @@ class ExperimentRunner:
         
         return combinations
 
-    def run_experiment_batch(self, max_experiments: int = 10, experiment_name: str = "default", param_grid: Dict[str, Any] = None, repeat_experiments: int = 1, mode: str = "both", exp_id: str = None) -> List[Dict[str, Any]]:
+    def run_experiment_batch(
+            self, 
+            max_experiments: int = 10, 
+            experiment_name: str = "default", 
+            param_grid: Dict[str, Any] = None, 
+            repeat_experiments: int = 1, 
+            mode: str = "both", 
+            exp_id: str = None,
+            ) -> List[Dict[str, Any]]:
         """Run a batch of experiments with different parameters."""
 
         self.output_dir = Path(experiment_name)
@@ -277,18 +285,17 @@ def main():
 
     # Run experiments
     # param_grid = {
-    #     'model_name': ["qwen3:8b"],
+    #     'model_name': [""ministral-3:14b-cloud""],
     #     'chunk_size': [1000, 1500, 2000, 2500, 3000, 3500],
     #     'temperature': [0.1, 0.15, 0.2, 0.25, 0.3],
     #     "embedding_model": ["embeddinggemma"],
     #     "chunk_overlap": [200, 300, 400],
     # }
 
-    experiment_name = "gpt-oss_120b_runs"
-    experiment_name = "mistral_test_runs"
+    experiment_name = "oss_20b_120b_judge_retries_baseline_comparison"
+
     param_grid = {
-        # 'model_name': ["gpt-oss:120b-cloud"],
-        'model_name': ["ministral-3:14b-cloud"],
+        'model_name': ["gpt-oss:20b-cloud","gpt-oss:120b-cloud"],
         'temperature': [1.0],
         'top_p': [1.0],
         'top_k': [0],
@@ -296,14 +303,14 @@ def main():
         'chunk_size': [3000],
         "chunk_overlap": [500],
         'judge_model_name': ["deepseek-v3.1:671b-cloud"],
-        "max_judge_retries": [3],
+        "max_judge_retries": [0,3],
         "max_oml_retries": [5],
         "baseline_full_doc": [False, True],
         "baseline_max_chars": [24000],
     }
     runner.run_experiment_batch(
         max_experiments=-1,
-        repeat_experiments=5,
+        repeat_experiments=10,
         experiment_name=experiment_name,
         param_grid=param_grid,
         mode="both",
