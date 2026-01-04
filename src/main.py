@@ -297,6 +297,7 @@ class ExtractionPipelineFactory:
     @staticmethod
     def create_orchestrator(
         with_experiment_tracking: bool = True,
+        output_dir: Optional[str] = "experiments",
         ) -> ExtractionOrchestrator:
 
         """Create a fully configured extraction orchestrator."""
@@ -309,7 +310,7 @@ class ExtractionPipelineFactory:
         # Create experiment tracking if requested
         experiment_tracker = None
         if with_experiment_tracking:
-            results_saver = ResultsSaver()
+            results_saver = ResultsSaver(base_output_dir=output_dir)
             experiment_tracker = ExperimentTracker(results_saver)
         
         # Create block processors
@@ -391,6 +392,7 @@ def main():
     parser = argparse.ArgumentParser(description="Extraction / OML generation pipeline")
     parser.add_argument("--mode", choices=["both", "extraction", "oml"], default="both", help="Run extraction, OML generation, or both")
     parser.add_argument("--input-path", default="data/papers/The Incubator Case Study for Digital Twin Engineering.pdf", help="PDF path for extraction")
+    parser.add_argument("--output-dir", default="experiments", help="Directory to save experiment results")
     parser.add_argument("--chunk-size", type=int, default=3000)
     parser.add_argument("--chunk-overlap", type=int, default=500)
     parser.add_argument("--temperature", type=float, default=0.1)
@@ -423,6 +425,7 @@ def main():
 
     orchestrator = ExtractionPipelineFactory.create_orchestrator(
         with_experiment_tracking=True,
+        output_dir=args.output_dir
     )
     
     orchestrator.initialize_pipeline(args.input_path, config=config)
