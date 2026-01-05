@@ -10,6 +10,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 import json
+import argparse
 import pathlib
 from typing import List, Dict, Any
 import seaborn as sns
@@ -320,9 +321,14 @@ def generate_summary_statistics(df: pd.DataFrame) -> pd.DataFrame:
 
 def main():
     """Main execution function."""
+    parser = argparse.ArgumentParser(description="Characteristics Extraction Visualization")
+    parser.add_argument("--exp-path", default="experiments", help="Path to the experiments directory")
+    args = parser.parse_args()
+
     # Define paths
-    data_dir = pathlib.Path("experiments/characteristics_extraction")
-    output_dir = pathlib.Path("experiments/analysis/visualizations")
+    base_dir = pathlib.Path(args.exp_path)
+    data_dir = base_dir / "characteristics_extraction"
+    output_dir = base_dir / "analysis/visualizations"
     output_dir.mkdir(parents=True, exist_ok=True)
     
     # Load data
