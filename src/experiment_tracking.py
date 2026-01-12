@@ -147,7 +147,7 @@ class ResultsSaver:
             json.dump(result_dict, f, indent=2, ensure_ascii=False)
         
         # Also save a CSV summary for easy analysis
-        self._update_characteristics_summary(result)
+        # self._update_characteristics_summary(result)
         
         return filepath
     
@@ -171,7 +171,7 @@ class ResultsSaver:
             f.write(result.generated_oml)
         
         # Also save a CSV summary for easy analysis
-        self._update_oml_summary(result)
+        # self._update_oml_summary(result)
         
         return filepath
     
