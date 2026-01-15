@@ -86,24 +86,34 @@ class ExtractionOrchestrator:
             print("⚠️ Skipping LLM judge step as max_judge_retries <= 0")
             judge = None
         else:
-            # use same LLM by default
-            judge_llm = rag_pipeline.llm
-
-            if getattr(config, "judge_model_name", None) and config.judge_model_name != config.model_name:
-                print(f"🧪 Using separate LLM for judge: {config.judge_model_name}")
-                judge_llm = ChatOllama(
-                    model=config.judge_model_name,
-                    temperature=0.0,
-                    # seed=42,
-                    # top_p=0.9,
-                    # top_k=20,
-                    # num_ctx=8192,
-                    # num_predict=8192,
-                )
-            else:
-                print("🧪 Using same LLM for extraction and judge")
-
+            print(f"🧪 Using LLM {config.judge_model_name} for judge")
+            judge_llm = ChatOllama(
+                model=config.judge_model_name,
+                temperature=0.0,
+                seed=42,
+            )
             judge = JudgeEvaluator(judge_llm)
+
+        judge_init = {
+            "judge_enabled": config.max_judge_retries > 0,
+            "max_judge_retries": config.max_judge_retries,
+        }
+
+        if judge is not None:
+            judge_init.update({
+                "judge_model_name_effective": getattr(config, "judge_model_name", None) or config.model_name,
+                "judge_uses_different_model": (
+                    getattr(config, "judge_model_name", None) is not None
+                    and config.judge_model_name != config.model_name
+                ),
+                "judge_temperature": getattr(judge_llm, "temperature", None),
+                "judge_seed": getattr(judge_llm, "seed", None),
+            })
+
+        existing_metadata = self._state_manager.get_state("extraction_metadata") or {}
+        existing_metadata["judge_init"] = judge_init
+        self._state_manager.update_state({"extraction_metadata": existing_metadata})
+
 
         # Track block processing
         block_metrics = {
@@ -397,7 +407,7 @@ def main():
     parser.add_argument("--chunk-overlap", type=int, default=500)
     parser.add_argument("--temperature", type=float, default=0.1)
     parser.add_argument("--model-name", default="qwen3:8b")
-    parser.add_argument("--judge-model-name", default=None, help="Optional LLM model name used only for the judge. Defaults to --model-name.")
+    parser.add_argument("--judge-model-name", default="deepseek-v3.1:671b-cloud", help="Optional LLM model name used only for the judge. Defaults to --model-name.")
     parser.add_argument("--embedding-model", default="embeddinggemma")
     parser.add_argument("--exp-id", help="Existing experiment id (hash_timestamp or just hash for latest) containing characteristics for standalone OML generation")
     parser.add_argument("--no-save", action="store_true", help="Do not persist results")

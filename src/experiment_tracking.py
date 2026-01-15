@@ -186,6 +186,7 @@ class ResultsSaver:
             'model_name': result.config.model_name,
             'embedding_model': result.config.embedding_model,
             'judge_model_name': result.config.judge_model_name,
+            'max_judge_retries': result.config.max_judge_retries,
             'chunk_size': result.config.chunk_size,
             'chunk_overlap': result.config.chunk_overlap,
             'temperature': result.config.temperature,

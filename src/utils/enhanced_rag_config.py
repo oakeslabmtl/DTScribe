@@ -93,12 +93,12 @@ class EnhancedRAGPipeline:
     def __init__(self, model_name, embedding_model):
         self.llm = ChatOllama(
             model=model_name,
-            temperature=0.1,
-            top_p=0.9,
-            top_k=20,
+            # temperature=0.1,
+            # top_p=0.9,
+            # top_k=20,
             # repeat_penalty=1.1,
-            num_ctx=8192,
-            num_predict=8192,
+            # num_ctx=8192,
+            # num_predict=8192,
         )
         
         self.embeddings = OllamaEmbeddings(model=embedding_model)
@@ -155,6 +155,9 @@ class EnhancedRAGPipeline:
                     # print("🧾 Extracting PDF as Markdown using pymupdf4llm...")
                     md_text = pymupdf4llm.to_markdown(str(path))
 
+                    m = re.search(r"\n#+\s*\**references\**\s*\n", md_text, flags=re.I)
+                    if m: md_text = md_text[:m.start()]
+
                     # creating a single LangChain document with clean metadata
                     doc = Document(
                         metadata={
@@ -166,7 +169,7 @@ class EnhancedRAGPipeline:
                         page_content=md_text,
                     )
                     print(f"✅ Loaded 1 Markdown document from PDF ({len(md_text)} chars).")
-                    # print(f"\n\n DEBUG: docs[0].metadata: {doc.metadata} \n\n")
+                    # print(f"\n\n DEBUG: docs[0].page_content: {doc.page_content} \n\n")
                     return [doc]
 
                 except Exception as e:
@@ -292,7 +295,7 @@ CONTEXT DOCUMENTS:
 CHARACTERISTICS TO EXTRACT:
 {description}
                                                   
-JUDGE RESULTS:
+JUDGE FEEDBACK:
 {judge_results}  
                                                   
 INSTRUCTIONS:
@@ -306,13 +309,13 @@ INSTRUCTIONS:
    - Include concrete technical details (tools, technologies, protocols, methods)
    - Be precise about quantities, frequencies, and specifications when mentioned
    - If no evidence is found, state "Not in Document"
-   - Implement the information from the judge results (if provided) to preserve high-quality characteristics and enhance characteristics scored less than 4.
+   - Implement the information from the judge feedback (if provided) to preserve high-quality characteristics and enhance characteristics scored less than 4.
 
 3. VALIDATION PHASE: Review your extracted information:
    - Ensure all details come from the provided documents
    - Check that technical terms are used correctly
    - Verify completeness of the description
-   - Ensure the extraction of characteristics is consistent with the judge results (if provided)
+   - Ensure the extraction of characteristics is consistent with the judge feedback (if provided)
    
 REASONING:
 Let me analyze each document for relevant information...
