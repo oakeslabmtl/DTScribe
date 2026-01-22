@@ -247,30 +247,6 @@ class ExperimentRunner:
         
         plt.show()
 
-
-def visualize_results(csv_file_path: str = None, output_dir: str = None):
-    """Convenience function to visualize existing experiment results."""
-    from viz.results_visualizer import ExperimentResultsVisualizer
-    
-    if csv_file_path is None:
-        print("❌ Please provide the path to the CSV file containing experiment results.")
-        return
-    
-    print(f"📊 Visualizing existing results from: {csv_file_path}")
-    print("=" * 80)
-    
-    try:
-        visualizer = ExperimentResultsVisualizer(csv_file_path)
-        visualizer.create_all_visualizations(output_dir)
-        print("\n✅ Visualization completed!")
-        
-    except FileNotFoundError:
-        print(f"❌ CSV file not found: {csv_file_path}")
-        print("💡 Run experiments first or check the file path.")
-    except Exception as e:
-        print(f"❌ Error creating visualizations: {e}")
-
-
 def main():
     import sys
 
@@ -298,7 +274,7 @@ def main():
         "embedding_model": ["embeddinggemma"],
         'chunk_size': [3000],
         "chunk_overlap": [500],
-        'judge_model_name': ["deepseek-v3.1:671b-cloud"],
+        'judge_model_name': ["deepseek-v3.2:cloud"],
         "max_judge_retries": [0,3],
         "max_oml_retries": [5],
         "baseline_full_doc": [False, True],
@@ -313,12 +289,6 @@ def main():
         mode="both",
         exp_id=None,
     )
-
-    # Check if user wants to visualize existing results
-    if len(sys.argv) > 1 and sys.argv[1] == "--visualize":
-        output_dir = Path(experiment_name)
-        csv_path = output_dir / "experiments.csv"
-        visualize_results(csv_path, output_dir)
 
     # TODO: Fix this part
     # Analyze and visualize results
