@@ -283,7 +283,7 @@ def main():
 
     runner.run_experiment_batch(
         max_experiments=-1,
-        repeat_experiments=10,
+        repeat_experiments=5,
         experiment_name=experiment_name,
         param_grid=param_grid,
         mode="both",

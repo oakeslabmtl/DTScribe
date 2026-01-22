@@ -10,7 +10,7 @@ class JudgeEvaluator:
     def __init__(self, llm):
         self.llm = llm
         self.prompt = PromptTemplate(
-            input_variables=["characteristics", "characteristics_description", "retrieved_docs"],
+            input_variables=["characteristics", "characteristics_description", "judge_source_doc"],
             template=
             """
 You are an expert evaluator in Digital Twin information extraction and ontology-based modeling.
@@ -77,9 +77,7 @@ You must:
 
 ### Output Format (JSON)
 
-
 Return an array where each element corresponds to one characteristic evaluated.
-
 
 Each element must have:
 - "characteristic": the name of the characteristic evaluated
@@ -94,19 +92,30 @@ EXAMPLE OUTPUT:
 
 
 ## Extracted Characteristics:
+
 {characteristics}
 
 ## Characteristics Description:
 {characteristics_description}
 
 ## Source Evidence:
-{retrieved_docs}
+
+{judge_source_doc}
 ---
 """
         )
 
+    def _format_characteristics_for_judge(self, extracted: dict) -> str:
+        blocks = []
+        for name, text in extracted.items():
+            blocks.append(
+                f"Characteristic: {name}\n"
+                f"Description: {text}\n"
+            )
+        return "\n".join(blocks)
+
     def _clean_response(self, text: str) -> str:
-        # remove <think>...</think> blocka
+        # remove <think>...</think> blocks
         cleaned = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL | re.IGNORECASE)
         # remove ```json ... ``` or ```
         cleaned = re.sub(r"^```(?:json)?", "", cleaned.strip(), flags=re.IGNORECASE).strip()
@@ -127,14 +136,10 @@ EXAMPLE OUTPUT:
         return txt
     
 
-    def evaluate(self, extracted: Dict[str, Any], docs: List[Any], description: str) -> List[Dict[str, Any]]:
-    
-        docs_content = "\n\n".join([
-            f"## Document {i+1}:\n{str(doc[0].page_content)}" 
-            for i, doc in enumerate(docs)
-        ])
+    def evaluate(self, extracted: Dict[str, Any], judge_source_doc: List[Any], description: str) -> List[Dict[str, Any]]:
         
-        characteristics_text = json.dumps(extracted, indent=2)
+        # characteristics_text = json.dumps(extracted, indent=2)
+        characteristics_text = self._format_characteristics_for_judge(extracted)
         characteristics_description = description
 
         # print(f"JudgeEvaluator.evaluate(): Characteristics to evaluate: {characteristics_text}")
@@ -142,17 +147,13 @@ EXAMPLE OUTPUT:
         prompt = self.prompt.format(
             characteristics=characteristics_text,
             characteristics_description=characteristics_description,
-            retrieved_docs=docs_content
+            judge_source_doc=judge_source_doc.page_content if hasattr(judge_source_doc, 'page_content') else str(judge_source_doc)
         )
 
-        # print(f"\n\nJudgeEvaluator.evaluate(): Generated prompt for LLM:\n{prompt}\n\n")
-    
+        # print(f"\n\nJudgeEvaluator.evaluate(): LLM prompt: \n{prompt}\n\n")
+
         response = self.llm.invoke(prompt)
-        # print(f"\n\nJudgeEvaluator.evaluate(): LLM raw response: {response}\n\n")
-
         raw_text = getattr(response, "content", str(response))
-
-        # print(f"\n\nJudgeEvaluator.evaluate(): LLM output text: {raw_text}\n\n")
 
         cleaned = self._clean_response(raw_text)
         cleaned = self._coerce_to_array(cleaned)

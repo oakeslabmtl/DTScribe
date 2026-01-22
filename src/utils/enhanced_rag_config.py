@@ -287,7 +287,14 @@ class EnhancedRAGPipeline:
         # print(f"\n\njudge_results_str:\n{judge_results_str}\n\n")  # debug print
 
         cot_prompt = PromptTemplate.from_template("""
-You are an expert in Digital Twin systems and ontology modeling. Your task is to extract detailed characteristics from technical documents.
+You are an expert in Digital Twin systems and ontology modeling.
+                                                  
+You must extract a structured description for the following 21 Digital Twin
+characteristics for a single Digital Twin system. For each characteristic,
+write one coherent description in English that is as specific and technical
+as possible and grounded ONLY in the provided documents. If the information
+for a characteristic is not available in the documents, return exactly the
+string "Not in Document" for that field.
 
 CONTEXT DOCUMENTS:
 {docs_content}
@@ -316,11 +323,6 @@ INSTRUCTIONS:
    - Check that technical terms are used correctly
    - Verify completeness of the description
    - Ensure the extraction of characteristics is consistent with the judge feedback (if provided)
-   
-REASONING:
-Let me analyze each document for relevant information...
-
-[Analyze the documents here, identifying key information for each characteristic]
 
 IMPORTANT: You MUST respond with ONLY valid JSON. Do not include any explanations, thinking tags, or additional text outside the JSON structure.
 

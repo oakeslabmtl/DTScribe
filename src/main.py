@@ -52,8 +52,7 @@ class ExtractionOrchestrator:
 
     def initialize_pipeline(self, input_path: str, config: ExperimentConfig):
         """Initialize the pipeline with the given PDF and configuration."""
-        print("🔧 Initializing extraction pipeline...")
-        # print("📁 Processing sources and creating vector DB...")
+        print("🚀 Initializing extraction pipeline...")
         if self._state_manager.get_state("vectordb"):
             print("♻️ Resetting existing vector DB...")
             self._state_manager.get_state("vectordb")._client.reset()
@@ -407,7 +406,7 @@ def main():
     parser.add_argument("--chunk-overlap", type=int, default=500)
     parser.add_argument("--temperature", type=float, default=0.1)
     parser.add_argument("--model-name", default="qwen3:8b")
-    parser.add_argument("--judge-model-name", default="deepseek-v3.1:671b-cloud", help="Optional LLM model name used only for the judge. Defaults to --model-name.")
+    parser.add_argument("--judge-model-name", default="deepseek-v3.2:cloud", help="Optional LLM model name used only for the judge. Defaults to --model-name.")
     parser.add_argument("--embedding-model", default="embeddinggemma")
     parser.add_argument("--exp-id", help="Existing experiment id (hash_timestamp or just hash for latest) containing characteristics for standalone OML generation")
     parser.add_argument("--no-save", action="store_true", help="Do not persist results")

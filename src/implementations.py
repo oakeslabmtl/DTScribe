@@ -55,7 +55,7 @@ class DocumentRetriever(IDocumentRetriever):
     
     def retrieve_documents(self, query: str, k: int = 5) -> List[Any]:
 
-        full_doc = getattr(self._rag_pipeline, "full_corpus_doc", None)
+        full_doc = getattr(self._rag_pipeline, "full_corpus_doc", None) # [(baseline_doc, 1.0)]
 
         # Baseline
         if self._vectordb is None and full_doc is not None:
@@ -102,45 +102,40 @@ class PipelineInitializer(IPipelineInitializer):
         # Baseline mode (get from config fields, fallback to custom_params (as it was before))
         baseline_full_doc = bool(getattr(config, "baseline_full_doc", cli_custom.get("baseline_full_doc", False)))
         baseline_max_chars = int(getattr(config, "baseline_max_chars", cli_custom.get("baseline_max_chars", BASELINE_MAX_CHARS)))
-         
+
+        # Initializing pipeline
         self._rag_pipeline = EnhancedRAGPipeline(model_name=model_name, embedding_model=embedding_model)
-        
-        #BASELINE:
+        docs = self._rag_pipeline.load_documents(input_path)
+
+        combined_text = "\n\n".join(doc.page_content for doc in docs)
+        original_len = len(combined_text)
+
+        if original_len > baseline_max_chars:
+            truncated_text = combined_text[:baseline_max_chars]
+            # print(
+            #     f"✂️ Baseline truncation applied: {original_len} → "
+            #     f"{len(truncated_text)} characters (limit={baseline_max_chars})."
+            # )
+        else:
+            truncated_text = combined_text
+            print(f"✅ No truncation needed (len={original_len} chars).")
+
+        # create a single docuemnt with the full/truncated content
+        baseline_doc = Document(
+            page_content=truncated_text,
+            metadata={
+                "source": str(input_path),
+                "type": "baseline_full_document",
+                "baseline_truncated": original_len > baseline_max_chars,
+                "baseline_max_chars": baseline_max_chars,
+                "original_char_count": original_len,
+            },
+        )
+
+        self._rag_pipeline.full_corpus_doc = baseline_doc # store in rag_pipeline to be used by DocumentRetriever and judge evaluator
+
+        # BASELINE:
         if baseline_full_doc:
-            print("🚀 Initializing BASELINE full-doc pipeline (no chunking, no vector DB)...")
-
-            print("📄 Processing source (full document)...")
-            docs = self._rag_pipeline.load_documents(input_path)
-
-            combined_text = "\n\n".join(doc.page_content for doc in docs)
-            original_len = len(combined_text)
-
-            if original_len > baseline_max_chars:
-                truncated_text = combined_text[:baseline_max_chars]
-                print(
-                    f"✂️ Baseline truncation applied: {original_len} → "
-                    f"{len(truncated_text)} characters (limit={baseline_max_chars})."
-                )
-            else:
-                truncated_text = combined_text
-                print(f"✅ No truncation needed (len={original_len} chars).")
-
-            # create a single docuemnt with the full/truncated content
-            baseline_doc = Document(
-                page_content=truncated_text,
-                metadata={
-                    "source": str(input_path),
-                    "type": "baseline_full_document",
-                    "baseline_truncated": original_len > baseline_max_chars,
-                    "baseline_max_chars": baseline_max_chars,
-                    "original_char_count": original_len,
-                },
-            )
-
-            # store in rag_pipeline to be used by DocumentRetriever
-            self._rag_pipeline.full_corpus_doc = baseline_doc
-
-            # print(f"\n\n\n{'---'*10}BASELINE DOC:{'---'*10}\n{baseline_doc}{'---'*30}\n\n\n")
 
             print("✅ Baseline full-doc pipeline initialized successfully")
             return {
@@ -155,30 +150,17 @@ class PipelineInitializer(IPipelineInitializer):
             }
 
         # RAG
-        print("🚀 Initializing RAG pipeline...")
-        
-        # # Show PDF information
-        # print("📊 Analyzing PDF...")
-        # pdf_info = self._rag_pipeline.get_pdf_info(input_path)
-        # if "error" not in pdf_info:
-        #     print(f"   📄 Pages: {pdf_info['total_pages']}")
-        #     print(f"   💾 Size: {pdf_info['file_size_mb']:.2f} MB")
-        #     print(f"   📝 Title: {pdf_info.get('title', 'Unknown')}")
-        
-        print("📄 Processing source...")
-
-        docs = self._rag_pipeline.load_documents(input_path)
-        vectordb = self._rag_pipeline.chunk_and_store(docs, chunk_size=config.chunk_size, overlap=config.chunk_overlap)
-        
-        print("✅ Pipeline initialized successfully")
-        return {
-            "vectordb": vectordb,
-            "rag_pipeline": self._rag_pipeline,
-            "extraction_metadata": {
-                "total_chunks": vectordb._collection.count(),
-                # "pdf_info": pdf_info
+        else:
+            vectordb = self._rag_pipeline.chunk_and_store(docs, chunk_size=config.chunk_size, overlap=config.chunk_overlap)
+            
+            print("✅ RAG Pipeline initialized successfully")
+            return {
+                "vectordb": vectordb,
+                "rag_pipeline": self._rag_pipeline,
+                "extraction_metadata": {
+                    "total_chunks": vectordb._collection.count(),
+                }
             }
-        }
 
 
 class OMLGenerator(IOMLGenerator):
@@ -263,7 +245,9 @@ class BaseBlockProcessor(IBlockProcessor, ABC):
         meta_prefix = f"block_{self.block_index}"
 
         try:
-            retrieved_docs = retriever.retrieve_documents(config.query, k=config.k)
+            retrieved_docs = retriever.retrieve_documents(config.query, k=config.k) # Type: List[Tuple[Document, float]]
+            rag_pipeline = getattr(retriever, "_rag_pipeline", None)
+            judge_source_doc = getattr(rag_pipeline, "full_corpus_doc", None) if rag_pipeline else None # full document for judge context, type: langchain document
             retries = 0
             last_output = None
             last_metadata = {}
@@ -323,7 +307,8 @@ class BaseBlockProcessor(IBlockProcessor, ABC):
                 # Judge step
                 if judge is not None:
                     print(f"🔬 Performing LLM evaluation of {label} (attempt {retries+1})...")
-                    judge_results = judge.evaluate(extracted_dict, retrieved_docs, config.description)
+                    
+                    judge_results = judge.evaluate(extracted_dict, judge_source_doc, config.description)
 
                     judge_item_map = {
                         r.get("characteristic"): r
@@ -635,13 +620,6 @@ class DTCharacteristicsProcessor(BaseBlockProcessor):
         return DTCharacteristics
 
 detailed_description = """
-You must extract a structured description for the following 21 Digital Twin
-characteristics for a single Digital Twin system. For each characteristic,
-write one coherent description in English that is as specific and technical
-as possible and grounded ONLY in the provided documents. If the information
-for a characteristic is not available in the documents, return exactly the
-string "Not in Document" for that field.
-
 system_under_study: Describe the physical system being twinned (purpose,
   main components, operating environment, key variables, and performance
   objectives).
@@ -726,13 +704,6 @@ security_and_safety_considerations: Describe cybersecurity and safety
             """
 
 basic_description = """
-You must extract a structured description for the following 21 Digital Twin
-characteristics for a single Digital Twin system. For each characteristic,
-write one coherent description in English that is as specific and technical
-as possible and grounded ONLY in the provided documents. If the information
-for a characteristic is not available in the documents, return exactly the
-string "Not in Document" for that field.
-
 System under study: Describes the SUS, i.e., the PT, of the system of interest.
 
 Physical acting components: Describes the available acting components in the DT constellation, i.e., the mechanisms the DT can use to act on the PT.
