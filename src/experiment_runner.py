@@ -268,15 +268,12 @@ def main():
 
     param_grid = {
         'model_name': ["gpt-oss:20b-cloud","gpt-oss:120b-cloud"],
-        'temperature': [1.0],
-        'top_p': [1.0],
-        'top_k': [0],
         "embedding_model": ["embeddinggemma"],
         'chunk_size': [3000],
         "chunk_overlap": [500],
         'judge_model_name': ["deepseek-v3.2:cloud"],
         "max_judge_retries": [0,3],
-        "max_oml_retries": [5],
+        "max_oml_retries": [4],
         "baseline_full_doc": [False, True],
         "baseline_max_chars": [24000],
     }
