@@ -268,6 +268,9 @@ def main():
 
     param_grid = {
         'model_name': ["gpt-oss:20b-cloud","gpt-oss:120b-cloud"],
+        "temperature": [None],
+        "top_p": [None],
+        "top_k": [None],
         "embedding_model": ["embeddinggemma"],
         'chunk_size': [3000],
         "chunk_overlap": [500],
