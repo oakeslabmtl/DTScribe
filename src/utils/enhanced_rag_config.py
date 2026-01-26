@@ -422,7 +422,7 @@ JSON OUTPUT:
                             pass
 
                         output = parser.parse(cleaned_text)
-                        validated_output = self._self_validate_output(output, retrieved_docs)
+                        validated_output = self.validate_output(output, retrieved_docs)
                         print(f"Success with fallback prompt on attempt {attempt + 1}")
                         return validated_output, response_metadata
                     except Exception as fallback_error:
@@ -607,6 +607,7 @@ JSON:
         total_output_tokens += response_metadata.get('eval_count', 0)
 
         oml_repetition_count = 0
+        combined_oml = None
         
         # --- 3. VALIDATION & REPAIR LOOP ---
         # We loop (max_retries + 1) times. 
@@ -703,7 +704,12 @@ JSON:
         # --- 4. FAILURE EXIT ---
         # If we reach here, we exhausted retries without returning success
         print("⚠️ OML generation failed or produced empty output")
-        return None, oml_repetition_count, 0, total_input_tokens, total_output_tokens
+
+        # Ensure the last generated OML is written to file for debugging
+        if combined_oml:
+            writer.write_oml(combined_oml, output_path)
+
+        return combined_oml, oml_repetition_count, 0, total_input_tokens, total_output_tokens
 
     def generate_description_based_oml(self, characteristics: Dict[str, Any], vocab_mapping: Dict[str, str]) -> str:
         """Generate OML of description characteristics programmatically."""
