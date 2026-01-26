@@ -273,7 +273,7 @@ class ExtractionOrchestrator:
 
         if self._experiment_tracker and save_results and oml_output:
             oml_result = OMLGenerationResult(
-                experiment_id=f"{experiment_id}_oml" if experiment_id else f"manual_{int(time.time())}_oml",
+                experiment_id=f"{experiment_id}" if experiment_id else f"manual_{int(time.time())}",
                 timestamp=datetime.now(),
                 config=config,
                 input_path=self._state_manager.get_state("input_path"),
