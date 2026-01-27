@@ -133,16 +133,49 @@ def calculate_stats(df, max_retry_index):
     return cumulated_df, step_df
 
 def generate_plots_for_model(model_df, model_name, output_dir, max_retry_index):
-    # Split data
-    df_false = model_df[model_df['baseline_full_doc'] == False]
-    df_true = model_df[model_df['baseline_full_doc'] == True]
+    # Ensure max_judge_retries column exists and fill NaNs
+    if 'max_judge_retries' not in model_df.columns:
+        model_df['max_judge_retries'] = 0
+    
+    model_df['max_judge_retries'] = model_df['max_judge_retries'].fillna(0)
 
+    # Define configuration for the 4 possible lines
+    configs = [
+        {
+            'label': 'Baseline: False, Judge Retry: 0',
+            'filter': lambda df: (df['baseline_full_doc'] == False) & (df['max_judge_retries'] == 0),
+            'color': 'steelblue', 'marker': 'o', 'offset': 10
+        },
+        {
+            'label': 'Baseline: True, Judge Retry: 0',
+            'filter': lambda df: (df['baseline_full_doc'] == True) & (df['max_judge_retries'] == 0),
+            'color': 'forestgreen', 'marker': '^', 'offset': -15
+        },
+        {
+            'label': 'Baseline: False, Judge Retry: >0',
+            'filter': lambda df: (df['baseline_full_doc'] == False) & (df['max_judge_retries'] > 0),
+            'color': 'coral', 'marker': 's', 'offset': 20
+        },
+        {
+            'label': 'Baseline: True, Judge Retry: >0',
+            'filter': lambda df: (df['baseline_full_doc'] == True) & (df['max_judge_retries'] > 0),
+            'color': 'purple', 'marker': 'D', 'offset': -25
+        }
+    ]
+
+    active_lines = []
     print(f"--- Stats for model: {model_name} ---")
-    print(f"Data points with baseline_full_doc=False: {len(df_false)}")
-    print(f"Data points with baseline_full_doc=True: {len(df_true)}")
-
-    cumul_false, step_false = calculate_stats(df_false, max_retry_index)
-    cumul_true, step_true = calculate_stats(df_true, max_retry_index)
+    
+    for cfg in configs:
+        sub_df = model_df[cfg['filter'](model_df)]
+        if not sub_df.empty:
+            print(f"Data points for [{cfg['label']}]: {len(sub_df)}")
+            cumul, step = calculate_stats(sub_df, max_retry_index)
+            active_lines.append({
+                'cfg': cfg,
+                'cumul': cumul,
+                'step': step
+            })
 
     # Safe filename
     safe_model = re.sub(r'[^a-zA-Z0-9_\-]', '_', model_name)
@@ -150,31 +183,25 @@ def generate_plots_for_model(model_df, model_name, output_dir, max_retry_index):
     # ==================== GRAPH 1: Cumulated Success Rate ====================
     fig1, ax1 = plt.subplots(figsize=(7, 4))
     fig1.subplots_adjust(left=0.12, right=0.95, top=0.88, bottom=0.12)
-
-    if not cumul_false.empty:
-        ax1.plot(cumul_false['retry_index'], cumul_false['success_rate_pct'], 
-                 marker='o', markersize=8, linewidth=2.5, color='steelblue',
-                 markerfacecolor='steelblue', markeredgecolor='black', markeredgewidth=1.2,
-                 label='Baseline Full Doc: False')
-        for idx, row in cumul_false.iterrows():
-            ax1.annotate(f"{row['success_rate_pct']:.1f}%", 
-                         (row['retry_index'], row['success_rate_pct']),
-                         textcoords="offset points", xytext=(0, 10), ha='center', fontsize=9, color='steelblue')
-
-    if not cumul_true.empty:
-        ax1.plot(cumul_true['retry_index'], cumul_true['success_rate_pct'], 
-                 marker='^', markersize=8, linewidth=2.5, color='forestgreen',
-                 markerfacecolor='forestgreen', markeredgecolor='black', markeredgewidth=1.2,
-                 label='Baseline Full Doc: True')
-        for idx, row in cumul_true.iterrows():
-            ax1.annotate(f"{row['success_rate_pct']:.1f}%", 
-                         (row['retry_index'], row['success_rate_pct']),
-                         textcoords="offset points", xytext=(0, -15), ha='center', fontsize=9, color='forestgreen')
     
-    if not cumul_false.empty:
-        ax1.fill_between(cumul_false['retry_index'], 0, cumul_false['success_rate_pct'], alpha=0.3, color='steelblue')
-    if not cumul_true.empty:
-        ax1.fill_between(cumul_true['retry_index'], 0, cumul_true['success_rate_pct'], alpha=0.3, color='forestgreen')
+    has_data = False
+    for line in active_lines:
+        df_stats = line['cumul']
+        cfg = line['cfg']
+        if not df_stats.empty:
+            has_data = True
+            ax1.plot(df_stats['retry_index'], df_stats['success_rate_pct'], 
+                    marker=cfg['marker'], markersize=8, linewidth=2.5, color=cfg['color'],
+                    markerfacecolor=cfg['color'], markeredgecolor='black', markeredgewidth=1.2,
+                    label=cfg['label'])
+            
+            # Fill
+            ax1.fill_between(df_stats['retry_index'], 0, df_stats['success_rate_pct'], alpha=0.3, color=cfg['color'])
+
+            for _, row in df_stats.iterrows():
+                ax1.annotate(f"{row['success_rate_pct']:.1f}%", 
+                             (row['retry_index'], row['success_rate_pct']),
+                             textcoords="offset points", xytext=(0, cfg['offset']), ha='center', fontsize=9, color=cfg['color'])
 
     ax1.set_xlabel("Retry Index (i)", fontsize=14, fontweight='bold')
     ax1.set_ylabel("Cumulative Success Rate $R_i$ (%)", fontsize=14, fontweight='bold')
@@ -183,7 +210,8 @@ def generate_plots_for_model(model_df, model_name, output_dir, max_retry_index):
     ax1.set_xticks(range(0, max_retry_index + 1))
     ax1.tick_params(labelsize=12)
     ax1.grid(True, alpha=0.3, linewidth=0.8)
-    ax1.legend()
+    if has_data:
+        ax1.legend(fontsize=8)
 
     plt.tight_layout(pad=2.0)
     save_path1 = output_dir / f"oml_cumulative_success_rate_{safe_model}.png"
@@ -195,25 +223,21 @@ def generate_plots_for_model(model_df, model_name, output_dir, max_retry_index):
     fig2, ax2 = plt.subplots(figsize=(7, 4))
     fig2.subplots_adjust(left=0.12, right=0.95, top=0.88, bottom=0.12)
 
-    if not step_false.empty:
-        ax2.plot(step_false['retry_index'], step_false['success_rate_pct'], 
-                 marker='s', markersize=8, linewidth=2.5, color='coral',
-                 markerfacecolor='coral', markeredgecolor='black', markeredgewidth=1.2,
-                 label='Baseline Full Doc: False')
-        for idx, row in step_false.iterrows():
-            ax2.annotate(f"{row['success_rate_pct']:.1f}%\n({row['successes']}/{row['successes'] + row['failures']})",
-                         (row['retry_index'], row['success_rate_pct']),
-                         textcoords="offset points", xytext=(0, 10), ha='center', fontsize=8, color='coral')
-
-    if not step_true.empty:
-        ax2.plot(step_true['retry_index'], step_true['success_rate_pct'], 
-                 marker='D', markersize=8, linewidth=2.5, color='purple',
-                 markerfacecolor='purple', markeredgecolor='black', markeredgewidth=1.2,
-                 label='Baseline Full Doc: True')
-        for idx, row in step_true.iterrows():
-            ax2.annotate(f"{row['success_rate_pct']:.1f}%\n({row['successes']}/{row['successes'] + row['failures']})", 
-                         (row['retry_index'], row['success_rate_pct']),
-                         textcoords="offset points", xytext=(0, -25), ha='center', fontsize=8, color='purple')
+    has_data = False
+    for line in active_lines:
+        df_stats = line['step']
+        cfg = line['cfg']
+        if not df_stats.empty:
+            has_data = True
+            ax2.plot(df_stats['retry_index'], df_stats['success_rate_pct'], 
+                    marker=cfg['marker'], markersize=8, linewidth=2.5, color=cfg['color'],
+                    markerfacecolor=cfg['color'], markeredgecolor='black', markeredgewidth=1.2,
+                    label=cfg['label'])
+            
+            for _, row in df_stats.iterrows():
+                ax2.annotate(f"{row['success_rate_pct']:.1f}%\n({int(row['successes'])}/{int(row['successes'] + row['failures'])})", 
+                             (row['retry_index'], row['success_rate_pct']),
+                             textcoords="offset points", xytext=(0, cfg['offset']), ha='center', fontsize=8, color=cfg['color'])
 
     ax2.set_xlabel("Retry Index (i)", fontsize=14, fontweight='bold')
     ax2.set_ylabel("Conditional Success Rate $H_i$ (%)", fontsize=14, fontweight='bold')
@@ -222,7 +246,8 @@ def generate_plots_for_model(model_df, model_name, output_dir, max_retry_index):
     ax2.set_xticks(range(0, max_retry_index + 1))
     ax2.tick_params(labelsize=12)
     ax2.grid(True, alpha=0.3, linewidth=0.8, axis='y')
-    ax2.legend()
+    if has_data:
+        ax2.legend(fontsize=8)
 
     plt.tight_layout(pad=2.0)
     save_path2 = output_dir / f"oml_conditional_success_rate_{safe_model}.png"
@@ -231,34 +256,23 @@ def generate_plots_for_model(model_df, model_name, output_dir, max_retry_index):
     plt.close(fig2)
 
     # ==================== GRAPH 3: Combined View ====================
-    fig3, (ax3a, ax3b) = plt.subplots(1, 2, figsize=(10, 5))
+    fig3, (ax3a, ax3b) = plt.subplots(1, 2, figsize=(12, 5))
     fig3.subplots_adjust(left=0.08, right=0.95, top=0.88, bottom=0.12, wspace=0.25)
 
     # Left: Cumulative
-    if not cumul_false.empty:
-        ax3a.plot(cumul_false['retry_index'], cumul_false['success_rate_pct'], 
-                  marker='o', markersize=8, linewidth=2.5, color='steelblue',
-                  markerfacecolor='steelblue', markeredgecolor='black', markeredgewidth=1.2,
-                  label='False')
-    if not cumul_true.empty:
-        ax3a.plot(cumul_true['retry_index'], cumul_true['success_rate_pct'], 
-                  marker='^', markersize=8, linewidth=2.5, color='forestgreen',
-                  markerfacecolor='forestgreen', markeredgecolor='black', markeredgewidth=1.2,
-                  label='True')
-    
-    if not cumul_false.empty:
-        ax3a.fill_between(cumul_false['retry_index'], 0, cumul_false['success_rate_pct'], alpha=0.3, color='steelblue')
-    if not cumul_true.empty:
-        ax3a.fill_between(cumul_true['retry_index'], 0, cumul_true['success_rate_pct'], alpha=0.3, color='forestgreen')
-
-    for idx, row in cumul_false.iterrows():
-        ax3a.annotate(f"{row['success_rate_pct']:.1f}%", 
-                     (row['retry_index'], row['success_rate_pct']),
-                     textcoords="offset points", xytext=(0, 10), ha='center', fontsize=8, color='steelblue')
-    for idx, row in cumul_true.iterrows():
-        ax3a.annotate(f"{row['success_rate_pct']:.1f}%", 
-                     (row['retry_index'], row['success_rate_pct']),
-                     textcoords="offset points", xytext=(0, -15), ha='center', fontsize=8, color='forestgreen')
+    for line in active_lines:
+        df_stats = line['cumul']
+        cfg = line['cfg']
+        if not df_stats.empty:
+            ax3a.plot(df_stats['retry_index'], df_stats['success_rate_pct'], 
+                    marker=cfg['marker'], markersize=8, linewidth=2.5, color=cfg['color'],
+                    markerfacecolor=cfg['color'], markeredgecolor='black', markeredgewidth=1.2,
+                    label=cfg['label'])
+            ax3a.fill_between(df_stats['retry_index'], 0, df_stats['success_rate_pct'], alpha=0.3, color=cfg['color'])
+            # for _, row in df_stats.iterrows():
+            #     ax3a.annotate(f"{row['success_rate_pct']:.1f}%", 
+            #                  (row['retry_index'], row['success_rate_pct']),
+            #                  textcoords="offset points", xytext=(0, cfg['offset']), ha='center', fontsize=8, color=cfg['color'])
 
     ax3a.set_xlabel("Retry Index (i)", fontsize=12, fontweight='bold')
     ax3a.set_ylabel("Cumulative Success Rate $R_i$ (%)", fontsize=12, fontweight='bold')
@@ -267,28 +281,21 @@ def generate_plots_for_model(model_df, model_name, output_dir, max_retry_index):
     ax3a.set_xticks(range(0, max_retry_index + 1))
     ax3a.tick_params(labelsize=10)
     ax3a.grid(True, alpha=0.3, linewidth=0.8)
-    ax3a.legend(title="Baseline Full Doc")
+    ax3a.legend(title="Configurations", fontsize=8)
 
     # Right: Conditional
-    if not step_false.empty:
-        ax3b.plot(step_false['retry_index'], step_false['success_rate_pct'], 
-                  marker='s', markersize=8, linewidth=2.5, color='coral',
-                  markerfacecolor='coral', markeredgecolor='black', markeredgewidth=1.2,
-                  label='False')
-    if not step_true.empty:
-        ax3b.plot(step_true['retry_index'], step_true['success_rate_pct'], 
-                  marker='D', markersize=8, linewidth=2.5, color='purple',
-                  markerfacecolor='purple', markeredgecolor='black', markeredgewidth=1.2,
-                  label='True')
-
-    for idx, row in step_false.iterrows():
-        ax3b.annotate(f"{row['success_rate_pct']:.1f}%\n({row['successes']}/{row['successes'] + row['failures']})", 
-                     (row['retry_index'], row['success_rate_pct']),
-                     textcoords="offset points", xytext=(0, 10), ha='center', fontsize=8, color='coral')
-    for idx, row in step_true.iterrows():
-        ax3b.annotate(f"{row['success_rate_pct']:.1f}%\n({row['successes']}/{row['successes'] + row['failures']})", 
-                     (row['retry_index'], row['success_rate_pct']),
-                     textcoords="offset points", xytext=(0, -25), ha='center', fontsize=8, color='purple')
+    for line in active_lines:
+        df_stats = line['step']
+        cfg = line['cfg']
+        if not df_stats.empty:
+            ax3b.plot(df_stats['retry_index'], df_stats['success_rate_pct'], 
+                    marker=cfg['marker'], markersize=8, linewidth=2.5, color=cfg['color'],
+                    markerfacecolor=cfg['color'], markeredgecolor='black', markeredgewidth=1.2,
+                    label=cfg['label'])
+            for _, row in df_stats.iterrows():
+                ax3b.annotate(f"{row['success_rate_pct']:.1f}%\n({int(row['successes'])}/{int(row['successes'] + row['failures'])})", 
+                             (row['retry_index'], row['success_rate_pct']),
+                             textcoords="offset points", xytext=(0, cfg['offset']), ha='center', fontsize=8, color=cfg['color'])
 
     ax3b.set_xlabel("Retry Index (i)", fontsize=12, fontweight='bold')
     ax3b.set_ylabel("Conditional Success Rate $H_i$ (%)", fontsize=12, fontweight='bold')
@@ -297,7 +304,7 @@ def generate_plots_for_model(model_df, model_name, output_dir, max_retry_index):
     ax3b.set_xticks(range(0, max_retry_index + 1))
     ax3b.tick_params(labelsize=10)
     ax3b.grid(True, alpha=0.3, linewidth=0.8)
-    ax3b.legend(title="Baseline Full Doc")
+    ax3b.legend(title="Configurations", fontsize=8)
 
     plt.tight_layout(pad=2.5)
     save_path3 = output_dir / f"oml_success_rate_combined_{safe_model}.png"
@@ -306,14 +313,11 @@ def generate_plots_for_model(model_df, model_name, output_dir, max_retry_index):
     plt.close(fig3)
 
     # Display summary tables
-    print(f"\n[Model: {model_name}] CUMULATIVE SUCCESS RATE SUMMARY (False)")
-    print(cumul_false.to_string(index=False))
-    print(f"\n[Model: {model_name}] CUMULATIVE SUCCESS RATE SUMMARY (True)")
-    print(cumul_true.to_string(index=False))
-    print(f"\n[Model: {model_name}] CONDITIONAL SUCCESS RATE SUMMARY (False)")
-    print(step_false.to_string(index=False))
-    print(f"\n[Model: {model_name}] CONDITIONAL SUCCESS RATE SUMMARY (True)")
-    print(step_true.to_string(index=False))
+    for line in active_lines:
+        print(f"\n[Model: {model_name}] CUMULATIVE SUCCESS RATE SUMMARY ({line['cfg']['label']})")
+        print(line['cumul'].to_string(index=False))
+        print(f"\n[Model: {model_name}] CONDITIONAL SUCCESS RATE SUMMARY ({line['cfg']['label']})")
+        print(line['step'].to_string(index=False))
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Oml Success Retry Visualization")
