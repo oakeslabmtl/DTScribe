@@ -69,10 +69,10 @@ def load_data_from_jsons(exp_path):
                      row['oml_repetition_count'] = d['retries']
 
                 # Check for max retries
-                if 'oml_max_retries' in d:
-                    row['oml_max_retries'] = d['oml_max_retries']
-                elif 'max_retries' in d:
-                    row['oml_max_retries'] = d['max_retries']
+                if 'max_oml_retries' in d['config']:
+                    row['max_oml_retries'] = d['config']['max_oml_retries']
+                if 'max_judge_retries' in d['config']:
+                    row['max_judge_retries'] = d['config']['max_judge_retries']
                 
                 # Check for baseline_full_doc
                 if 'baseline_full_doc' in d['config']:
@@ -88,9 +88,7 @@ def load_data_from_jsons(exp_path):
                 else:
                     row['model_name'] = 'Unknown'
 
-                # Only add if we have the essential data
-                if 'oml_valid' in row and 'oml_repetition_count' in row:
-                    data.append(row)
+                data.append(row)
                     
         except Exception as e:
             print(f"Warning: Error reading {jf.name}: {e}")
@@ -348,12 +346,10 @@ if __name__ == "__main__":
         
         model_df = df[df['model_name'] == model_name]
         
-        # Determine max retry index for this model
-        if 'oml_max_retries' in model_df.columns:
-            max_retry_index = int(model_df['oml_max_retries'].max())
-        else:
-            max_retry_index = int(model_df['oml_repetition_count'].max())
-            
-        generate_plots_for_model(model_df, model_name, output_dir, max_retry_index)
+        # Determine max retries for this model
+        max_oml_retries = int(model_df['max_oml_retries'].iloc[0])
+        max_judge_retries = int(model_df['max_judge_retries'].iloc[0])
+
+        generate_plots_for_model(model_df, model_name, output_dir, max_oml_retries)
 
     print("\nProcessing complete.")
