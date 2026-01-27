@@ -22,6 +22,7 @@ import re
 import json
 from pathlib import Path
 import time
+from filelock import FileLock, Timeout
 
 from .oml_writer import IOMLWriter, OMLFileWriter
 
@@ -238,14 +239,11 @@ class EnhancedRAGPipeline:
         return vectordb
 
     def chunk_retrieval(self, vectordb: Chroma, query: str, k: int = 5) -> List:
-      # Standard similarity search
+        # Standard similarity search
         docs = vectordb.similarity_search_with_relevance_scores(query=query, k=k) # output relevance scores, they are already ranked by relevance
         # print(f"\n\nsimilarity_search_with_relevance_scores. \ntype(docs):{type(docs)} \n\nDOCS:{docs}\n\n") # debug print
         
-        # 3. Re-rank documents based on relevance and technical content
-        # ranked_docs = self._rerank_documents(all_docs, query)
-        
-        # 4. Remove duplicates while preserving order
+        # Remove duplicates while preserving order
         seen_content = set()
         unique_docs = []
         # for doc in ranked_docs:
@@ -256,8 +254,6 @@ class EnhancedRAGPipeline:
                 unique_docs.append(doc)
         
         return unique_docs[:k]
-
-    #     return sorted(docs, key=score_document, reverse=True)
     
     def extract_characteristics_with_schema(self, description: str, retrieved_docs: List, 
                                        schema: Type[BaseModel], judge_results: List[dict[str, Any]]) -> tuple[BaseModel, dict]:
@@ -641,22 +637,64 @@ JSON:
                 total_output_tokens += response_metadata.get('eval_count', 0)
                 continue 
 
-            # D. Write to File
-            if not writer.write_oml(combined_oml, output_path):
-                print(f"❌ Attempt {attempt + 1}: File write failed.")
+            # D. Write to File & E. Validate (with Locking)
+            is_valid = False
+            validation_output = ""
+            
+            # Use a lock file adjacent to the OML file to synchronize access
+            lock_path = output_path.with_suffix(output_path.suffix + ".lock")
+            # Lock with short timeout for logging loop.
+            # IMPORTANT: The timeout applies to ACQUIRING the lock. Once acquired, it is held indefinitely until the block exits.
+            lock = FileLock(str(lock_path), timeout=60)
+
+            concurrency_attempt = 0
+            write_success = False
+            validation_success = False
+            fuseki_success = False
+            fuseki_output_str = ""
+
+            while True:
+                try:
+                    concurrency_attempt += 1
+                    print(f"🔒 Acquiring lock on {lock_path} (Concurrency attempt {concurrency_attempt})...")
+                    
+                    with lock:
+                        # Lock acquired. We hold it as long as we are in this block.
+                        # No risk of premature timeout while validating.
+                        
+                        if not writer.write_oml(combined_oml, output_path):
+                            print(f"❌ Attempt {attempt + 1}: File write failed.")
+                            write_success = False
+                            break # Exit lock context
+
+                        write_success = True
+
+                        # E. Validate (OpenCAESAR)
+                        is_valid, validation_output = self._validate_oml_with_opencaesar(catalog_parent_path)
+
+                        if is_valid:
+                            validation_success = True
+                            print(f"✅ Attempt {attempt + 1}: Validation Successful! (⏱️ {time.perf_counter() - loop_start:.2f}s)")
+                            
+                            # Deploy to Fuseki immediately (still under lock to prevent overwrites during load)
+                            fuseki_success, fuseki_output_str = self._load_oml_into_fuseki(catalog_parent_path)
+                        else:
+                            validation_success = False
+                        
+                        # Explicitly break to exit the 'while True' loop and the 'with lock' block
+                        # This ensures the lock is released immediately after this block
+                        break 
+
+                except Timeout:
+                    print(f"⏳ Lock busy. Waiting... (Concurrency attempt {concurrency_attempt})")
+                    # Loop continues to retry acquisition
+
+            if not write_success:
                 continue
 
-            # E. Validate (OpenCAESAR)
-            is_valid, validation_output = self._validate_oml_with_opencaesar(catalog_parent_path)
-
-            if is_valid:
-                # --- PHASE: DEPLOYMENT (SUCCESS) ---
-                print(f"✅ Attempt {attempt + 1}: Validation Successful! (⏱️ {time.perf_counter() - loop_start:.2f}s)")
-                
-                # Deploy to Fuseki immediately
-                fuseki_ok, fuseki_output = self._load_oml_into_fuseki(catalog_parent_path)
-                
-                if fuseki_ok:
+            # Return success if validation passed (handled outside lock to ensure clean release)
+            if validation_success:
+                if fuseki_success:
                     print("🚀 Fuseki start & OML load successful.")
                     if combined_oml and combined_oml.strip() != "":
                         print("OML generation completed")
@@ -665,8 +703,7 @@ JSON:
                     return combined_oml, oml_repetition_count, 1, total_input_tokens, total_output_tokens
                 else:
                     print("⚠️ Validation passed, but Fuseki load failed:")
-                    print(fuseki_output)
-                    # Even if Fuseki fails, the OML is valid, so we might return success (1) or failure (0)
+                    print(fuseki_output_str)
                     if combined_oml and combined_oml.strip() != "":
                         print("OML generation completed")
                     else:
@@ -704,10 +741,6 @@ JSON:
         # --- 4. FAILURE EXIT ---
         # If we reach here, we exhausted retries without returning success
         print("⚠️ OML generation failed or produced empty output")
-
-        # Ensure the last generated OML is written to file for debugging
-        if combined_oml:
-            writer.write_oml(combined_oml, output_path)
 
         return combined_oml, oml_repetition_count, 0, total_input_tokens, total_output_tokens
 
@@ -838,7 +871,6 @@ Generate ONLY the OML code with no additional explanations:
         # Combine OML content and validation output
         oml_content = writer._combine_oml_with_validation_errors(oml_content, validation_output)
         print("🔍 Validation errors integrated into OML content for context")
-        print(oml_content)
 
         # Create fix prompt with validation feedback
         fix_prompt = PromptTemplate.from_template("""

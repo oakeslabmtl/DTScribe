@@ -11,6 +11,10 @@ class IOMLWriter(ABC):
         """Write OML content to specified path."""
         pass
 
+    def _combine_oml_with_validation_errors(self, oml_content: str, validation_errors: str) -> str:
+        """Combine OML content with validation errors."""
+        pass
+
 class OMLFileWriter(IOMLWriter):
     """Concrete implementation for writing OML to files following SRP."""
     
