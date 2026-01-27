@@ -418,9 +418,8 @@ JSON OUTPUT:
                             pass
 
                         output = parser.parse(cleaned_text)
-                        validated_output = self.validate_output(output, retrieved_docs)
                         print(f"Success with fallback prompt on attempt {attempt + 1}")
-                        return validated_output, response_metadata
+                        return output, response_metadata
                     except Exception as fallback_error:
                         print(f"Fallback also failed: {str(fallback_error)}")
                         continue
@@ -859,7 +858,7 @@ Generate ONLY the OML code with no additional explanations:
             return "", {}
 
     def _fix_oml_with_feedback(self, oml_content: str, validation_output: str, 
-                              characteristics: Dict[str, Any], vocab_files: Dict[str, str], writer: IOMLWriter = None,) -> str:
+                              characteristics: Dict[str, Any], vocab_files: Dict[str, str], writer: IOMLWriter = None,) -> tuple[str, dict]:
         """
         Fix OML content based on OpenCAESAR validation feedback.
         """
@@ -1004,7 +1003,7 @@ Generate ONLY the corrected OML code with no explanations or comments:
             return response_text, response_metadata
         except Exception as e:
             print(f"❌ Error fixing OML with feedback: {e}")
-            return oml_content  # Return original if fixing fails
+            return oml_content, {}  # Return original if fixing fails
 
     def _validate_oml_with_opencaesar(self, catalog_parent_path: Path, output_path: str = "report.txt") -> tuple[bool, str]:
         """
