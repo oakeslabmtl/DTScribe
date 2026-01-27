@@ -3,6 +3,7 @@
 
 from typing import Dict, Any, List, Optional
 import time
+import traceback
 from datetime import datetime
 import argparse
 from abstractions import (
@@ -266,12 +267,13 @@ class ExtractionOrchestrator:
         except Exception as e:
             oml_error = f"OML generation failed: {str(e)}"
             print(f"❌ {oml_error}")
+            traceback.print_exc()
             oml_errors.append(oml_error)
             oml_output = ""
 
         oml_processing_time = time.time() - oml_start_time
 
-        if self._experiment_tracker and save_results and oml_output:
+        if self._experiment_tracker and save_results:
             oml_result = OMLGenerationResult(
                 experiment_id=f"{experiment_id}" if experiment_id else f"manual_{int(time.time())}",
                 timestamp=datetime.now(),

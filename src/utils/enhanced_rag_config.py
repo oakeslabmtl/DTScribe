@@ -683,7 +683,7 @@ JSON:
                         
                         # Explicitly break to exit the 'while True' loop and the 'with lock' block
                         # This ensures the lock is released immediately after this block
-                        break 
+                        break
 
                 except Timeout:
                     print(f"⏳ Lock busy. Waiting... (Concurrency attempt {concurrency_attempt})")
@@ -844,12 +844,19 @@ Generate ONLY the OML code with no additional explanations:
             guiding_syntax=guiding_syntax
         )
         
-        response = self.llm.invoke(formatted_prompt)
-        response_text = response.content if hasattr(response, 'content') else str(response)
-        response_metadata = getattr(response, 'response_metadata', {})
-        response_text = self._clean_llm_response(response_text)
-        response_text = response_text.replace("<", "").replace(">", "")  # Remove any stray angle brackets for components
-        return response_text, response_metadata
+        try:
+            print("⏳ Sending request to LLM for component-based OML...")
+            response = self.llm.invoke(formatted_prompt)
+            response_text = response.content if hasattr(response, 'content') else str(response)
+            response_metadata = getattr(response, 'response_metadata', {})
+            response_text = self._clean_llm_response(response_text)
+            response_text = response_text.replace("<", "").replace(">", "")  # Remove any stray angle brackets for components
+            print("✅ LLM response received.")
+            return response_text, response_metadata
+        except Exception as e:
+            print(f"❌ Error generating component-based OML (LLM invocation failed): {e}")
+            # Return empty string to trigger retry logic in orchestrator
+            return "", {}
 
     def _fix_oml_with_feedback(self, oml_content: str, validation_output: str, 
                               characteristics: Dict[str, Any], vocab_files: Dict[str, str], writer: IOMLWriter = None,) -> str:
