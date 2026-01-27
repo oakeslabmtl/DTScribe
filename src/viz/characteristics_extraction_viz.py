@@ -12,6 +12,7 @@ import numpy as np
 import json
 import argparse
 import pathlib
+import re
 from typing import List, Dict, Any
 import seaborn as sns
 
@@ -120,8 +121,13 @@ def extract_block_metrics(data: List[Dict[str, Any]], ground_truth: List[int] = 
     
     for experiment in data:
         # Skip experiments with baseline_full_doc set to true
-        if experiment.get('config', {}).get('baseline_full_doc') is True:
+        config = experiment.get('config', {})
+        if config.get('baseline_full_doc') is True:
             continue
+
+        # Extract model name
+        if 'model_name' in config:
+            model_name = config['model_name']
 
         experiment_id = experiment.get('experiment_id', 'unknown')
         metadata = experiment.get('extraction_metadata', {})
@@ -151,6 +157,7 @@ def extract_block_metrics(data: List[Dict[str, Any]], ground_truth: List[int] = 
                     avg_score = sum(valid_scores) / len(valid_scores)
 
             row = {
+                'model_name': model_name,
                 'experiment_id': experiment_id,
                 'block_number': block_num,
                 'processing_time': metadata.get(f'block_{block_num}_processing_time', None),
@@ -467,11 +474,7 @@ def main():
     # Load data
     print("Loading extraction data...")
     data = load_extraction_data(data_dir)
-    
-    if not data:
-        print("No data found. Please check the data directory.")
-        return
-    
+
     # Determine ground truth
     ground_truth = PAPERS_GROUND_TRUTH.get(args.paper) if args.paper else None
 
@@ -479,60 +482,83 @@ def main():
     print("Extracting block metrics...")
     df = extract_block_metrics(data, ground_truth)
     
-    if ground_truth and 'accuracy' in df.columns:
-        print(f"\n--- Accuracy Analysis (Target Paper: {args.paper}) ---")
-        
-        # Accuracy is computed per experiment, so we should aggregate by experiment
-        unique_exps = df[['experiment_id', 'accuracy']].drop_duplicates()
-        avg_acc = unique_exps['accuracy'].mean()
-        std_acc = unique_exps['accuracy'].std()
-        max_acc = unique_exps['accuracy'].max()
-        min_acc = unique_exps['accuracy'].min()
-        
-        print(f"Number of experiments analyzed: {len(unique_exps)}")
-        print(f"Average Accuracy: {avg_acc:.2%}")
-        print(f"Std Dev Accuracy: {std_acc:.2%}")
-        print(f"Min Accuracy: {min_acc:.2%}")
-        print(f"Max Accuracy: {max_acc:.2%}")
-    
     print(f"\nData shape: {df.shape}")
     print(f"Blocks found: {sorted(df['block_number'].unique())}")
     print(f"Total experiments: {df['experiment_id'].nunique()}")
-    
-    # Generate plots
-    print("\n--- Generating Processing Time Plot ---")
-    time_stats = plot_processing_time_per_block(
-        df, 
-        save_path=output_dir / "processing_time_per_block.png"
-    )
-    
-    print("\n--- Generating Token Usage Plots ---")
-    token_stats = plot_tokens_per_block(
-        df,
-        save_path=output_dir / "tokens_per_block.png"
-    )
-    
-    print("\n--- Generating Retry Analysis Plots ---")
-    retry_stats = plot_retries_per_block(
-        df,
-        save_path=output_dir / "retries_per_block.png"
-    )
-    
-    # Generate and save summary statistics
-    print("\n--- Summary Statistics ---")
-    summary = generate_summary_statistics(df)
-    print(summary)
-    
-    summary_path = output_dir / "block_statistics_summary.csv"
-    summary.to_csv(summary_path)
-    print(f"\nSummary statistics saved to {summary_path}")
 
-    # Generate additional plots
-    print("\n--- Generating Score vs Retries Plot ---")
-    plot_score_vs_retries(
-        df,
-        save_path=output_dir / "score_vs_retries.png"
-    )
+    # Get unique models
+    unique_models = df['model_name'].unique()
+    print(f"Found models: {unique_models}")
+
+    for model_name in unique_models:
+        print(f"\n{'='*40}")
+        print(f"Generating statistics/plots for model: {model_name}")
+        print(f"{'='*40}")
+
+        safe_model = re.sub(r'[^a-zA-Z0-9_\-]', '_', model_name)
+        model_df = df[df['model_name'] == model_name].copy()
+
+        if ground_truth and 'accuracy' in model_df.columns:
+            print(f"\n--- Accuracy Analysis ({model_name} / Target Paper: {args.paper}) ---")
+            
+            # Accuracy is computed per experiment, so we should aggregate by experiment
+            unique_exps = model_df[['experiment_id', 'accuracy']].drop_duplicates()
+            avg_acc = unique_exps['accuracy'].mean()
+            std_acc = unique_exps['accuracy'].std()
+            max_acc = unique_exps['accuracy'].max()
+            min_acc = unique_exps['accuracy'].min()
+            
+            print(f"Number of experiments analyzed: {len(unique_exps)}")
+            print(f"Average Accuracy: {avg_acc:.2%}")
+            print(f"Std Dev Accuracy: {std_acc:.2%}")
+            print(f"Min Accuracy: {min_acc:.2%}")
+            print(f"Max Accuracy: {max_acc:.2%}")
+
+        # Generate plots
+        print(f"\n--- Generating Processing Time Plot ({model_name}) ---")
+        time_stats = plot_processing_time_per_block(
+            model_df, 
+            save_path=output_dir / f"processing_time_per_block_{safe_model}.png"
+        )
+        
+        print(f"\n--- Generating Token Usage Plots ({model_name}) ---")
+        token_stats = plot_tokens_per_block(
+            model_df,
+            save_path=output_dir / f"tokens_per_block_{safe_model}.png"
+        )
+        
+        print(f"\n--- Generating Retry Analysis Plots ({model_name}) ---")
+        retry_stats = plot_retries_per_block(
+            model_df,
+            save_path=output_dir / f"retries_per_block_{safe_model}.png"
+        )
+        
+        # Generate and save summary statistics
+        print(f"\n--- Summary Statistics ({model_name}) ---")
+        summary = generate_summary_statistics(model_df)
+        print(summary)
+        
+        summary_path = output_dir / f"block_statistics_summary_{safe_model}.csv"
+        summary.to_csv(summary_path)
+        print(f"\nSummary statistics saved to {summary_path}")
+
+        # Generate additional plots
+        print(f"\n--- Generating Score vs Retries Plot ({model_name}) ---")
+        plot_score_vs_retries(
+            model_df,
+            save_path=output_dir / f"score_vs_retries_{safe_model}.png"
+        )
+
+        print(f"\n--- Generating Correlation Heatmap ({model_name}) ---")
+        plot_correlation_heatmap(
+            model_df,
+            save_path=output_dir / f"correlation_heatmap_{safe_model}.png"
+        )
+        
+        # Save detailed metrics
+        model_df.to_csv(output_dir / f"detailed_block_metrics_{safe_model}.csv", index=False)
+        print(f"Detailed metrics saved to {output_dir / f'detailed_block_metrics_{safe_model}.csv'}")
+
 
     print("\n--- Generating Correlation Heatmap ---")
     plot_correlation_heatmap(
