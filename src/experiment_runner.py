@@ -10,8 +10,108 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from typing import List, Dict, Any
 import time
+import concurrent.futures
+import traceback
 
 from main import ExtractionPipelineFactory, ExtractionOrchestrator
+
+def run_experiment_task(
+    input_path: str,
+    output_dir_path: str,
+    params: Dict[str, Any],
+    experiment_name: str,
+    experiment_counter: int,
+    combo_idx: int,
+    rep: int,
+    mode: str,
+    exp_id: str
+):
+    """Worker function to run a single experiment in a separate process."""
+    try:
+        # Re-create orchestrator within the process
+        orchestrator = ExtractionPipelineFactory.create_orchestrator(
+            with_experiment_tracking=True, 
+            output_dir=output_dir_path
+        )
+        
+        print(f"🔬 Experiment {combo_idx} (Rep {rep+1}, Total {experiment_counter}) started with params: {params}")
+
+        # Create configuration
+        config = ExtractionPipelineFactory.create_config(
+            **params,
+            custom_params={
+                "experiment_batch": experiment_name,
+                "experiment_number": experiment_counter,
+                "parameter_combination": combo_idx,
+                "repetition": rep + 1,
+            }
+        )
+
+        # Initialize pipeline
+        orchestrator.initialize_pipeline(input_path, config=config)
+
+        # Run extraction
+        start_time = time.time()
+
+        extraction_results = {}
+        oml_results = {}
+        experiment_id = exp_id
+        
+        if mode in ("extraction", "both"):
+            extraction_results = orchestrator.run_extraction(
+                input_path=input_path,
+                config=config,
+                save_results=True,
+                experiment_id=None
+            )
+            experiment_id = orchestrator.last_experiment_id
+
+        if mode in ("oml", "both"):
+            oml_results = orchestrator.run_oml_generation(
+                config=config,
+                experiment_id=experiment_id,
+                save_results=True,
+                source_experiment_id=experiment_id
+            )
+            oml_output = oml_results.get("oml_output")
+            if not oml_output:
+                print(f"⚠️  Experiment {experiment_counter}: No OML generated.")
+        
+        experiment_time = time.time() - start_time
+
+        # Analyze results
+        result_data = {
+            'experiment_number': experiment_counter,
+            'parameter_combination': combo_idx,
+            'repetition': rep + 1,
+            'total_time': experiment_time,
+            **params,
+            'success': True,
+            'error': None,
+        }
+
+        if extraction_results.get("extracted_characteristics"):
+            quality_metrics = orchestrator.analyze_characteristic_extraction(extraction_results)
+            result_data.update(quality_metrics)
+            print(f"✅ Experiment {experiment_counter} completed. Rate: {quality_metrics['extraction_rate']:.1f}%")
+        else:
+             print(f"✅ Experiment {experiment_counter} completed (no characteristics).")
+
+        return result_data
+
+    except Exception as e:
+        print(f"❌ Experiment {experiment_counter} failed: {str(e)}")
+        # traceback.print_exc()
+        return {
+            'experiment_number': experiment_counter,
+            'parameter_combination': combo_idx,
+            'repetition': rep + 1,
+            **params,
+            'success': False,
+            'error': str(e),
+            'extraction_rate': 0.0,
+            'total_time': 0.0,
+        }
 
 class ExperimentRunner:
     """Runs multiple experiments with different parameter configurations."""
@@ -37,6 +137,7 @@ class ExperimentRunner:
             repeat_experiments: int = 1, 
             mode: str = "both", 
             exp_id: str = None,
+            workers: int = 1
             ) -> List[Dict[str, Any]]:
         """Run a batch of experiments with different parameters."""
 
@@ -46,6 +147,7 @@ class ExperimentRunner:
         if param_grid is None:
             print("❌ No parameter grid provided for experiments.")
             return []
+        
         parameter_combinations = self.define_combinations_from_parameter_grid(param_grid)
 
         # Limit the number of experiments for demonstration
@@ -53,100 +155,48 @@ class ExperimentRunner:
             parameter_combinations = parameter_combinations[:max_experiments]
 
         print(f"🧪 Running {len(parameter_combinations)} experiments...")
-
+        
         experiment_results = []
         total_experiments = len(parameter_combinations) * repeat_experiments
+        
+        tasks_args = []
         experiment_counter = 0
 
         for combo_idx, params in enumerate(parameter_combinations, 1):
             for rep in range(repeat_experiments):
                 experiment_counter += 1
-                print(f"\n{'='*60}")
-                print(f"🔬 Experiment {combo_idx}/{len(parameter_combinations)}")
-                print(f"➕ Experiment counter: {experiment_counter}/{total_experiments}")
-                print(f"📊 Parameters: {params}")
-                print(f"🔄 Repetition: {rep + 1}/{repeat_experiments}")
-                print(f"{'='*60}")
+                tasks_args.append((
+                    self.input_path,
+                    str(self.output_dir.absolute()),
+                    params,
+                    experiment_name,
+                    experiment_counter,
+                    combo_idx,
+                    rep,
+                    mode,
+                    exp_id
+                ))
+        
+        if workers > 1:
+            print(f"🚀 Running in parallel with {workers} workers using ProcessPoolExecutor...")
+            with concurrent.futures.ProcessPoolExecutor(max_workers=workers) as executor:
+                futures = [executor.submit(run_experiment_task, *args) for args in tasks_args]
+                
+                for future in concurrent.futures.as_completed(futures):
+                    try:
+                        result = future.result()
+                        experiment_results.append(result)
+                    except Exception as e:
+                        print(f"Worker exception: {e}")
+        else:
+             print("🐢 Running sequentially...")
+             for args in tasks_args:
+                 result = run_experiment_task(*args)
+                 experiment_results.append(result)
 
-                try:                   
-                    # Create configuration
-                    config = ExtractionPipelineFactory.create_config(
-                        **params,
-                        custom_params={
-                            "experiment_batch": experiment_name,
-                            "experiment_number": experiment_counter,
-                            "parameter_combination": combo_idx,
-                            "repetition": rep + 1,
-                        }
-                    )
+        # Sort results
+        experiment_results.sort(key=lambda x: x.get('experiment_number', 0))
 
-                    # Initialize pipeline
-                    self.orchestrator.initialize_pipeline(self.input_path, config=config)
-
-                    # Run extraction
-                    start_time = time.time()
-
-                    extraction_results = {}
-                    oml_results = {}
-                    experiment_id = exp_id
-                    if mode in ("extraction", "both"):
-                        extraction_results = self.orchestrator.run_extraction(
-                            input_path=self.input_path,
-                            config=config,
-                            save_results=True,
-                            experiment_id=None
-                        )
-                        experiment_id = self.orchestrator.last_experiment_id
-
-                    if mode in ("oml", "both"):
-                        oml_results = self.orchestrator.run_oml_generation(
-                            config=config,
-                            experiment_id=experiment_id,
-                            save_results=True,
-                            source_experiment_id=experiment_id
-                        )
-                        oml_output = oml_results.get("oml_output")
-                        if not oml_output:
-                            print("No OML generated.")
-                    
-                    experiment_time = time.time() - start_time
-
-                    # Analyze results
-                    if extraction_results.get("extracted_characteristics"):
-                        quality_metrics = self.orchestrator.analyze_characteristic_extraction(extraction_results)
-                        print("\n📈 Extraction Quality:")
-                        print(f" - Extraction Rate: {quality_metrics['extraction_rate']:.2f}%")
-                        print(f" - Extracted: {quality_metrics['extracted_count']}/{quality_metrics['total_characteristics']}")
-                                
-                        # Store experiment result
-                        experiment_result = {
-                            'experiment_number': experiment_counter,
-                            'parameter_combination': combo_idx,
-                            'repetition': rep + 1,
-                            'total_time': experiment_time,
-                            **params,
-                            **quality_metrics,
-                            'success': True,
-                            'error': None,
-                        }
-                        
-                        experiment_results.append(experiment_result)
-                        print(f"✅ Experiment {experiment_counter} completed successfully (id stored with hash_timestamp format)")
-                        print(f"   📈 Extraction Rate: {quality_metrics['extraction_rate']:.1f}%")
-                        print(f"   ⏱️  Total Time: {experiment_time:.2f}s")
-                except Exception as e:
-                    print(f"❌ Experiment {experiment_counter} failed: {str(e)}")
-                    experiment_result = {
-                        'experiment_number': experiment_counter,
-                        'parameter_combination': combo_idx,
-                        'repetition': rep + 1,
-                        **params,
-                        'success': False,
-                        'error': str(e),
-                        'extraction_rate': 0.0,
-                        'total_time': 0.0,
-                    }
-                    experiment_results.append(experiment_result)
         print(f"\n✅ Parameter tuning named {experiment_name} completed!")
         print(f"📊 Ran {len(parameter_combinations)} parameter combinations × {repeat_experiments} repetitions = {total_experiments} total experiments")
         return experiment_results
@@ -253,17 +303,19 @@ def main():
     # Configuration
     parser = argparse.ArgumentParser(description="Experiment Runner for Digital Twin Characteristics Extraction")
     parser.add_argument("--output-dir", default="experiments", help="Path to the experiments directory")
+    parser.add_argument("--input-path", default="data/papers/Ramdhan et al. - 2025 - Engineering Automotive Digital Twins on Standardized Architectures A Case Study.pdf", help="Path to the input PDF or directory")
+    parser.add_argument("--workers", type=int, default=1, help="Number of parallel workers")
+    
     args = parser.parse_args()
+    
     experiment_name = args.output_dir
-
-    parser.add_argument("--input-path", default="data/papers/The Incubator Case Study for Digital Twin Engineering.pdf", help="Path to the input PDF or directory")
-    args = parser.parse_args()
     input_path = args.input_path
+    workers = args.workers
 
     print("=" * 80)
     
     # Create experiment runner
-    orchestrator = ExtractionPipelineFactory.create_orchestrator(with_experiment_tracking=True, output_dir=args.output_dir)
+    orchestrator = ExtractionPipelineFactory.create_orchestrator(with_experiment_tracking=True, output_dir=experiment_name)
     runner = ExperimentRunner(input_path, orchestrator=orchestrator)
 
     param_grid = {
@@ -283,11 +335,12 @@ def main():
 
     runner.run_experiment_batch(
         max_experiments=-1,
-        repeat_experiments=5,
+        repeat_experiments=20,
         experiment_name=experiment_name,
         param_grid=param_grid,
         mode="both",
         exp_id=None,
+        workers=workers
     )
 
     # TODO: Fix this part
