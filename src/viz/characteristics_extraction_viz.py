@@ -15,6 +15,7 @@ import pathlib
 import re
 from typing import List, Dict, Any
 import seaborn as sns
+import warnings
 
 # Set style for publication-quality plots (double column)
 sns.set_style("whitegrid")
@@ -126,8 +127,7 @@ def extract_block_metrics(data: List[Dict[str, Any]], ground_truth: List[int] = 
             continue
 
         # Extract model name
-        if 'model_name' in config:
-            model_name = config['model_name']
+        model_name = config.get('model_name', 'unknown')
 
         experiment_id = experiment.get('experiment_id', 'unknown')
         metadata = experiment.get('extraction_metadata', {})
@@ -170,6 +170,13 @@ def extract_block_metrics(data: List[Dict[str, Any]], ground_truth: List[int] = 
             rows.append(row)
     
     df = pd.DataFrame(rows)
+
+    # Ensure numeric columns are strictly numeric to avoid object dtypes
+    numeric_cols = ['processing_time', 'input_tokens', 'output_tokens', 'retries', 'average_score', 'accuracy']
+    for col in numeric_cols:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors='coerce')
+
     return df
 
 
@@ -444,9 +451,44 @@ def generate_summary_statistics(df: pd.DataFrame) -> pd.DataFrame:
     if 'accuracy' in df.columns and df['accuracy'].notna().any():
         agg_dict['accuracy'] = ['mean', 'std', 'min', 'max', 'median']
 
-    summary = df.groupby('block_number').agg(agg_dict).round(2)
+    # Suppress RuntimeWarning: Mean of empty slice from numpy when a group is all NaN
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", category=RuntimeWarning)
+        summary = df.groupby('block_number').agg(agg_dict).round(2)
     
     return summary
+
+
+def export_accuracy_table(df: pd.DataFrame, save_path: pathlib.Path):
+    """Export a table of accuracy per model with mean and std dev."""
+    if 'accuracy' not in df.columns or df['accuracy'].isna().all():
+        return
+
+    # Accuracy is per experiment, so we deduplicate by experiment_id
+    experiment_df = df[['experiment_id', 'model_name', 'accuracy']].drop_duplicates()
+    
+    # Calculate stats
+    stats = experiment_df.groupby('model_name')['accuracy'].agg(['mean', 'std', 'count']).reset_index()
+    
+    rows = []
+    for _, row in stats.iterrows():
+        mean_pct = row['mean'] * 100
+        std_pct = row['std'] * 100 if pd.notna(row['std']) else 0.0
+        
+        # Latex format: \makecell{mean% $\pm$ std%}
+        latex_str = r"\makecell{" + f"{mean_pct:.1f} $\pm$ {std_pct:.1f}" + r"}"
+        
+        rows.append({
+            'Model': row['model_name'],
+            'Accuracy_Mean': row['mean'],
+            'Accuracy_Std': row['std'],
+            'N_Experiments': row['count'],
+            'LaTeX_Cell': latex_str
+        })
+        
+    result_df = pd.DataFrame(rows)
+    result_df.to_csv(save_path, index=False)
+    print(f"Accuracy summary table saved to {save_path}")
 
 
 def main():
@@ -569,6 +611,11 @@ def main():
     # Save detailed metrics
     df.to_csv(output_dir / "detailed_block_metrics.csv", index=False)
     print(f"Detailed metrics saved to {output_dir / 'detailed_block_metrics.csv'}")
+
+    # Export accuracy table if applicable
+    if ground_truth:
+        print("\n--- Generating Accuracy Summary Table ---")
+        export_accuracy_table(df, output_dir / "model_accuracy_summary.csv")
 
 
 if __name__ == "__main__":
