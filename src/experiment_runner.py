@@ -154,10 +154,7 @@ class ExperimentRunner:
         if max_experiments > 0:
             parameter_combinations = parameter_combinations[:max_experiments]
 
-        print(f"🧪 Running {len(parameter_combinations)} experiments...")
-        
-        experiment_results = []
-        total_experiments = len(parameter_combinations) * repeat_experiments
+        print(f"🧪 Preparing {len(parameter_combinations)} configurations × {repeat_experiments} repetitions...")
         
         tasks_args = []
         experiment_counter = 0
@@ -177,28 +174,69 @@ class ExperimentRunner:
                     exp_id
                 ))
         
+        total_experiments = len(tasks_args)
+        experiment_results = []
+        failed_tasks_args = []
+        
+        # Helper to process futures
+        def process_futures(futures_map):
+            results = []
+            failures = []
+            for future in concurrent.futures.as_completed(futures_map):
+                args = futures_map[future]
+                try:
+                    result = future.result()
+                    if result.get('success', False):
+                        results.append(result)
+                    else:
+                        print(f"⚠️ Experiment {result.get('experiment_number', '?')} failed temporarily (Error: {result.get('error')}). Will retry.")
+                        failures.append(args)
+                except Exception as e:
+                    print(f"⚠️ Worker exception for Experiment {args[4]}: {e}")
+                    failures.append(args)
+            return results, failures
+
+        # 1. Initial Execution
         if workers > 1:
-            print(f"🚀 Running in parallel with {workers} workers using ProcessPoolExecutor...")
+            print(f"🚀 Running {total_experiments} experiments in parallel with {workers} workers...")
             with concurrent.futures.ProcessPoolExecutor(max_workers=workers) as executor:
-                futures = [executor.submit(run_experiment_task, *args) for args in tasks_args]
-                
-                for future in concurrent.futures.as_completed(futures):
-                    try:
-                        result = future.result()
-                        experiment_results.append(result)
-                    except Exception as e:
-                        print(f"Worker exception: {e}")
+                future_to_args = {executor.submit(run_experiment_task, *args): args for args in tasks_args}
+                initial_results, failed_tasks_args = process_futures(future_to_args)
+                experiment_results.extend(initial_results)
         else:
              print("🐢 Running sequentially...")
              for args in tasks_args:
                  result = run_experiment_task(*args)
-                 experiment_results.append(result)
+                 if result.get('success', False):
+                     experiment_results.append(result)
+                 else:
+                     print(f"⚠️ Experiment {result.get('experiment_number')} failed. Will retry.")
+                     failed_tasks_args.append(args)
+
+        # 2. Retry Logic (Sequential)
+        if failed_tasks_args:
+            print(f"\n🔄 Retrying {len(failed_tasks_args)} failed experiments sequentially to mitigate rate limits (429/503)...")
+            
+            for args in failed_tasks_args:
+                exp_num = args[4]
+                print(f"   ↪️ Retrying Experiment {exp_num}...") 
+                
+                # We can add a small sleep before retry
+                time.sleep(2.0)
+                
+                result = run_experiment_task(*args)
+                experiment_results.append(result) # Append result regardless of success/failure this time
+                
+                if result.get('success', False):
+                    print(f"   ✅ Retry successful for Experiment {exp_num}")
+                else:
+                    print(f"   ❌ Retry failed for Experiment {exp_num}: {result.get('error')}")
 
         # Sort results
         experiment_results.sort(key=lambda x: x.get('experiment_number', 0))
 
-        print(f"\n✅ Parameter tuning named {experiment_name} completed!")
-        print(f"📊 Ran {len(parameter_combinations)} parameter combinations × {repeat_experiments} repetitions = {total_experiments} total experiments")
+        print(f"\n✅ Experiments {experiment_name} completed!")
+        print(f"📊 Processed {len(experiment_results)}/{total_experiments} experiments.")
         return experiment_results
     
     def analyze_and_visualize_results(self, experiment_results: List[Dict[str, Any]]):
@@ -319,7 +357,8 @@ def main():
     runner = ExperimentRunner(input_path, orchestrator=orchestrator)
 
     param_grid = {
-        'model_name': ["gpt-oss:20b-cloud","gpt-oss:120b-cloud"],
+        # 'model_name': ["qwen3-next:80b-cloud"],
+        'model_name': ["ministral-3:3b-cloud", "ministral-3:8b-cloud", "ministral-3:14b-cloud", "gpt-oss:20b-cloud", "gpt-oss:120b-cloud"],
         "temperature": [None],
         "top_p": [None],
         "top_k": [None],
@@ -327,7 +366,7 @@ def main():
         'chunk_size': [3000],
         "chunk_overlap": [500],
         'judge_model_name': ["deepseek-v3.2:cloud"],
-        "max_judge_retries": [0,3],
+        "max_judge_retries": [0, 2],
         "max_oml_retries": [4],
         "baseline_full_doc": [False, True],
         "baseline_max_chars": [24000],
@@ -335,7 +374,7 @@ def main():
 
     runner.run_experiment_batch(
         max_experiments=-1,
-        repeat_experiments=20,
+        repeat_experiments=50,
         experiment_name=experiment_name,
         param_grid=param_grid,
         mode="both",
