@@ -142,22 +142,22 @@ def generate_plots_for_model(model_df, model_name, output_dir, max_retry_index):
     # Define configuration for the 4 possible lines
     configs = [
         {
-            'label': 'Baseline: False, Judge Retry: 0',
+            'label': 'w/o Judge',
             'filter': lambda df: (df['baseline_full_doc'] == False) & (df['max_judge_retries'] == 0),
             'color': 'steelblue', 'marker': 'o', 'offset': 10
         },
         {
-            'label': 'Baseline: True, Judge Retry: 0',
+            'label': 'w/o Clustering and Judge',
             'filter': lambda df: (df['baseline_full_doc'] == True) & (df['max_judge_retries'] == 0),
             'color': 'forestgreen', 'marker': '^', 'offset': -15
         },
         {
-            'label': 'Baseline: False, Judge Retry: >0',
+            'label': 'w/ Judge',
             'filter': lambda df: (df['baseline_full_doc'] == False) & (df['max_judge_retries'] > 0),
             'color': 'coral', 'marker': 's', 'offset': 20
         },
         {
-            'label': 'Baseline: True, Judge Retry: >0',
+            'label': 'w/o Clustering, w/ Judge',
             'filter': lambda df: (df['baseline_full_doc'] == True) & (df['max_judge_retries'] > 0),
             'color': 'purple', 'marker': 'D', 'offset': -25
         }
@@ -206,7 +206,7 @@ def generate_plots_for_model(model_df, model_name, output_dir, max_retry_index):
     ax1.set_xlabel("Retry Index (i)", fontsize=14, fontweight='bold')
     ax1.set_ylabel("Cumulative Success Rate $R_i$ (%)", fontsize=14, fontweight='bold')
     ax1.set_title(f"Cumulative Success Rate ({model_name})", fontsize=14, fontweight='bold', pad=10)
-    ax1.set_ylim(0, 115)
+    ax1.set_ylim(0, 100)
     ax1.set_xticks(range(0, max_retry_index + 1))
     ax1.tick_params(labelsize=12)
     ax1.grid(True, alpha=0.3, linewidth=0.8)
@@ -277,7 +277,7 @@ def generate_plots_for_model(model_df, model_name, output_dir, max_retry_index):
     ax3a.set_xlabel("Retry Index (i)", fontsize=12, fontweight='bold')
     ax3a.set_ylabel("Cumulative Success Rate $R_i$ (%)", fontsize=12, fontweight='bold')
     ax3a.set_title(f"Cumulative Success Rate ({model_name})", fontsize=12, fontweight='bold')
-    ax3a.set_ylim(0, 115)
+    ax3a.set_ylim(0, 100)
     ax3a.set_xticks(range(0, max_retry_index + 1))
     ax3a.tick_params(labelsize=10)
     ax3a.grid(True, alpha=0.3, linewidth=0.8)
