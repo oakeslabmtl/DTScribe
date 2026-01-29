@@ -23,6 +23,7 @@ import json
 from pathlib import Path
 import time
 from filelock import FileLock, Timeout
+import random
 
 from .oml_writer import IOMLWriter, OMLFileWriter
 
@@ -103,6 +104,34 @@ class EnhancedRAGPipeline:
         )
         
         self.embeddings = OllamaEmbeddings(model=embedding_model)
+
+    def _invoke_with_retry(self, prompt, max_retries=10, initial_delay=1):
+        """
+        Invokes the LLM with retry logic for rate limits (429) and server errors (503).
+        Uses exponential backoff with jitter.
+        """
+        for attempt in range(max_retries):
+            try:
+                return self.llm.invoke(prompt)
+            except Exception as e:
+                error_msg = str(e).lower()
+                # Check for rate limit or temporary server availability issues
+                is_rate_limit = "429" in error_msg or "too many requests" in error_msg
+                is_server_error = "503" in error_msg or "service unavailable" in error_msg or "bad gateway" in error_msg or "502" in error_msg
+                
+                # If it's the last attempt, don't wait, just raise
+                if attempt == max_retries - 1:
+                    raise e
+                
+                if is_rate_limit or is_server_error:
+                    # Exponential backoff: initial_delay * 2^attempt + jitter
+                    delay = initial_delay * (2 ** attempt) + random.uniform(0, 1)
+                    print(f"⚠️ API Error ({e}). Retrying in {delay:.2f}s... (Attempt {attempt + 1}/{max_retries})")
+                    time.sleep(delay)
+                else:
+                    # For other types of errors (e.g. context length exceeded), we might not want to retry blindly, 
+                    # but let's be safe and re-raise if it's not a transient network/rate error.
+                    raise e
     
     def get_pdf_info(self, pdf_path: str) -> Dict[str, Any]:
         """Get information about the PDF before processing."""
@@ -343,7 +372,7 @@ Remember: Be highly specific and technical. Include exact technologies, methods,
         for attempt in range(max_retries):
             try:
                 # Generate with direct LLM call first, then clean and parse
-                response = self.llm.invoke(formatted_prompt)
+                response = self._invoke_with_retry(formatted_prompt)
                 response_text = response.content if hasattr(response, 'content') else str(response)
                 response_metadata = getattr(response, 'response_metadata', {})
 
@@ -398,7 +427,7 @@ RETURN ONLY VALID JSON IN THIS FORMAT:
 JSON OUTPUT:
 """
                     try:
-                        response = self.llm.invoke(simpler_prompt)
+                        response = self._invoke_with_retry(simpler_prompt)
                         response_text = response.content if hasattr(response, 'content') else str(response)
                         response_metadata = getattr(response, 'response_metadata', {})
                         cleaned_text = self._clean_llm_response(response_text)
@@ -537,7 +566,7 @@ JSON:
         
         try:
             # Direct LLM call without structured output
-            response = self.llm.invoke(prompt)
+            response = self._invoke_with_retry(prompt)
             response_text = response.content if hasattr(response, 'content') else str(response)
             response_metadata = getattr(response, 'response_metadata', {})
             
@@ -845,7 +874,7 @@ Generate ONLY the OML code with no additional explanations:
         
         try:
             print("⏳ Sending request to LLM for component-based OML...")
-            response = self.llm.invoke(formatted_prompt)
+            response = self._invoke_with_retry(formatted_prompt)
             response_text = response.content if hasattr(response, 'content') else str(response)
             response_metadata = getattr(response, 'response_metadata', {})
             response_text = self._clean_llm_response(response_text)
@@ -993,7 +1022,7 @@ Generate ONLY the corrected OML code with no explanations or comments:
         )
         
         try:
-            response = self.llm.invoke(formatted_prompt)
+            response = self._invoke_with_retry(formatted_prompt)
             response_text = response.content if hasattr(response, 'content') else str(response)
             response_metadata = getattr(response, 'response_metadata', {})
             response_text = self._clean_llm_response(response_text)
