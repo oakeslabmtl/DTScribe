@@ -142,17 +142,17 @@ def generate_plots_for_model(model_df, model_name, output_dir, max_retry_index):
     # Define configuration for the 4 possible lines
     configs = [
         {
-            'label': 'w/o Judge',
+            'label': 'w/ Clustering, w/o Judge',
             'filter': lambda df: (df['baseline_full_doc'] == False) & (df['max_judge_retries'] == 0),
             'color': 'steelblue', 'marker': 'o', 'offset': 10
         },
         {
-            'label': 'w/o Clustering and Judge',
+            'label': 'w/o Clustering, w/o Judge',
             'filter': lambda df: (df['baseline_full_doc'] == True) & (df['max_judge_retries'] == 0),
             'color': 'forestgreen', 'marker': '^', 'offset': -15
         },
         {
-            'label': 'w/ Judge',
+            'label': 'w/ Clustering, w/ Judge',
             'filter': lambda df: (df['baseline_full_doc'] == False) & (df['max_judge_retries'] > 0),
             'color': 'coral', 'marker': 's', 'offset': 20
         },
