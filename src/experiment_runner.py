@@ -4,6 +4,7 @@ Runs multiple experiments with different configurations.
 
 import argparse
 import itertools
+import json
 from pathlib import Path
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -129,6 +130,30 @@ class ExperimentRunner:
         
         return combinations
 
+    def _get_completed_experiments(self, output_dir: Path) -> set[tuple[str, int, int]]:
+        """Identify completed experiments from results directory."""
+        completed = set()
+        results_dir = output_dir / "characteristics_extraction"
+        if not results_dir.exists():
+            return completed
+        
+        for file_path in results_dir.glob("*.json"):
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    # Extract identification info
+                    params = data.get("config", {}).get("custom_params", {}).get("custom_params", {})
+                    batch = params.get("experiment_batch")
+                    combo = params.get("parameter_combination")
+                    rep = params.get("repetition")
+                    
+                    if batch and combo is not None and rep is not None:
+                        completed.add((batch, int(combo), int(rep)))
+            except Exception as e:
+                print(f"⚠️ Error reading {file_path}: {e}")
+        
+        return completed
+
     def run_experiment_batch(
             self, 
             max_experiments: int = 10, 
@@ -137,12 +162,18 @@ class ExperimentRunner:
             repeat_experiments: int = 1, 
             mode: str = "both", 
             exp_id: str = None,
-            workers: int = 1
+            workers: int = 1,
+            resume: bool = False
             ) -> List[Dict[str, Any]]:
         """Run a batch of experiments with different parameters."""
 
         self.output_dir = Path(experiment_name)
         self.output_dir.mkdir(exist_ok=True)
+
+        completed_experiments = set()
+        if resume:
+            completed_experiments = self._get_completed_experiments(self.output_dir)
+            print(f"🔄 Resuming experiment batch. Found {len(completed_experiments)} completed experiments.")
 
         if param_grid is None:
             print("❌ No parameter grid provided for experiments.")
@@ -157,10 +188,13 @@ class ExperimentRunner:
         print(f"🧪 Preparing {len(parameter_combinations)} configurations × {repeat_experiments} repetitions...")
         
         tasks_args = []
+
         experiment_counter = 0
 
         for combo_idx, params in enumerate(parameter_combinations, 1):
             for rep in range(repeat_experiments):
+                if resume and (experiment_name, combo_idx, rep + 1) in completed_experiments:
+                    continue
                 experiment_counter += 1
                 tasks_args.append((
                     self.input_path,
@@ -343,22 +377,28 @@ def main():
     parser.add_argument("--output-dir", default="experiments", help="Path to the experiments directory")
     parser.add_argument("--input-path", default="data/papers/Ramdhan et al. - 2025 - Engineering Automotive Digital Twins on Standardized Architectures A Case Study.pdf", help="Path to the input PDF or directory")
     parser.add_argument("--workers", type=int, default=1, help="Number of parallel workers")
+    parser.add_argument("--resume", action="store_true", help="Resume from failed/missing experiments")
     
     args = parser.parse_args()
     
-    experiment_name = args.output_dir
-    input_path = args.input_path
+    base_output_dir = Path(args.output_dir)
+    input_arg = Path(args.input_path)
     workers = args.workers
 
-    print("=" * 80)
-    
-    # Create experiment runner
-    orchestrator = ExtractionPipelineFactory.create_orchestrator(with_experiment_tracking=True, output_dir=experiment_name)
-    runner = ExperimentRunner(input_path, orchestrator=orchestrator)
+    # Determine files to process
+    files_to_process = []
+    if input_arg.is_dir():
+        files_to_process = list(input_arg.glob("*.pdf"))
+        print(f"📂 Found {len(files_to_process)} PDF files in {input_arg}")
+    elif input_arg.exists():
+        files_to_process = [input_arg]
+    else:
+        print(f"❌ Input path not found: {input_arg}")
+        return
 
     param_grid = {
         # 'model_name': ["qwen3-next:80b-cloud"],
-        'model_name': ["ministral-3:3b-cloud", "ministral-3:8b-cloud", "ministral-3:14b-cloud", "gpt-oss:20b-cloud", "gpt-oss:120b-cloud"],
+        'model_name': ["gpt-oss:120b-cloud", "qwen3-next:80b-cloud", "gpt-oss:20b-cloud", "ministral-3:14b-cloud", "ministral-3:3b-cloud", "ministral-3:8b-cloud"],
         "temperature": [None],
         "top_p": [None],
         "top_k": [None],
@@ -372,21 +412,40 @@ def main():
         "baseline_max_chars": [24000],
     }
 
-    runner.run_experiment_batch(
-        max_experiments=-1,
-        repeat_experiments=50,
-        experiment_name=experiment_name,
-        param_grid=param_grid,
-        mode="both",
-        exp_id=None,
-        workers=workers
-    )
+    print(f"🧪 Parameter grid defined with {len(param_grid)} keys.")
 
-    # TODO: Fix this part
-    # Analyze and visualize results
-    # runner.analyze_and_visualize_results(experiment_results)
+    for i, file_path in enumerate(files_to_process):
+        print("\n" + "=" * 80)
+        print(f"📄 Processing file {i+1}/{len(files_to_process)}: {file_path.name}")
+        
+        # Determine output directory for this specific experiment
+        if len(files_to_process) > 1:
+            experiment_name = str(base_output_dir / file_path.stem)
+        else:
+            experiment_name = str(base_output_dir)
+            
+        print(f"📂 Output directory: {experiment_name}")
+    
+        # Create experiment runner
+        orchestrator = ExtractionPipelineFactory.create_orchestrator(with_experiment_tracking=True, output_dir=experiment_name)
+        runner = ExperimentRunner(str(file_path), orchestrator=orchestrator)
 
-    print("\n✅ Parameter tuning completed!")
+        runner.run_experiment_batch(
+            max_experiments=-1,
+            repeat_experiments=25,
+            experiment_name=experiment_name,
+            param_grid=param_grid,
+            mode="both",
+            exp_id=None,
+            workers=workers,
+            resume=args.resume
+        )
+
+        # TODO: Fix this part
+        # Analyze and visualize results
+        # runner.analyze_and_visualize_results(experiment_results)
+
+    print("\n✅ All experiments completed!")
 
 
 if __name__ == "__main__":

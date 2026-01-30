@@ -265,6 +265,14 @@ class ExtractionOrchestrator:
             oml_output, oml_repetition_count, validation_status, total_input_tokens, total_output_tokens = self._oml_generator.generate(characteristics, vocab_files, max_retries=config.max_oml_retries)
             self._state_manager.update_state({"oml_output": oml_output})
         except Exception as e:
+            # Check for critical network/rate limit errors
+            error_msg = str(e).lower()
+            is_critical = "429" in error_msg or "500" in error_msg or "too many requests" in error_msg or "503" in error_msg or "service unavailable" in error_msg
+            
+            if is_critical:
+                print(f"🔥 Critical OML generation error: {e}. Bubbling up for experiment retry.")
+                raise e
+
             oml_error = f"OML generation failed: {str(e)}"
             print(f"❌ {oml_error}")
             traceback.print_exc()

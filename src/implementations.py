@@ -246,6 +246,10 @@ class BaseBlockProcessor(IBlockProcessor, ABC):
 
         try:
             retrieved_docs = retriever.retrieve_documents(config.query, k=config.k) # Type: List[Tuple[Document, float]]
+            
+            if not retrieved_docs:
+                print(f"⚠️ Warning: No documents retrieved for {label}. Extractor will likely return empty results.")
+
             rag_pipeline = getattr(retriever, "_rag_pipeline", None)
             judge_source_doc = getattr(rag_pipeline, "full_corpus_doc", None) if rag_pipeline else None # full document for judge context, type: langchain document
             retries = 0
@@ -426,6 +430,14 @@ class BaseBlockProcessor(IBlockProcessor, ABC):
             )
     
         except Exception as e:
+            # Check for critical network/rate limit errors
+            error_msg = str(e).lower()
+            is_critical = "429" in error_msg or "500" in error_msg or "too many requests" in error_msg or "503" in error_msg or "service unavailable" in error_msg
+            
+            if is_critical:
+                print(f"🔥 Critical error in {meta_prefix}: {e}. Bubbling up for experiment retry.")
+                raise e
+
             processing_time = time.time() - start_time
             print(f"❌ Error processing {meta_prefix}: {e}")
             # import traceback

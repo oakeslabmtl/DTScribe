@@ -26,6 +26,7 @@ from filelock import FileLock, Timeout
 import random
 
 from .oml_writer import IOMLWriter, OMLFileWriter
+import traceback
 
 guiding_syntax = """
 ```oml                                          
@@ -105,9 +106,9 @@ class EnhancedRAGPipeline:
         
         self.embeddings = OllamaEmbeddings(model=embedding_model)
 
-    def _invoke_with_retry(self, prompt, max_retries=10, initial_delay=1):
+    def _invoke_with_retry(self, prompt, max_retries=8, initial_delay=1):
         """
-        Invokes the LLM with retry logic for rate limits (429) and server errors (503).
+        Invokes the LLM with retry logic for rate limits (429) and server errors (503, 500).
         Uses exponential backoff with jitter.
         """
         for attempt in range(max_retries):
@@ -117,7 +118,7 @@ class EnhancedRAGPipeline:
                 error_msg = str(e).lower()
                 # Check for rate limit or temporary server availability issues
                 is_rate_limit = "429" in error_msg or "too many requests" in error_msg
-                is_server_error = "503" in error_msg or "service unavailable" in error_msg or "bad gateway" in error_msg or "502" in error_msg
+                is_server_error = "503" in error_msg or "500" in error_msg or "service unavailable" in error_msg or "bad gateway" in error_msg or "502" in error_msg
                 
                 # If it's the last attempt, don't wait, just raise
                 if attempt == max_retries - 1:
@@ -290,9 +291,20 @@ class EnhancedRAGPipeline:
         LLM generation with Chain of Thought prompting and validation.
         """
         
+        # Handle both list of Documents and list of (Document, score) tuples for safety
+        processed_docs = []
+        if retrieved_docs:
+            for doc_item in retrieved_docs:
+                if isinstance(doc_item, tuple) and len(doc_item) > 0:
+                    processed_docs.append(doc_item[0])
+                else:
+                    processed_docs.append(doc_item)
+        else:
+             print("⚠️ No documents retrieved for extraction!")
+
         docs_content = "\n\n".join([
-            f"## Document {i+1}:\n{str(doc[0].page_content)}" 
-            for i, doc in enumerate(retrieved_docs)
+            f"## Document {i+1}:\n{str(doc.page_content)}" 
+            for i, doc in enumerate(processed_docs)
         ])
         
         # Create parser for structured output
@@ -364,19 +376,17 @@ Remember: Be highly specific and technical. Include exact technologies, methods,
             format_instructions=parser.get_format_instructions(),
         )
 
-        # print(f"\n\nDOCS CONTENT in prompt (enhanced_rag_config.py:299):\n{docs_content}\n\n")  # debug print
-        # print(f"\n\nFORMATTED PROMPT (enhanced_rag_config.py:299):\n{formatted_prompt}\n\n")  # debug print
-        
-        # Generate with retry mechanism for better reliability
+        # Generate with retry mechanism
         max_retries = 3
         for attempt in range(max_retries):
+            # We call invoke_with_retry OUTSIDE the try/catch block so that actual network/API errors 
+            # bubble up immediately as critical failures.
+            response = self._invoke_with_retry(formatted_prompt)
+
             try:
-                # Generate with direct LLM call first, then clean and parse
-                response = self._invoke_with_retry(formatted_prompt)
+                # Clean and parse
                 response_text = response.content if hasattr(response, 'content') else str(response)
                 response_metadata = getattr(response, 'response_metadata', {})
-
-                # print(f"\n\n {'---'*10}🔴RAW RESPONSE🔴{'---'*10}:\n{response_text}\n\n{'---'*10}\n\n")  # debug print
 
                 # Clean the response to remove thinking tags
                 cleaned_text = self._clean_llm_response(response_text)
@@ -394,18 +404,14 @@ Remember: Be highly specific and technical. Include exact technologies, methods,
                             cleaned_text = json.dumps(data)
                 except json.JSONDecodeError:
                     pass
-
-                # print(f"\n\n {'---'*10}🔴CLEANED TEXT🔴{'---'*10}:\n{cleaned_text}\n\n{'---'*10}\n\n") 
                 
                 # Parse the cleaned response
                 output = parser.parse(cleaned_text)
-
-                # print(f"\n\n {'---'*10}🔴PARSED OUTPUT🔴{'---'*10}:\n{output}\n\n{'---'*10}\n\n")  # debug print
-
                 return output, response_metadata
                 
             except Exception as e:
-                print(f"Warning: Attempt {attempt + 1} failed: {str(e)}")
+                print(f"Warning: Attempt {attempt + 1} failed (PARSING): {str(e)}")
+                # traceback.print_exc()
                 
                 if attempt < max_retries - 1:
                     # Try with a simpler prompt on retry
@@ -426,8 +432,11 @@ RETURN ONLY VALID JSON IN THIS FORMAT:
 
 JSON OUTPUT:
 """
+                    # We call invoke_with_retry OUTSIDE the try/catch block so that actual network/API errors 
+                    # bubble up immediately as critical failures.
+                    response = self._invoke_with_retry(simpler_prompt)
+
                     try:
-                        response = self._invoke_with_retry(simpler_prompt)
                         response_text = response.content if hasattr(response, 'content') else str(response)
                         response_metadata = getattr(response, 'response_metadata', {})
                         cleaned_text = self._clean_llm_response(response_text)
@@ -450,11 +459,12 @@ JSON OUTPUT:
                         print(f"Success with fallback prompt on attempt {attempt + 1}")
                         return output, response_metadata
                     except Exception as fallback_error:
-                        print(f"Fallback also failed: {str(fallback_error)}")
+                        print(f"Fallback parsing also failed: {str(fallback_error)}")
                         continue
                 else:
-                    # Final fallback: create a basic output with "Not Found" values
-                    print("All attempts failed, creating fallback output...")
+                    # Final fallback: create a basic output
+                    print("All attempts failed in extract_characteristics_with_schema, creating fallback output...")
+                    print(f"Final error was: {str(e)}")
                     fb = self._create_fallback_output(schema)
                     return fb, {}
     
@@ -476,15 +486,25 @@ JSON OUTPUT:
         # Strip again after cleaning
         response_text = response_text.strip()
         
-        # Remove code block markers
-        if response_text.startswith('```json'):
-            response_text = response_text[7:]
-        if response_text.startswith('```oml'):
-            response_text = response_text[6:]
-        if response_text.startswith('```'):
-            response_text = response_text[3:]
-        if response_text.endswith('```'):
-            response_text = response_text[:-3]
+        # Remove code block markers if present at start/end
+        # Match ```json or ```oml or just ``` at the start, capturing content
+        code_block_pattern = r'^```(?:json|oml)?\s*(.*?)\s*```$'
+        match = re.search(code_block_pattern, response_text, re.DOTALL | re.IGNORECASE)
+        if match:
+             response_text = match.group(1)
+        else:
+             # Fallback to simple stripping if regex doesn't match full block but markers exist
+            if response_text.startswith('```json'):
+                response_text = response_text[7:]
+            elif response_text.startswith('```oml'):
+                response_text = response_text[6:]
+            elif response_text.startswith('```'):
+                response_text = response_text[3:]
+            
+            if response_text.endswith('```'):
+                response_text = response_text[:-3]
+        
+        response_text = response_text.strip()
         
         # Extract JSON content - look for the first complete JSON object
         json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
@@ -510,10 +530,9 @@ JSON OUTPUT:
 
     def _create_fallback_output(self, schema: Type[BaseModel]) -> BaseModel:
         """Create a fallback output when all parsing attempts fail."""
+        print(f"⚠️ Creating fallback output (all fields 'Not in Document') for schema {schema.__name__}")
         # Get field names from schema
         field_names = list(schema.model_fields.keys())
-        
-        # Create a dict with "Not Found" for all fields
         fallback_data = {field: "Not in Document" for field in field_names}
         
         # Create and return the schema instance
@@ -524,9 +543,17 @@ JSON OUTPUT:
         """
         Alternative generation method with manual JSON parsing as fallback.
         """
+        # Handle both list of Documents and list of (Document, score) tuples
+        processed_docs = []
+        for doc_item in retrieved_docs:
+            if isinstance(doc_item, tuple) and len(doc_item) > 0:
+                processed_docs.append(doc_item[0])
+            else:
+                processed_docs.append(doc_item)
+
         docs_content = "\n\n".join([
             f"Document {i+1}:\n{getattr(doc, 'page_content', str(doc))}" 
-            for i, doc in enumerate(retrieved_docs)
+            for i, doc in enumerate(processed_docs)
         ])
 
         if not judge_results or any(res.get('characteristic') == "ALL_BLOCK" for res in judge_results):
@@ -564,9 +591,11 @@ Example format:
 JSON:
 """
         
+        # We call invoke_with_retry OUTSIDE the try/catch block so that actual network/API errors 
+        # bubble up immediately as critical failures.
+        response = self._invoke_with_retry(prompt)
+        
         try:
-            # Direct LLM call without structured output
-            response = self._invoke_with_retry(prompt)
             response_text = response.content if hasattr(response, 'content') else str(response)
             response_metadata = getattr(response, 'response_metadata', {})
             
@@ -580,7 +609,9 @@ JSON:
             return schema(**parsed_data), response_metadata
             
         except Exception as e:
-            print(f"Manual parsing failed: {e}")
+            print(f"Manual parsing failed in generate_with_manual_parsing: {e}")
+            print(f"Raw response start: {response_text[:200] if 'response_text' in locals() else 'None'}")
+            traceback.print_exc()
             return self._create_fallback_output(schema), {}
 
     
@@ -872,9 +903,12 @@ Generate ONLY the OML code with no additional explanations:
             guiding_syntax=guiding_syntax
         )
         
+        print("⏳ Sending request to LLM for component-based OML...")
+        # We call invoke_with_retry OUTSIDE the try/catch block so that actual network/API errors 
+        # bubble up immediately as critical failures.
+        response = self._invoke_with_retry(formatted_prompt)
+
         try:
-            print("⏳ Sending request to LLM for component-based OML...")
-            response = self._invoke_with_retry(formatted_prompt)
             response_text = response.content if hasattr(response, 'content') else str(response)
             response_metadata = getattr(response, 'response_metadata', {})
             response_text = self._clean_llm_response(response_text)
@@ -882,7 +916,7 @@ Generate ONLY the OML code with no additional explanations:
             print("✅ LLM response received.")
             return response_text, response_metadata
         except Exception as e:
-            print(f"❌ Error generating component-based OML (LLM invocation failed): {e}")
+            print(f"❌ Error generating component-based OML (Processing failed): {e}")
             # Return empty string to trigger retry logic in orchestrator
             return "", {}
 
@@ -1020,9 +1054,12 @@ Generate ONLY the corrected OML code with no explanations or comments:
             vocab_context=vocab_context,
             guiding_syntax=guiding_syntax,
         )
+
+        # We call invoke_with_retry OUTSIDE the try/catch block so that actual network/API errors 
+        # bubble up immediately as critical failures.
+        response = self._invoke_with_retry(formatted_prompt)
         
         try:
-            response = self._invoke_with_retry(formatted_prompt)
             response_text = response.content if hasattr(response, 'content') else str(response)
             response_metadata = getattr(response, 'response_metadata', {})
             response_text = self._clean_llm_response(response_text)
