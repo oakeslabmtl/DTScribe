@@ -405,7 +405,7 @@ def main():
         "embedding_model": ["embeddinggemma"],
         'chunk_size': [3000],
         "chunk_overlap": [500],
-        'judge_model_name': ["deepseek-v3.2:cloud"],
+        'judge_model_name': ["glm-4.7:cloud"],
         "max_judge_retries": [0, 2],
         "max_oml_retries": [4],
         "baseline_full_doc": [False, True],
