@@ -121,13 +121,12 @@ def extract_block_metrics(data: List[Dict[str, Any]], ground_truth: List[int] = 
     rows = []
     
     for experiment in data:
-        # Skip experiments with baseline_full_doc set to true
         config = experiment.get('config', {})
-        if config.get('baseline_full_doc') is True:
-            continue
-
-        # Extract model name
+        
+        # Extract model configuration
         model_name = config.get('model_name', 'unknown')
+        max_judge_retries = config.get('max_judge_retries', 0)
+        baseline_full_doc = config.get('baseline_full_doc', False)
 
         experiment_id = experiment.get('experiment_id', 'unknown')
         metadata = experiment.get('extraction_metadata', {})
@@ -143,6 +142,22 @@ def extract_block_metrics(data: List[Dict[str, Any]], ground_truth: List[int] = 
             if key.startswith('block_') and key.endswith('_processing_time'):
                 block_num = key.split('_')[1]
                 block_numbers.add(int(block_num))
+        
+        # Handle case where no blocks are found (e.g. baseline full doc) but we want to record accuracy
+        if not block_numbers and accuracy is not None:
+            rows.append({
+                'model_name': model_name,
+                'experiment_id': experiment_id,
+                'block_number': -1,
+                'processing_time': None,
+                'input_tokens': None,
+                'output_tokens': None,
+                'retries': 0,
+                'average_score': None,
+                'accuracy': accuracy,
+                'max_judge_retries': max_judge_retries,
+                'baseline_full_doc': baseline_full_doc
+            })
         
         # Extract metrics for each block
         for block_num in sorted(block_numbers):
@@ -165,7 +180,9 @@ def extract_block_metrics(data: List[Dict[str, Any]], ground_truth: List[int] = 
                 'output_tokens': metadata.get(f'block_{block_num}_output_tokens', None),
                 'retries': metadata.get(f'block_{block_num}_retries', 0),
                 'average_score': avg_score,
-                'accuracy': accuracy
+                'accuracy': accuracy,
+                'max_judge_retries': max_judge_retries,
+                'baseline_full_doc': baseline_full_doc
             }
             rows.append(row)
     
@@ -460,15 +477,20 @@ def generate_summary_statistics(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def export_accuracy_table(df: pd.DataFrame, save_path: pathlib.Path):
-    """Export a table of accuracy per model with mean and std dev."""
+    """Export a table of accuracy per model with mean and std dev, grouped by config."""
     if 'accuracy' not in df.columns or df['accuracy'].isna().all():
         return
 
     # Accuracy is per experiment, so we deduplicate by experiment_id
-    experiment_df = df[['experiment_id', 'model_name', 'accuracy']].drop_duplicates()
+    cols = ['experiment_id', 'model_name', 'max_judge_retries', 'baseline_full_doc', 'accuracy']
+    cols = [c for c in cols if c in df.columns]
+    experiment_df = df[cols].drop_duplicates()
     
-    # Calculate stats
-    stats = experiment_df.groupby('model_name')['accuracy'].agg(['mean', 'std', 'count']).reset_index()
+    # Group by model + config
+    group_cols = ['model_name', 'max_judge_retries', 'baseline_full_doc']
+    group_cols = [c for c in group_cols if c in df.columns]
+
+    stats = experiment_df.groupby(group_cols)['accuracy'].agg(['mean', 'std', 'count']).reset_index()
     
     rows = []
     for _, row in stats.iterrows():
@@ -478,17 +500,167 @@ def export_accuracy_table(df: pd.DataFrame, save_path: pathlib.Path):
         # Latex format: \makecell{mean% $\pm$ std%}
         latex_str = r"\makecell{" + f"{mean_pct:.1f} $\pm$ {std_pct:.1f}" + r"}"
         
-        rows.append({
-            'Model': row['model_name'],
+        entry = {
             'Accuracy_Mean': row['mean'],
+            'Model': row.get('model_name', None),
             'Accuracy_Std': row['std'],
-            'N_Experiments': row['count'],
-            'LaTeX_Cell': latex_str
-        })
+            'LaTeX_Cell': latex_str,
+            'N_Experiments': row['count']
+        }
+        if 'max_judge_retries' in row:
+            entry['Max_Judge_Retries'] = row['max_judge_retries']
+        if 'baseline_full_doc' in row:
+            entry['Baseline_Full_Doc'] = row['baseline_full_doc']
+            
+        rows.append(entry)
         
     result_df = pd.DataFrame(rows)
     result_df.to_csv(save_path, index=False)
     print(f"Accuracy summary table saved to {save_path}")
+
+
+def export_latex_matrix(df: pd.DataFrame, paper_id: str, save_path: pathlib.Path):
+    """Generates the LaTeX matrix table for accuracy comparison."""
+    if 'accuracy' not in df.columns or df['accuracy'].isna().all():
+        return
+
+    # Filter relevant columns and deduplicate by experiment
+    cols = ['experiment_id', 'model_name', 'max_judge_retries', 'baseline_full_doc', 'accuracy']
+    # Filter only columns present
+    cols = [c for c in cols if c in df.columns]
+    experiment_df = df[cols].drop_duplicates()
+
+    # Aggregate stats
+    group_cols = ['model_name', 'max_judge_retries', 'baseline_full_doc']
+    stats = experiment_df.groupby(group_cols)['accuracy'].agg(['mean', 'std']).reset_index()
+
+    # Define model ordering and display names
+    model_order = [
+        'ministral-3:3b-cloud',
+        'ministral-3:8b-cloud',
+        'ministral-3:14b-cloud',
+        'qwen3-next:80b-cloud',
+        'gpt-oss:20b-cloud',
+        'gpt-oss:120b-cloud'
+    ]
+    
+    model_latex_headers = {
+        'ministral-3:3b-cloud': r'\makecell{\texttt{ministral-3} \\ (3B)}',
+        'ministral-3:8b-cloud': r'\makecell{\texttt{ministral-3} \\ (8B)}',
+        'ministral-3:14b-cloud': r'\makecell{\texttt{ministral-3} \\ (14B)}',
+        'qwen3-next:80b-cloud': r'\makecell{\texttt{qwen3-next} \\ (80B)}',
+        'gpt-oss:20b-cloud': r'\makecell{\texttt{gpt-oss} \\ (20B)}',
+        'gpt-oss:120b-cloud': r'\makecell{\texttt{gpt-oss} \\ (120B)}'
+    }
+
+    # Configurations: (Name, JudgeEnabled, FullDoc)
+    configs = [
+        ("Base", False, True),
+        ("+Cluster", False, False),
+        ("+Judge", True, True),
+        ("+Cluster+Judge", True, False)
+    ]
+
+    def get_model_config_stats(model, judge_retries_gt_0, baseline_full_doc):
+        matches = stats[
+            (stats['model_name'] == model) & 
+            (stats['baseline_full_doc'] == baseline_full_doc)
+        ]
+        
+        if judge_retries_gt_0:
+            matches = matches[matches['max_judge_retries'] > 0]
+        else:
+            matches = matches[matches['max_judge_retries'] == 0]
+            
+        if matches.empty:
+            return None
+        return matches.iloc[0]
+
+    # Calculate max mean for each model to identify best results
+    model_max_means = {}
+    for model in model_order:
+        means = []
+        for _, judge_enabled, full_doc in configs:
+            row = get_model_config_stats(model, judge_enabled, full_doc)
+            if row is not None:
+                means.append(row['mean'])
+        if means:
+            model_max_means[model] = max(means)
+        else:
+            model_max_means[model] = -1.0
+
+    def get_cell_content(model, judge_retries_gt_0, baseline_full_doc):
+        row = get_model_config_stats(model, judge_retries_gt_0, baseline_full_doc)
+        
+        if row is None:
+            return r"\multicolumn{2}{c}{--}"
+        
+        mean_val = row['mean']
+        mean_s = f"{mean_val * 100:.1f}"
+        std_s = f"{row['std'] * 100:.1f}" if pd.notna(row['std']) else "0.0"
+        
+        # Bold if it's the best result for this model
+        if mean_val >= model_max_means.get(model, -1.0) - 1e-9:
+            mean_s = f"\\textbf{{{mean_s}}}"
+            std_s = f"\\textbf{{{std_s}}}"
+            
+        return f"{mean_s} & {std_s}"
+
+    paper_label = paper_id if paper_id else "Pn"
+    
+    # Construct column specification: c|l| followed by 6 groups of r@{ $\pm$ }l
+    col_spec = "c|l|" + "".join(["r@{ $\\pm$ }l" for _ in range(6)])
+
+    # Construct headers
+    headers_list = []
+    for m in model_order:
+        escaped_m = m.replace('_', r'\_')
+        header_text = model_latex_headers.get(m, escaped_m)
+        headers_list.append(f"\\multicolumn{{2}}{{c}}{{{header_text}}}")
+    header_row = " & ".join(headers_list)
+
+    latex_content = [
+        r"\begin{table*}[htbp]",
+        r"    \centering",
+        r"    \small",
+        r"    \setlength{\tabcolsep}{4pt}",
+        r"    \caption{Extraction accuracy ($E_{\text{Acc}}$, $n=25$), with two judge retries.}",
+        f"    \\begin{{tabular}}{{{col_spec}}}",
+        r"        \toprule",
+        r"        \makecell{\textbf{Paper} \\ \textbf{ID}} & \textbf{Configuration}& " + 
+        header_row + r" \\",
+        r"        \hline",
+        r"        "
+    ]
+
+    for i, (config_name, judge_enabled, full_doc) in enumerate(configs):
+        row_str = ""
+        if i == 0:
+            row_str += f"        \\multirow{{4}}{{*}}{{\\textbf{{{paper_label}}}}} \n"
+            row_str += f"          & \\textbf{{{config_name}}}"
+        else:
+            row_str += f"          & \\textbf{{{config_name}}}"
+        
+        for model in model_order:
+            val = get_cell_content(model, judge_enabled, full_doc)
+            row_str += f"& {val} "
+        
+        row_str += r"\\"
+        latex_content.append(row_str)
+
+    latex_content.extend([
+        r"        \hline",
+        r"        ",
+        r"        \bottomrule",
+        r"    \end{tabular}",
+        r"    \label{tab:results_" + paper_label.lower() + r"}",
+        r"\end{table*}"
+    ])
+
+    with open(save_path, 'w', encoding='utf-8') as f:
+        f.write('\n'.join(latex_content))
+    
+    print(f"LaTeX matrix table saved to {save_path}")
 
 
 def main():
@@ -510,8 +682,11 @@ def main():
     # Define paths
     base_dir = pathlib.Path(args.exp_path)
     data_dir = base_dir / "characteristics_extraction"
-    output_dir = base_dir / "analysis/visualizations"
-    output_dir.mkdir(parents=True, exist_ok=True)
+    viz_dir = base_dir / "analysis/visualizations"
+    analysis_dir = base_dir / "analysis"
+
+    viz_dir.mkdir(parents=True, exist_ok=True)
+    analysis_dir.mkdir(parents=True, exist_ok=True)
     
     # Load data
     print("Loading extraction data...")
@@ -560,19 +735,19 @@ def main():
         print(f"\n--- Generating Processing Time Plot ({model_name}) ---")
         time_stats = plot_processing_time_per_block(
             model_df, 
-            save_path=output_dir / f"processing_time_per_block_{safe_model}.png"
+            save_path=viz_dir / f"processing_time_per_block_{safe_model}.png"
         )
         
         print(f"\n--- Generating Token Usage Plots ({model_name}) ---")
         token_stats = plot_tokens_per_block(
             model_df,
-            save_path=output_dir / f"tokens_per_block_{safe_model}.png"
+            save_path=viz_dir / f"tokens_per_block_{safe_model}.png"
         )
         
         print(f"\n--- Generating Retry Analysis Plots ({model_name}) ---")
         retry_stats = plot_retries_per_block(
             model_df,
-            save_path=output_dir / f"retries_per_block_{safe_model}.png"
+            save_path=viz_dir / f"retries_per_block_{safe_model}.png"
         )
         
         # Generate and save summary statistics
@@ -580,7 +755,7 @@ def main():
         summary = generate_summary_statistics(model_df)
         print(summary)
         
-        summary_path = output_dir / f"block_statistics_summary_{safe_model}.csv"
+        summary_path = analysis_dir / f"block_statistics_summary_{safe_model}.csv"
         summary.to_csv(summary_path)
         print(f"\nSummary statistics saved to {summary_path}")
 
@@ -588,34 +763,38 @@ def main():
         print(f"\n--- Generating Score vs Retries Plot ({model_name}) ---")
         plot_score_vs_retries(
             model_df,
-            save_path=output_dir / f"score_vs_retries_{safe_model}.png"
+            save_path=viz_dir / f"score_vs_retries_{safe_model}.png"
         )
 
         print(f"\n--- Generating Correlation Heatmap ({model_name}) ---")
         plot_correlation_heatmap(
             model_df,
-            save_path=output_dir / f"correlation_heatmap_{safe_model}.png"
+            save_path=viz_dir / f"correlation_heatmap_{safe_model}.png"
         )
         
         # Save detailed metrics
-        model_df.to_csv(output_dir / f"detailed_block_metrics_{safe_model}.csv", index=False)
-        print(f"Detailed metrics saved to {output_dir / f'detailed_block_metrics_{safe_model}.csv'}")
+        model_df.to_csv(analysis_dir / f"detailed_block_metrics_{safe_model}.csv", index=False)
+        print(f"Detailed metrics saved to {analysis_dir / f'detailed_block_metrics_{safe_model}.csv'}")
 
 
     print("\n--- Generating Correlation Heatmap ---")
     plot_correlation_heatmap(
         df,
-        save_path=output_dir / "correlation_heatmap.png"
+        save_path=viz_dir / "correlation_heatmap.png"
     )
     
     # Save detailed metrics
-    df.to_csv(output_dir / "detailed_block_metrics.csv", index=False)
-    print(f"Detailed metrics saved to {output_dir / 'detailed_block_metrics.csv'}")
+    df.to_csv(analysis_dir / "detailed_block_metrics.csv", index=False)
+    print(f"Detailed metrics saved to {analysis_dir / 'detailed_block_metrics.csv'}")
 
     # Export accuracy table if applicable
     if ground_truth:
         print("\n--- Generating Accuracy Summary Table ---")
-        export_accuracy_table(df, output_dir / "model_accuracy_summary.csv")
+        export_accuracy_table(df, analysis_dir / "model_accuracy_summary.csv")
+        
+        print("\n--- Generating LaTeX Matrix Table ---")
+        export_latex_matrix(df, args.paper, analysis_dir / "accuracy_matrix_table.tex")
+
 
 
 if __name__ == "__main__":

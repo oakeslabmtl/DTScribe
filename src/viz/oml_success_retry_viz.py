@@ -132,7 +132,7 @@ def calculate_stats(df, max_retry_index):
     
     return cumulated_df, step_df
 
-def generate_plots_for_model(model_df, model_name, output_dir, max_retry_index):
+def generate_plots_for_model(model_df, model_name, viz_dir, max_retry_index, summary_list=None):
     # Ensure max_judge_retries column exists and fill NaNs
     if 'max_judge_retries' not in model_df.columns:
         model_df['max_judge_retries'] = 0
@@ -142,24 +142,24 @@ def generate_plots_for_model(model_df, model_name, output_dir, max_retry_index):
     # Define configuration for the 4 possible lines
     configs = [
         {
-            'label': 'w/ Clustering, w/o Judge',
-            'filter': lambda df: (df['baseline_full_doc'] == False) & (df['max_judge_retries'] == 0),
-            'color': 'steelblue', 'marker': 'o', 'offset': 10
-        },
-        {
-            'label': 'w/o Clustering, w/o Judge',
+            'label': 'Base',
             'filter': lambda df: (df['baseline_full_doc'] == True) & (df['max_judge_retries'] == 0),
             'color': 'forestgreen', 'marker': '^', 'offset': -15
         },
         {
-            'label': 'w/ Clustering, w/ Judge',
-            'filter': lambda df: (df['baseline_full_doc'] == False) & (df['max_judge_retries'] > 0),
-            'color': 'coral', 'marker': 's', 'offset': 20
+            'label': '+Cluster',
+            'filter': lambda df: (df['baseline_full_doc'] == False) & (df['max_judge_retries'] == 0),
+            'color': 'steelblue', 'marker': 'o', 'offset': 10
         },
         {
-            'label': 'w/o Clustering, w/ Judge',
+            'label': '+Judge',
             'filter': lambda df: (df['baseline_full_doc'] == True) & (df['max_judge_retries'] > 0),
             'color': 'purple', 'marker': 'D', 'offset': -25
+        },
+        {
+            'label': '+Cluster+Judge',
+            'filter': lambda df: (df['baseline_full_doc'] == False) & (df['max_judge_retries'] > 0),
+            'color': 'coral', 'marker': 's', 'offset': 20
         }
     ]
 
@@ -176,6 +176,31 @@ def generate_plots_for_model(model_df, model_name, output_dir, max_retry_index):
                 'cumul': cumul,
                 'step': step
             })
+
+            if summary_list is not None:
+                # Extract stats
+                first_succ = cumul.loc[cumul['retry_index'] == 0, 'success_rate_pct'].values[0] if not cumul.empty else 0.0
+                last_succ = cumul['success_rate_pct'].iloc[-1] if not cumul.empty else 0.0
+                
+                # Map labels to short configuration names
+                label_map = {
+                    'w/o Clustering, w/o Judge': 'Base',
+                    'w/ Clustering, w/o Judge': '+Cluster',
+                    'w/o Clustering, w/ Judge': '+Judge',
+                    'w/ Clustering, w/ Judge': '+Cluster+Judge'
+                }
+                short_conf = label_map.get(cfg['label'], cfg['label'])
+                
+                # \makecell{first success $~/~$ last success}
+                latex_str = r"\makecell{" + f"{first_succ:.1f} $~/~$ {last_succ:.1f}" + r"}"
+                
+                summary_list.append({
+                    'Model': model_name,
+                    'Configuration': short_conf,
+                    'First_Success': first_succ,
+                    'Last_Success': last_succ,
+                    'LaTeX_Cell': latex_str
+                })
 
     # Safe filename
     safe_model = re.sub(r'[^a-zA-Z0-9_\-]', '_', model_name)
@@ -214,7 +239,7 @@ def generate_plots_for_model(model_df, model_name, output_dir, max_retry_index):
         ax1.legend(fontsize=8)
 
     plt.tight_layout(pad=2.0)
-    save_path1 = output_dir / f"oml_cumulative_success_rate_{safe_model}.png"
+    save_path1 = viz_dir / f"oml_cumulative_success_rate_{safe_model}.png"
     plt.savefig(save_path1, dpi=300, bbox_inches='tight')
     print(f"Saved cumulative plot to {save_path1}")
     plt.close(fig1)
@@ -240,17 +265,7 @@ def generate_plots_for_model(model_df, model_name, output_dir, max_retry_index):
                              textcoords="offset points", xytext=(0, cfg['offset']), ha='center', fontsize=8, color=cfg['color'])
 
     ax2.set_xlabel("Retry Index (i)", fontsize=14, fontweight='bold')
-    ax2.set_ylabel("Conditional Success Rate $H_i$ (%)", fontsize=14, fontweight='bold')
-    ax2.set_title(f"Conditional Success Rate ({model_name})", fontsize=14, fontweight='bold', pad=10)
-    ax2.set_ylim(0, 115)
-    ax2.set_xticks(range(0, max_retry_index + 1))
-    ax2.tick_params(labelsize=12)
-    ax2.grid(True, alpha=0.3, linewidth=0.8, axis='y')
-    if has_data:
-        ax2.legend(fontsize=8)
-
-    plt.tight_layout(pad=2.0)
-    save_path2 = output_dir / f"oml_conditional_success_rate_{safe_model}.png"
+    save_path2 = viz_dir / f"oml_conditional_success_rate_{safe_model}.png"
     plt.savefig(save_path2, dpi=300, bbox_inches='tight')
     print(f"Saved conditional plot to {save_path2}")
     plt.close(fig2)
@@ -307,7 +322,7 @@ def generate_plots_for_model(model_df, model_name, output_dir, max_retry_index):
     ax3b.legend(title="Configurations", fontsize=8)
 
     plt.tight_layout(pad=2.5)
-    save_path3 = output_dir / f"oml_success_rate_combined_{safe_model}.png"
+    save_path3 = viz_dir / f"oml_success_rate_combined_{safe_model}.png"
     plt.savefig(save_path3, dpi=300, bbox_inches='tight')
     print(f"Saved combined plot to {save_path3}")
     plt.close(fig3)
@@ -319,9 +334,157 @@ def generate_plots_for_model(model_df, model_name, output_dir, max_retry_index):
         print(f"\n[Model: {model_name}] CONDITIONAL SUCCESS RATE SUMMARY ({line['cfg']['label']})")
         print(line['step'].to_string(index=False))
 
+def export_latex_matrix(df: pd.DataFrame, paper_id: str, save_path: pathlib.Path):
+    """Generates the LaTeX matrix table for success rate comparison."""
+    if df.empty:
+        return
+
+    # Define model ordering and display names
+    model_order = [
+         'ministral-3:3b-cloud',
+         'ministral-3:8b-cloud',
+         'ministral-3:14b-cloud',
+         'qwen3-next:80b-cloud',
+         'gpt-oss:20b-cloud',
+         'gpt-oss:120b-cloud'
+    ]
+    
+    model_latex_headers = {
+        'ministral-3:3b-cloud': r'\makecell{\texttt{ministral-3} \\ (3B)}',
+        'ministral-3:8b-cloud': r'\makecell{\texttt{ministral-3} \\ (8B)}',
+        'ministral-3:14b-cloud': r'\makecell{\texttt{ministral-3} \\ (14B)}',
+        'qwen3-next:80b-cloud': r'\makecell{\texttt{qwen3-next} \\ (80B)}',
+        'gpt-oss:20b-cloud': r'\makecell{\texttt{gpt-oss} \\ (20B)}',
+        'gpt-oss:120b-cloud': r'\makecell{\texttt{gpt-oss} \\ (120B)}'
+    }
+
+    # Configuration definitions matching generate_plots_for_model
+    # We need to handle NaN in max_judge_retries
+    if 'max_judge_retries' not in df.columns:
+        df['max_judge_retries'] = 0
+    df['max_judge_retries'] = df['max_judge_retries'].fillna(0)
+
+    configs = [
+        ("Base", lambda d: (d['baseline_full_doc'] == True) & (d['max_judge_retries'] == 0)),
+        ("+Cluster", lambda d: (d['baseline_full_doc'] == False) & (d['max_judge_retries'] == 0)),
+        ("+Judge", lambda d: (d['baseline_full_doc'] == True) & (d['max_judge_retries'] > 0)),
+        ("+Cluster+Judge", lambda d: (d['baseline_full_doc'] == False) & (d['max_judge_retries'] > 0))
+    ]
+
+    # Helper to calculate metrics
+    def calculate_s1_r4(sub_df):
+        if sub_df.empty:
+            return None
+        
+        # S1: Success at repetition 0 (First try)
+        # oml_valid=True AND oml_repetition_count <= 0
+        s1_count = sub_df.apply(lambda r: int(r['oml_valid'] and r['oml_repetition_count'] <= 0), axis=1).sum()
+        s1 = s1_count / len(sub_df) * 100
+
+        # R4: Cumulative success at repetition <= 4
+        # oml_valid=True AND oml_repetition_count <= 4
+        # Note: We check if it succeeded at any retry <= 4.
+        r4_count = sub_df.apply(lambda r: int(r['oml_valid'] and r['oml_repetition_count'] <= 4), axis=1).sum()
+        r4 = r4_count / len(sub_df) * 100
+        
+        return s1, r4
+
+    # Pre-calculate all values to find max for bolding
+    results = {} # (model, config_name) -> (s1, r4)
+    model_max_r4 = {} # model -> max_r4
+    model_max_s1 = {} # model -> max_s1
+
+    for model in model_order:
+        model_df = df[df['model_name'] == model]
+        if model_df.empty:
+            continue
+            
+        max_r4 = -1.0
+        max_s1 = -1.0
+        
+        for config_name, filter_func in configs:
+            sub_df = model_df[filter_func(model_df)]
+            metrics = calculate_s1_r4(sub_df)
+            
+            if metrics:
+                s1, r4 = metrics
+                results[(model, config_name)] = (s1, r4)
+                if r4 > max_r4:
+                    max_r4 = r4
+                if s1 > max_s1:
+                    max_s1 = s1
+            else:
+                results[(model, config_name)] = None
+        
+        model_max_r4[model] = max_r4
+        model_max_s1[model] = max_s1
+
+    paper_label = paper_id if paper_id else "Pn"
+
+    latex_content = [
+        r"\begin{table*}[htbp]",
+        r"    \centering",
+        r"    \small",
+        r"    \setlength{\tabcolsep}{4pt}",
+        r"    \caption{Performance comparison on OML generation ($S_1(\%)~/~R_4(\%)$, $n=25$). $S_1$ denotes the first round success rate, while $R_4$ denotes the cumulative success rate after four retries.}",
+        r"    \begin{tabular}{c|l|cccccc}",
+        r"        \hline",
+        r"        \makecell{\textbf{Paper} \\ \textbf{ID}} & \textbf{Configuration} & " + 
+        " & ".join([model_latex_headers.get(m, m.replace('_', r'\_')) for m in model_order]) + r" \\",
+        r"        \hline",
+        r"        "
+    ]
+
+    for i, (config_name, _) in enumerate(configs):
+        row_str = ""
+        if i == 0:
+            row_str += f"        \\multirow{{4}}{{*}}{{\\textbf{{{paper_label}}}}} \n"
+            row_str += f"          & \\textbf{{{config_name}}}"
+        else:
+            row_str += f"          & \\textbf{{{config_name}}}"
+        
+        for model in model_order:
+            val = results.get((model, config_name))
+            if val is None:
+                row_str += "& -- "
+            else:
+                s1, r4 = val
+                
+                s1_str = f"{s1:.1f}"
+                if s1 >= model_max_s1.get(model, -1.0) - 1e-9:
+                     s1_str = f"\\textbf{{{s1_str}}}"
+
+                r4_str = f"{r4:.1f}"
+                if r4 >= model_max_r4.get(model, -1.0) - 1e-9:
+                     r4_str = f"\\textbf{{{r4_str}}}"
+
+                cell_text = f"{s1_str} $~/~$ {r4_str}"
+                
+                row_str += f"& {cell_text} "
+        
+        row_str += r"\\"
+        latex_content.append(row_str)
+
+    latex_content.extend([
+        r"        \hline",
+        r"        ",
+        r"    \end{tabular}",
+        r"    \label{tab:success_rates_" + paper_label.lower() + r"}",
+        r"\end{table*}"
+    ])
+
+    with open(save_path, 'w', encoding='utf-8') as f:
+        f.write('\n'.join(latex_content))
+    
+    print(f"LaTeX matrix table saved to {save_path}")
+
+
+summary_data = []
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Oml Success Retry Visualization")
     parser.add_argument("--exp-path", default="experiments", help="Path to the experiments directory")
+    parser.add_argument("--paper", default=None, help="Paper ID (e.g. P1) for LaTeX table generation")
     args = parser.parse_args()
 
     print("Attempting to load raw JSON data...")
@@ -335,9 +498,13 @@ if __name__ == "__main__":
     if df['oml_valid'].dtype == 'object':
         df['oml_valid'] = df['oml_valid'].map({'True': True, 'False': False, True: True, False: False})
 
-    # Create output directory
-    output_dir = pathlib.Path(args.exp_path) / "analysis" / "visualizations"
-    output_dir.mkdir(parents=True, exist_ok=True)
+    # Create output directories
+    base_dir = pathlib.Path(args.exp_path)
+    viz_dir = base_dir / "analysis" / "visualizations"
+    analysis_dir = base_dir / "analysis"
+    
+    viz_dir.mkdir(parents=True, exist_ok=True)
+    analysis_dir.mkdir(parents=True, exist_ok=True)
 
     # Get unique models
     unique_models = df['model_name'].unique()
@@ -354,6 +521,18 @@ if __name__ == "__main__":
         max_oml_retries = int(model_df['max_oml_retries'].iloc[0])
         max_judge_retries = int(model_df['max_judge_retries'].iloc[0])
 
-        generate_plots_for_model(model_df, model_name, output_dir, max_oml_retries)
+        generate_plots_for_model(model_df, model_name, viz_dir, max_oml_retries, summary_list=summary_data)
+
+    if summary_data:
+        summary_df = pd.DataFrame(summary_data)
+        # Sort for better consistency if needed
+        # summary_df.sort_values(by=['Model', 'Configuration'], inplace=True)
+        out_csv = analysis_dir / "oml_success_summary.csv"
+        summary_df.to_csv(out_csv, index=False)
+        print(f"\nSaved success summary table to {out_csv}")
+    
+    # Generate LaTeX Matrix Table if requested (or always if paper is not strictly required but we can default)
+    print("\n--- Generating LaTeX Matrix Table ---")
+    export_latex_matrix(df, args.paper, analysis_dir / "oml_success_matrix_table.tex")
 
     print("\nProcessing complete.")
