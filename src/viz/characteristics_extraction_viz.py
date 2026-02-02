@@ -128,7 +128,6 @@ def extract_block_metrics(data: List[Dict[str, Any]], ground_truth: List[int] = 
 
         # Extract model name
         model_name = config.get('model_name', 'unknown')
-
         experiment_id = experiment.get('experiment_id', 'unknown')
         metadata = experiment.get('extraction_metadata', {})
         extracted_chars = experiment.get('extracted_characteristics', {})
@@ -143,6 +142,28 @@ def extract_block_metrics(data: List[Dict[str, Any]], ground_truth: List[int] = 
             if key.startswith('block_') and key.endswith('_processing_time'):
                 block_num = key.split('_')[1]
                 block_numbers.add(int(block_num))
+
+        # Pre-compute initial (retry_1) average scores for each block
+
+        block_initial_scores = {}
+
+        for block_num in block_numbers:
+            key = f"block_{block_num}_retry_preserve_info"
+            block_info = metadata.get(key, {})
+
+            retry_1 = block_info.get("retry_1", {})
+            preserved = retry_1.get("preserved", [])
+            retried = retry_1.get("retried", [])
+
+            scores = [
+                item.get("score")
+                for item in preserved + retried
+                if isinstance(item, dict) and item.get("score") is not None
+            ]
+
+            block_initial_scores[block_num] = (
+                float(np.mean(scores)) if scores else np.nan
+            )      
         
         # Extract metrics for each block
         for block_num in sorted(block_numbers):
@@ -155,7 +176,7 @@ def extract_block_metrics(data: List[Dict[str, Any]], ground_truth: List[int] = 
                 valid_scores = [s for s in scores if s is not None]
                 if valid_scores:
                     avg_score = sum(valid_scores) / len(valid_scores)
-
+    
             row = {
                 'model_name': model_name,
                 'experiment_id': experiment_id,
@@ -165,17 +186,21 @@ def extract_block_metrics(data: List[Dict[str, Any]], ground_truth: List[int] = 
                 'output_tokens': metadata.get(f'block_{block_num}_output_tokens', None),
                 'retries': metadata.get(f'block_{block_num}_retries', 0),
                 'average_score': avg_score,
-                'accuracy': accuracy
+                "average_initial_score": block_initial_scores.get(block_num, np.nan),
+                'accuracy': accuracy,
             }
+            
             rows.append(row)
     
     df = pd.DataFrame(rows)
 
     # Ensure numeric columns are strictly numeric to avoid object dtypes
-    numeric_cols = ['processing_time', 'input_tokens', 'output_tokens', 'retries', 'average_score', 'accuracy']
+    numeric_cols = ['processing_time', 'input_tokens', 'output_tokens', 'retries', 'average_score', 'average_initial_score', 'accuracy']
     for col in numeric_cols:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors='coerce')
+
+    # print(df.head())
 
     return df
 
@@ -438,6 +463,221 @@ def plot_correlation_heatmap(df: pd.DataFrame, save_path: pathlib.Path = None):
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
         print(f"Saved plot to {save_path}")
 
+def plot_avg_score_vs_oml_retries():
+    pass
+
+def plot_extraction_retries_vs_oml_retries(extraction_df: pd.DataFrame,
+    exp_path: pathlib.Path,
+    # model_name: str,
+    save_path: pathlib.Path = None
+):
+    """
+    Extraction retries vs OML retries
+    OML retries are loaded directly from *_oml.json files.
+    """
+
+    # print(f"extraction_df shape: {extraction_df.shape}")
+    # print(extraction_df.head())
+
+    # ---------- Aggregate extraction retries ----------
+    agg = (
+        extraction_df.groupby("experiment_id")
+        .agg(
+            total_extraction_retries=("retries", "sum"),
+            EqD=("average_score", "mean") 
+        )
+        .reset_index()
+    )
+    # print(agg.head())
+    # print(f"Aggregated extraction data shape: {agg.shape}")
+
+    # ---------- Load OML JSONs ----------
+    json_dir = pathlib.Path(exp_path) / "oml_generation"
+    rows = []
+
+    for jf in json_dir.glob("*_oml.json"):
+        try:
+            with open(jf, "r", encoding="utf-8") as f:
+                d = json.load(f)
+
+            row = {}
+
+            stem = jf.stem.replace("_oml", "")
+            parts = stem.split("_")
+
+            #the experiment_id is always the last two components
+            row["experiment_id"] = "_".join(parts[-2:])
+
+            if "oml_repetition_count" in d:
+                row["oml_repetition_count"] = d["oml_repetition_count"]
+            else:
+                continue
+
+            if "model_name" in d["config"]:
+                row["model_name"] = d["config"]["model_name"]
+            else:
+                row["model_name"] = "Unknown"
+
+            rows.append(row)
+
+        except Exception as e:
+            print(f"Warning: could not parse {jf.name}: {e}")
+
+    oml_df = pd.DataFrame(rows)
+
+    if oml_df.empty:
+        print("No OML JSON data found.")
+        return
+
+    # ---------- Filter by model ----------
+    # oml_df = oml_df[oml_df["model_name"] == model_name]
+
+    # ---------- Merge to add the oml rep count to each experiment ----------
+    plot_df = agg.merge(
+        oml_df[["experiment_id", "oml_repetition_count"]],
+        on="experiment_id",
+        how="inner"
+    )
+
+    # print(f"Merged data shape: {plot_df.shape}")
+    # print(plot_df.head())
+    # print(plot_df.info())
+
+    plot_df = plot_df.dropna(subset=["oml_repetition_count", "EqD"])
+
+    if plot_df.empty:
+        print("No overlapping extraction / OML runs found.")
+        
+    else:
+        total_extraction_retries = plot_df["total_extraction_retries"].values
+        oml_repetition_count = plot_df["oml_repetition_count"].astype(int).values
+        EqD = plot_df["EqD"].values
+
+        # ---- Prepare categories ----
+        categories = sorted(np.unique(oml_repetition_count))
+        data_by_cat = [
+            total_extraction_retries[oml_repetition_count == c]
+            for c in categories
+        ]
+
+        # ---- Plot ----
+        fig1, ax1 = plt.subplots(figsize=(7, 5))
+
+        # Boxplot
+        ax1.boxplot(
+            data_by_cat,
+            positions=np.arange(len(categories)),
+            widths=0.6,
+            patch_artist=False
+        )
+
+        # Stripplot (manual jitter)
+        x_positions = []
+        y_positions = []
+        colors = []
+
+        for idx, c in enumerate(categories):
+            mask = oml_repetition_count == c
+            n_c = mask.sum()
+            jitter = (np.random.rand(n_c) - 0.5) * 0.25
+
+            x_positions.extend(np.full(n_c, idx) + jitter)
+            y_positions.extend(total_extraction_retries[mask])
+            colors.extend(EqD[mask])
+
+        scatter1 = ax1.scatter(
+            x_positions,
+            y_positions,
+            c=colors,
+            cmap="viridis",
+            alpha=0.7
+        )
+
+        # ---- Labels ----
+        ax1.set_xticks(np.arange(len(categories)))
+        ax1.set_xticklabels([str(c) for c in categories])
+        ax1.set_xlabel("OML retries")
+        ax1.set_ylabel("Total extraction retries (sum blocks 1–6)")
+        ax1.set_title("Figura 1 – Retries de extracción vs. retries de OML")
+
+        # Colorbar
+        cbar1 = plt.colorbar(scatter1, ax=ax1)
+        cbar1.set_label("Eq(D)")
+
+        plt.tight_layout()
+
+        if save_path:
+            plt.savefig(save_path, dpi=300, bbox_inches="tight")
+            print(f"Saved plot to {save_path}")
+
+def plot_double_lollipop_retry_behavior(model_df: pd.DataFrame, save_path: pathlib.Path = None):
+    """
+    Double lollipop chart:
+    - initial average score (retry_1)
+    - final average score
+    """
+
+    df = model_df.copy()
+
+    grouped = (
+        df.groupby("block_number")
+        .agg(
+            initial_score=("average_initial_score", "mean"),
+            final_score=("average_score", "mean"),
+        )
+        .reset_index()
+    )
+
+    x = grouped["block_number"]
+
+    fig, ax = plt.subplots()
+
+    # Vertical lines
+    for _, row in grouped.iterrows():
+        if not (np.isnan(row["initial_score"]) or np.isnan(row["final_score"])):
+            ax.plot(
+                [row["block_number"], row["block_number"]],
+                [row["initial_score"], row["final_score"]],
+                linewidth=2,
+                alpha=0.7,
+                color='black'
+            )
+
+    # Initial score dots
+    ax.scatter(
+        x,
+        grouped["initial_score"],
+        s=70,
+        label="Initial (retry_1)",
+        zorder=3,
+        color='black'
+    )
+
+    # Final score dots
+    ax.scatter(
+        x,
+        grouped["final_score"],
+        s=70,
+        label="Final (after retries)",
+        zorder=3,
+        facecolors="white",
+        edgecolors="black",
+    )
+
+    ax.set_xlabel("Block")
+    ax.set_ylabel("Average Judge Score")
+    ax.set_xticks(x)
+    ax.set_title("Retry Mechanism Effect on Judge Scores")
+
+    ax.legend()
+    plt.tight_layout()
+
+    if save_path:
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        print(f"Saved plot to {save_path}")
+
+
+
 def generate_summary_statistics(df: pd.DataFrame) -> pd.DataFrame:
     """Generate comprehensive summary statistics."""
     agg_dict = {
@@ -510,7 +750,7 @@ def main():
     # Define paths
     base_dir = pathlib.Path(args.exp_path)
     data_dir = base_dir / "characteristics_extraction"
-    output_dir = base_dir / "analysis/visualizations"
+    output_dir = base_dir / "analysis/visualizations3"
     output_dir.mkdir(parents=True, exist_ok=True)
     
     # Load data
@@ -595,6 +835,20 @@ def main():
         plot_correlation_heatmap(
             model_df,
             save_path=output_dir / f"correlation_heatmap_{safe_model}.png"
+        )
+
+        # print(f"\n--- Generating Extraction Retries vs OML Retries Plot ({model_name}) ---")
+        # plot_extraction_retries_vs_oml_retries(
+        #     extraction_df=model_df,
+        #     exp_path=base_dir,
+        #     # model_name=model_name,
+        #     save_path=output_dir / f"extraction_vs_oml_retries_{safe_model}.png"
+        # )
+
+        print(f"\n--- Generating Double Lollipop Retry Behavior Plot ({model_name}) ---")
+        plot_double_lollipop_retry_behavior(
+            model_df,
+            save_path=output_dir / f"double_lollipop_retry_behavior_{safe_model}.png"
         )
         
         # Save detailed metrics
