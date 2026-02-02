@@ -593,31 +593,21 @@ def export_latex_matrix(df: pd.DataFrame, paper_id: str, save_path: pathlib.Path
         row = get_model_config_stats(model, judge_retries_gt_0, baseline_full_doc)
         
         if row is None:
-            return r"\multicolumn{2}{c}{--}"
+            return "--"
         
         mean_val = row['mean']
-        mean_s = f"{mean_val * 100:.1f}"
-        std_s = f"{row['std'] * 100:.1f}" if pd.notna(row['std']) else "0.0"
+        mean_pct = mean_val * 100
+        std_pct = row['std'] * 100 if pd.notna(row['std']) else 0.0
+        
+        content = f"{mean_pct:.1f} $\\pm$ {std_pct:.1f}"
         
         # Bold if it's the best result for this model
         if mean_val >= model_max_means.get(model, -1.0) - 1e-9:
-            mean_s = f"\\textbf{{{mean_s}}}"
-            std_s = f"\\textbf{{{std_s}}}"
+            return f"\\textbf{{{content}}}"
             
-        return f"{mean_s} & {std_s}"
+        return content
 
     paper_label = paper_id if paper_id else "Pn"
-    
-    # Construct column specification: c|l| followed by 6 groups of r@{ $\pm$ }l
-    col_spec = "c|l|" + "".join(["r@{ $\\pm$ }l" for _ in range(6)])
-
-    # Construct headers
-    headers_list = []
-    for m in model_order:
-        escaped_m = m.replace('_', r'\_')
-        header_text = model_latex_headers.get(m, escaped_m)
-        headers_list.append(f"\\multicolumn{{2}}{{c}}{{{header_text}}}")
-    header_row = " & ".join(headers_list)
 
     latex_content = [
         r"\begin{table*}[htbp]",
@@ -625,10 +615,10 @@ def export_latex_matrix(df: pd.DataFrame, paper_id: str, save_path: pathlib.Path
         r"    \small",
         r"    \setlength{\tabcolsep}{4pt}",
         r"    \caption{Extraction accuracy ($E_{\text{Acc}}$, $n=25$), with two judge retries.}",
-        f"    \\begin{{tabular}}{{{col_spec}}}",
+        r"    \begin{tabular}{c|l|cccccc}",
         r"        \toprule",
         r"        \makecell{\textbf{Paper} \\ \textbf{ID}} & \textbf{Configuration}& " + 
-        header_row + r" \\",
+        " & ".join([model_latex_headers.get(m, m.replace('_', r'\_')) for m in model_order]) + r" \\",
         r"        \hline",
         r"        "
     ]
