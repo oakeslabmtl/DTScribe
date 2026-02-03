@@ -1,0 +1,201 @@
+// C1: Virtual Environment
+instance LabScaleGantryCraneEnvironment : DTDFVocab:Environment [
+    base:contains WoodenFrameComponent, CartStepperMotorComponent, HoistStepperMotorComponent, ElectromagnetComponent, TrinamicTMC4671EvalDriverComponent
+]
+
+// C2: Acting Components
+instance CartStepperMotorComponent : DTDFVocab:ActingComponent [
+    base:desc "Brushless stepper motor driving the cart rail, controlled by a Trinamic TMC4671 driver board"
+]
+instance HoistStepperMotorComponent : DTDFVocab:ActingComponent [
+    base:desc "Brushless stepper motor driving the hoist winch, controlled by a Trinamic TMC4671 driver board"
+]
+instance ElectromagnetComponent : DTDFVocab:ActingComponent [
+    base:desc "Electromagnet mounted on the hoist end for picking up small pucks representing containers"
+]
+instance TrinamicTMC4671EvalDriverComponent : DTDFVocab:ActingComponent [
+    base:desc "Eval driver boards for the cart and hoist stepper motors implementing Trinamic TMC4671 firmware"
+]
+instance WoodenFrameComponent : DTDFVocab:ActingComponent [
+    base:desc "Laser‑cut wooden frame providing structural support for the gantry rail and hoist rail"
+]
+
+// C3: Physical sensing components
+instance SwingAngleEncoderSensor : DTDFVocab:SensingComponent [
+    base:desc "Rotary encoder mounted on the hoist for measuring swing angle"
+    DTDFVocab:producedData SwingAngleDataTransmitted
+]
+instance AnemometerSensor : DTDFVocab:SensingComponent [
+    base:desc "Anemometer on the crane measuring wind speed and direction"
+    DTDFVocab:producedData WindSpeedDataTransmitted
+]
+instance CartWheelEncoderSensor : DTDFVocab:SensingComponent [
+    base:desc "Wheel encoder of the cart motor for measuring travel distance"
+    DTDFVocab:producedData CartPositionDataTransmitted
+]
+instance CartStepperMotorEncoderSensor : DTDFVocab:SensingComponent [
+    base:desc "Internal encoder of the cart stepper motor for precise position feedback"
+    DTDFVocab:producedData CartStepperEncoderDataTransmitted
+]
+instance HoistStepperMotorEncoderSensor : DTDFVocab:SensingComponent [
+    base:desc "Internal encoder of the hoist stepper motor for precise position feedback"
+    DTDFVocab:producedData HoistStepperEncoderDataTransmitted
+]
+
+// C4: Physical-to-virtual interaction
+instance SwingAngleDataTransmitted : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom SwingAngleEncoderSensor
+]
+instance WindSpeedDataTransmitted : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom AnemometerSensor
+]
+instance CartPositionDataTransmitted : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom CartWheelEncoderSensor
+]
+instance CartStepperEncoderDataTransmitted : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom CartStepperMotorEncoderSensor
+]
+instance HoistStepperEncoderDataTransmitted : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom HoistStepperMotorEncoderSensor
+]
+
+// C5: Data
+instance SwingAngleData : DTDFVocab:Data [
+    base:desc "Time‑series of swing angle measurements from the hoist encoder"
+    DTDFVocab:inputTo MQTTBrokerEclipseMosquitto, TimescaleDBTimescale
+    DTDFVocab:fromData SwingAngleDataTransmitted
+]
+instance WindSpeedData : DTDFVocab:Data [
+    base:desc "Time‑series of wind speed measurements from the anemometer"
+    DTDFVocab:inputTo MQTTBrokerEclipseMosquitto, TimescaleDBTimescale
+    DTDFVocab:fromData WindSpeedDataTransmitted
+]
+instance CartPositionData : DTDFVocab:Data [
+    base:desc "Time‑series of cart position measurements from the wheel encoder"
+    DTDFVocab:inputTo MQTTBrokerEclipseMosquitto, TimescaleDBTimescale
+    DTDFVocab:fromData CartPositionDataTransmitted
+]
+instance CartStepperEncoderData : DTDFVocab:Data [
+    base:desc "Time‑series of cart motor encoder counts for fine‑grained position control"
+    DTDFVocab:inputTo MQTTBrokerEclipseMosquitto, TimescaleDBTimescale
+    DTDFVocab:fromData CartStepperEncoderDataTransmitted
+]
+instance HoistStepperEncoderData : DTDFVocab:Data [
+    base:desc "Time‑series of hoist motor encoder counts for fine‑grained position control"
+    DTDFVocab:inputTo MQTTBrokerEclipseMosquitto, TimescaleDBTimescale
+    DTDFVocab:fromData HoistStepperEncoderDataTransmitted
+]
+
+// C10: Models/Artefacts
+instance CADFusion360Model : DTDFVocab:Model [
+    base:desc "Autodesk Fusion360 CAD files of the wooden gantry crane frame"
+    DTDFVocab:inputTo PythonCraneInterface
+]
+instance KinematicModel : DTDFVocab:Model [
+    base:desc "Kinematic model used by the Trajectory Generator Service to compute swing‑free trajectories"
+    DTDFVocab:inputTo TrajectoryGeneratorService
+]
+instance PhysicalSimulationModel : DTDFVocab:Model [
+    base:desc "Physics‑based CAD model used by the Simulation Service to validate planned trajectories"
+    DTDFVocab:inputTo SimulationService
+]
+
+// C11: Enablers
+instance PythonCraneInterface : DTDFVocab:Enabler [
+    base:desc "Python-based gantrylib library that reads sensor data from the Arduino and forwards it to the Logging application"
+    DTDFVocab:enables LoggingService
+]
+instance MQTTBrokerEclipseMosquitto : DTDFVocab:Enabler [
+    base:desc "Eclipse Mosquitto MQTT broker that streams raw sensor measurements to downstream services for real‑time processing"
+    DTDFVocab:enables SimulationService, ContinuousValidationService, FaultClassificationService
+]
+instance TimescaleDBTimescale : DTDFVocab:Enabler [
+    base:desc "TimescaleDB (PostgreSQL extension for time‑series) that stores all logged data and provides time‑series for Grafana dashboards"
+    DTDFVocab:enables LoggingService, DashboardService
+]
+instance DockerComposeEnabler : DTDFVocab:Enabler [
+    base:desc "Docker Compose orchestration that deploys each core service (Logs, Dashboard, Trajectory Generator, Simulation, Validation, Fault Classification) in separate containers"
+    DTDFVocab:enables LoggingService, DashboardService, TrajectoryGeneratorService, SimulationService, ContinuousValidationService, FaultClassificationService
+]
+
+// C6: Services
+instance LoggingService : DTDFVocab:Service [
+    base:desc "Collects continuous state data from the crane during operation and writes it to TimescaleDB and publishes it via MQTT"
+    DTDFVocab:provides DataIngestionInsight
+]
+instance DashboardService : DTDFVocab:Service [
+    base:desc "Runs Grafana dashboards that visualize time‑series logs with confidence bounds for operators"
+    DTDFVocab:provides DataVisualizationInsight
+]
+instance TrajectoryGeneratorService : DTDFVocab:Service [
+    base:desc "Generates optimal, swing‑free trajectories for the gantry crane using its kinematic model"
+    DTDFVocab:provides SwingFreeTrajectoryInsight
+]
+instance SimulationService : DTDFVocab:Service [
+    base:desc "Runs physics‑based simulations of planned trajectories to predict execution outcomes"
+    DTDFVocab:provides SimulationResultInsight
+]
+instance ContinuousValidationService : DTDFVocab:Service [
+    base:desc "Compares executed versus simulated trajectories in real time and triggers alerts when errors exceed a threshold"
+    DTDFVocab:provides TrajectoryErrorAlertInsight, NotifyOperatorAction
+]
+instance FaultClassificationService : DTDFVocab:Service [
+    base:desc "Performs time‑series classification on logged data to detect mechanical faults"
+    DTDFVocab:provides FaultDetectionInsight
+]
+
+// C17: Insights / Actions
+instance DataIngestionInsight : DTDFVocab:Insight [
+    base:desc "Insight that verifies continuous data ingestion into TimescaleDB during crane operation"
+]
+instance DataVisualizationInsight : DTDFVocab:Insight [
+    base:desc "Insight that confirms real‑time visualization of crane status on Grafana dashboards"
+]
+instance SwingFreeTrajectoryInsight : DTDFVocab:Insight [
+    base:desc "Insight indicating that generated trajectories are swing‑free and compliant with energy‑efficiency constraints"
+]
+instance SimulationResultInsight : DTDFVocab:Insight [
+    base:desc "Insight providing simulated trajectory paths and expected positions for validation"
+]
+instance TrajectoryErrorAlertInsight : DTDFVocab:Insight [
+    base:desc "Insight emitted when the distance metric between executed and simulated trajectories exceeds the predefined validation threshold"
+]
+instance FaultDetectionInsight : DTDFVocab:Insight [
+    base:desc "Insight indicating detected faults such as mis‑alignment or encoder drift based on time‑series classification results"
+]
+instance NotifyOperatorAction : DTDFVocab:Action [
+    base:desc "Automatic action that notifies operators via Grafana dashboard alerts when trajectory errors exceed the threshold"
+    DTDFVocab:IsAutomatic true
+]
+
+instance virtual_to_physical_interaction : DTDFVocab:VirtualToPhysical [
+    base:desc "Services such as Trajectory Generator and Continuous Validation publish target motor positions or speed requests to the MQTT broker; the Physical Crane Interface subscribes, translates them into serial commands, and forwards them to the TMC4671 motor drivers, thereby actuating the cart and hoist motors. Sensor feedback may also be queried from the physical hardware via the Interface."
+]
+
+instance twinning_time_scale : DTDFVocab:TimeScale [
+    base:desc "All services operate on a continuous, real‑time time‑scale: logging and validation run at the update frequency of the physical sensors (typically tens of Hz), trajectory generation and simulation are invoked on operator commands or at a scheduled interval, and the MQTT broker delivers messages with negligible latency (< 100 ms) within the local Docker network."
+]
+
+instance dt_constellation : DTDFVocab:Constellation [
+    base:desc "The constellation includes the physical crane with its controller, a Python Physical Crane Interface, Control and Logging applications, human‑machine interface, a TimescaleDB container, an MQTT broker, a Grafana dashboard container, and two twin service containers (Trajectory Generator & Simulation) plus a Continuous Validation container, all orchestrated by Docker‑Compose and connected over a virtual bridge network."
+]
+
+instance life_cycle_stages : DTDFVocab:EvolutionStage [
+    base:desc "The twin lifecycle covers design (CAD models and kinematic model), implementation (Python module gantrylib, database, dashboards), operation (real‑time monitoring and control), validation (continuous comparison), and education/research (iterative extension)."
+]
+
+instance fidelity_and_validity_considerations : DTDFVocab:FidelityConsideration [
+    base:desc "Model fidelity relies on a kinematic representation of the crane and a physics‑based simulator; validation is performed by continuous monitoring of executed trajectories against simulation using a distance metric and a predefined threshold. Fault detection uses supervised time‑series classification to flag deviations, thereby maintaining model validity during operation."
+]
+
+instance dt_technical_connection : DTDFVocab:TechnicalConnection [
+    base:desc "The physical system communicates with the twin via a USB serial connection to the Arduino; the Physical Crane Interface publishes data over MQTT (TCP) and writes to a TimescaleDB database (PostgreSQL protocol). The internal services communicate over MQTT on the same Docker network; the Grafana dashboard queries TimescaleDB over the database port. All connections use unencrypted TCP within the local machine."
+]
+
+instance dt_hosting_deployment : DTDFVocab:Deployment [
+    base:desc "All twin services are deployed as Docker containers on a single host (personal computer). Docker‑Compose manages container lifecycle, image build, and network configuration. The repository is hosted on GitHub, while documentation is served via MkDocs on GitHub Pages."
+]
+
+instance standardization : DTDFVocab:Standardization [
+    base:desc "The twin employs open‑source standards: MQTT (IEEE 802.15.4 analogue for messaging), PostgreSQL for time‑series storage, Docker for containerization, Grafana for monitoring, Autodesk Fusion 360 for CAD, Arcadia/Capella for MBSE modeling, KiCad for PCB design, Arduino for firmware. No specific twin standard is adhered to, but the architecture follows the C4 model and MBSE practices."
+]

@@ -1,0 +1,135 @@
+// C3: Physical sensing components
+instance PositionSensor : DTDFVocab:SensingComponent [
+    base:desc "Sensor measuring the crane's gantry position."
+    DTDFVocab:producedData PositionDataTransmitted
+]
+instance VelocitySensor : DTDFVocab:SensingComponent [
+    base:desc "Sensor measuring the gantry's velocity."
+    DTDFVocab:producedData VelocityDataTransmitted
+]
+instance LoadSensor : DTDFVocab:SensingComponent [
+    base:desc "Sensor measuring the load weight carried by the crane."
+    DTDFVocab:producedData LoadDataTransmitted
+]
+instance StatusFlagSensor : DTDFVocab:SensingComponent [
+    base:desc "Sensor capturing status flags (e.g., overload, cable tension limits)."
+    DTDFVocab:producedData StatusFlagDataTransmitted
+]
+
+// C4: Physical-to-virtual interaction
+instance PositionDataTransmitted : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom PositionSensor
+]
+instance VelocityDataTransmitted : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom VelocitySensor
+]
+instance LoadDataTransmitted : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom LoadSensor
+]
+instance StatusFlagDataTransmitted : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom StatusFlagSensor
+]
+
+// C10: Models/Data
+instance PositionData : DTDFVocab:Data [
+    base:desc "Collected gantry position reading serialized as JSON‑style row."
+    DTDFVocab:inputTo LoggingAppEnabler
+    DTDFVocab:fromData PositionDataTransmitted
+]
+instance VelocityData : DTDFVocab:Data [
+    base:desc "Collected gantry velocity reading serialized as JSON‑style row."
+    DTDFVocab:inputTo LoggingAppEnabler
+    DTDFVocab:fromData VelocityDataTransmitted
+]
+instance LoadData : DTDFVocab:Data [
+    base:desc "Collected load weight reading serialized as JSON‑style row."
+    DTDFVocab:inputTo LoggingAppEnabler
+    DTDFVocab:fromData LoadDataTransmitted
+]
+instance StatusFlagData : DTDFVocab:Data [
+    base:desc "Collected status flag reading (e.g., overload, cable tension) serialized as JSON‑style row."
+    DTDFVocab:inputTo LoggingAppEnabler
+    DTDFVocab:fromData StatusFlagDataTransmitted
+]
+
+// C11: Enablers
+instance LoggingAppEnabler : DTDFVocab:Enabler [
+    base:desc "Python Logging Application that serializes state data and writes it to a TimescaleDB hypertable over PostgreSQL TCP sockets."
+    DTDFVocab:enables DataLoggingService
+]
+instance VisualizationDashboardEnabler : DTDFVocab:Enabler [
+    base:desc "Web‑based dashboard rendering real‑time plots from the timeseries database."
+    DTDFVocab:enables VisualizationService
+]
+instance TrajectoryGeneratorEnabler : DTDFVocab:Enabler [
+    base:desc "Kinematic model engine computing target trajectories for the crane based on current state."
+    DTDFVocab:enables TrajectoryGeneratorService
+]
+instance ContinuousValidationEnabler : DTDFVocab:Enabler [
+    base:desc "Validation engine comparing predicted trajectory points against actual sensor data and triggers alerts when deviations exceed predefined thresholds."
+    DTDFVocab:enables ContinuousValidationService
+]
+
+// C6: Services
+instance DataLoggingService : DTDFVocab:Service [
+    base:desc "Continuously collects crane sensor readings (position, velocity, load, status flags) and stores them in a TimescaleDB hypertable."
+    DTDFVocab:provides LoggingInsight
+]
+instance VisualizationService : DTDFVocab:Service [
+    base:desc "Renders real‑time plots and monitoring information on a web‑based dashboard for operator situational awareness."
+    DTDFVocab:provides VisualizationInsight
+]
+instance TrajectoryGeneratorService : DTDFVocab:Service [
+    base:desc "Computes target positions for the crane using a kinematics model, producing a trajectory for the physical controller to follow."
+    DTDFVocab:provides TrajectoryInsight
+]
+instance ContinuousValidationService : DTDFVocab:Service [
+    base:desc "Compares predicted trajectory points with actual sensor data, triggers dashboard alerts when deviations exceed predefined thresholds."
+    DTDFVocab:provides ValidationInsight
+]
+
+// C17: Insights/Actions
+instance LoggingInsight : DTDFVocab:Insight [
+    base:desc "Insight describing that sensor data has been successfully logged into the time‑series database."
+]
+instance VisualizationInsight : DTDFVocab:Insight [
+    base:desc "Insight depicting real‑time state visualizations shown on the operator dashboard."
+]
+instance TrajectoryInsight : DTDFVocab:Insight [
+    base:desc "Insight showing the computed optimal trajectory for crane movement."
+]
+instance ValidationInsight : DTDFVocab:Insight [
+    base:desc "Insight indicating deviation between predicted trajectory and actual sensor measurements; triggers alerts when thresholds are exceeded."
+]
+instance RecomputeTrajectoryAction : DTDFVocab:Action [
+    base:desc "Action allowing operators to adjust trajectory constraints via the dashboard; initiates recomputation."
+    DTDFVocab:IsAutomatic false
+]
+instance AdjustConstraintsAction : DTDFVocab:Action [
+    base:desc "Action enabling operators to modify constraints (e.g., load limits, speed caps) through the dashboard interface."
+    DTDFVocab:IsAutomatic false
+]
+
+// C10: Additional component and environment
+instance CraneStructureComponent : DTDFVocab:Component [
+    base:desc "Physical gantry crane structure that operates on a fixed rail."
+]
+instance GantryCraneEnvironment : DTDFVocab:Environment [
+    base:contains PositionSensor, VelocitySensor, LoadSensor, StatusFlagSensor, CraneStructureComponent
+]
+
+instance virtual_to_physical_interaction : DTDFVocab:VirtualToPhysical [
+    base:desc "The Control Application, a Python program, issues high‑level crane commands (e.g., move to a target position, set speed, stop) to the Physical Crane Interface.  The interface translates these commands into low‑level controller instructions (protocols not specified) and transmits them to the crane’s motor controllers over the local network.  Feedback on command execution (e.g., position confirmations, error codes) is received by the crane interface and logged by the Logging Application; no explicit authentication or conflict‑resolution mechanisms are described."
+]
+
+instance dt_constellation : DTDFVocab:Constellation [
+    base:desc "The Digital Twin system is orchestrated using a containerized deployment as described by the C4 model.  The Lab Scale Gantry Crane twin runs in Docker containers communicating via an MQTT broker and persisting data in a TimescaleDB database.  GreenhouseDT is delivered through virtual machine images that bundle an InfluxDB time‑series database and an ActiveMQ message broker, enabling data collection and twin communication.  The Air Quality Management exemplar employs a Raspberry‑Pi sensor node coupled with an AutomationML‑based twin model and leverages Microsoft Azure tools for pipeline implementation.  Coordination across components relies on the common message broker (MQTT or ActiveMQ) and container orchestration, with resource management handled by the underlying container or VM layers."
+]
+
+instance dt_technical_connection : DTDFVocab:TechnicalConnection [
+    base:desc "Digital‑Twin services communicate via an MQTT broker for inter‑service signaling, enabling decoupled message passing (e.g., trajectories, simulation results, validation metrics).  The TimescaleDB database is accessed using the standard PostgreSQL TCP protocol on port 5432.  The overall network topology is a local, service‑mesh‑like deployment with no explicit bandwidth, latency, reliability, redundancy, or security protocols documented."
+]
+
+instance standardization : DTDFVocab:Standardization [
+    base:desc "The digital twin model of the Air Quality Management exemplar follows the AutomationML standard for representing automation engineering information. No other specific industry certifications or compliance frameworks are cited in the provided documents."
+]

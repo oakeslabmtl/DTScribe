@@ -1,0 +1,150 @@
+// C3: Physical sensing components
+instance SwingAngleEncoder : DTDFVocab:SensingComponent [
+    base:desc "swing‑angle encoder mounted on the crane to measure the swinging motion of the hoist"
+    DTDFVocab:producedData SwingAngleDataTransmitted
+]
+
+instance Anemometer : DTDFVocab:SensingComponent [
+    base:desc "anemometer that records wind speed affecting crane operations"
+    DTDFVocab:producedData WindSpeedDataTransmitted
+]
+
+// C4: Physical-to-virtual interaction (data transmitted)
+instance SwingAngleDataTransmitted : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom SwingAngleEncoder
+]
+
+instance WindSpeedDataTransmitted : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom Anemometer
+]
+
+// Data instances
+instance SwingAngleData : DTDFVocab:Data [
+    base:desc "swing‑angle sensor data stream"
+    DTDFVocab:fromData SwingAngleDataTransmitted
+    DTDFVocab:inputTo LoggingEnabler
+]
+
+instance WindSpeedData : DTDFVocab:Data [
+    base:desc "wind speed sensor data stream"
+    DTDFVocab:fromData WindSpeedDataTransmitted
+    DTDFVocab:inputTo LoggingEnabler
+]
+
+// C10: Models/Data
+instance KinematicModel : DTDFVocab:Model [
+    base:desc "kinematic model describing cart horizontal translation and hoist vertical lift"
+    DTDFVocab:inputTo SimulationEnabler, ValidationEnabler
+]
+
+instance SimulatedTrajectoryData : DTDFVocab:Data [
+    base:desc "simulated trajectory data produced by the kinematic model"
+    DTDFVocab:fromData SimulationService
+    DTDFVocab:inputTo LoggingEnabler
+]
+
+// C11: Enablers
+instance SimulationEnabler : DTDFVocab:Enabler [
+    base:desc "enabler that provides simulation service inputs"
+    DTDFVocab:enables SimulationService
+]
+
+instance ValidationEnabler : DTDFVocab:Enabler [
+    base:desc "enabler that provides continuous validation service inputs"
+    DTDFVocab:enables ContinuousValidationService
+]
+
+instance LoggingEnabler : DTDFVocab:Enabler [
+    base:desc "enabler that logs telemetry data to the database"
+    DTDFVocab:enables LoggingService
+]
+
+// C6: Services
+instance SimulationService : DTDFVocab:Service [
+    base:desc "service that computes motion plans based on live sensor input and simulates expected states"
+    DTDFVocab:provides SimulatedTrajectoryInsight, TrajectoryPlanningAction
+]
+
+instance ContinuousValidationService : DTDFVocab:Service [
+    base:desc "service that compares live sensor data against simulated states and flags deviations exceeding tolerance"
+    DTDFVocab:provides DeviationInsight, CorrectiveAction
+]
+
+instance LoggingService : DTDFVocab:Service [
+    base:desc "service that writes continuous telemetry records to TimescaleDB"
+    DTDFVocab:provides HistoricalTelemetryInsight
+]
+
+// C17: Insights/Actions
+instance SimulatedTrajectoryInsight : DTDFVocab:Insight [
+    base:desc "insight presenting simulated trajectory for realtime planning"
+]
+
+instance DeviationInsight : DTDFVocab:Insight [
+    base:desc "insight indicating deviation between measured and simulated positions"
+]
+
+instance HistoricalTelemetryInsight : DTDFVocab:Insight [
+    base:desc "insight providing historical telemetry for analysis"
+]
+
+instance CorrectiveAction : DTDFVocab:Action [
+    base:desc "action enabling operator to correct crane operation based on deviation"
+    DTDFVocab:IsAutomatic false
+]
+
+instance TrajectoryPlanningAction : DTDFVocab:Action [
+    base:desc "action that delivers the computed motion plan to the controller"
+    DTDFVocab:IsAutomatic true
+]
+
+// C2: Acting Components
+instance HorizontalCartMotor : DTDFVocab:ActingComponent [
+    base:desc "motor that drives horizontal cart movement along the gantry"
+]
+
+instance HoistMotor : DTDFVocab:ActingComponent [
+    base:desc "motor that, together with an electromagnet, operates the hoist to pick up and release container pucks"
+]
+
+instance Electromagnet : DTDFVocab:ActingComponent [
+    base:desc "electromagnet that assists the HoistMotor in manipulating load"
+]
+
+// C3: Physical Constructors / Components
+instance LabScaleGantryCraneSystem : DTDFVocab:Component [
+    base:desc "laboratory-scale gantry crane system composed of a floating rail, linear actuators for X and Y motion, a horizontal hoist carriage, a vertical lift mechanism, and an electronic controller"
+]
+
+instance ElectronicController : DTDFVocab:Component [
+    base:desc "controller system that interfaces with motors and sensors"
+]
+
+// C17: Environment
+instance LabEnvironment : DTDFVocab:Environment [
+    base:contains LabScaleGantryCraneSystem, ElectronicController,
+           HorizontalCartMotor, HoistMotor, Electromagnet,
+           SwingAngleEncoder, Anemometer, SimulationEnabler,
+           ValidationEnabler, LoggingEnabler,
+           SimulationService, ContinuousValidationService,
+           LoggingService,
+           SimulatedTrajectoryInsight, DeviationInsight,
+           HistoricalTelemetryInsight, CorrectiveAction,
+           TrajectoryPlanningAction
+]
+
+instance dt_constellation : DTDFVocab:Constellation [
+    base:desc "The digital twin system is orchestrated using a container‑based architecture identified by the C4 model. Contextually the system comprises six Docker containers: (i) a sensor ingestion service that streams data from Raspberry‑Pi GPIO via MQTT; (ii) a message broker container running ActiveMQ that routes real‑time telemetry to downstream services; (iii) an InfluxDB container that stores continuous telemetry and back‑filled prerecorded data; (iv) a trajectory‑generation container that computes motion paths for the gantry crane; (v) a simulation engine container that applies a physical model to predict wind‑force effects; and (vi) a visualization container that exposes a web dashboard using a Node.js/React stack. Inter‑container communication follows an asynchronous publish/subscribe pattern over the MQTT broker on port 1883, with canonical topics such as “sensors/temperature”, “commands/move”, and “state/trajectory”. The orchestration layer is implemented through Docker‑Compose locally and a lightweight VM image for easy deployment, ensuring that resource management (CPU, memory) is bounded per container and that scaling happens by adding or removing VM replicas. The containerized approach facilitates reproducibility, self‑containment, and separation of concerns across data acquisition, storage, processing, and UI components."
+]
+
+instance fidelity_and_validity_considerations : DTDFVocab:FidelityConsideration [
+    base:desc "The digital twin’s Continuous Validation Service compares real‑time measurements from the swing‑angle encoder and hoist position against the outputs of the kinematic simulation.  For each trajectory segment, it computes a distance metric and compares the value to a pre‑configured tolerance threshold; any violation is logged and can trigger controller re‑planning or alerting.  This mechanism provides ongoing model fidelity verification and data integrity assurance, ensuring that the twin remains accurate throughout operation."
+]
+
+instance dt_technical_connection : DTDFVocab:TechnicalConnection [
+    base:desc "The Digital Twin relies on an MQTT broker to signal events and data between micro‑services such as the Trajectory Generator Service, Simulation Service, Continuous Validation Service, and the Dashboard. The broker implements the MQTT protocol (version not specified) and allows publish/subscribe communication among services. No further details on network topology, bandwidth, latency, or reliability mechanisms are provided. There is no explicit mention of secure sockets (e.g., TLS), authentication, or redundancy for the MQTT broker."
+]
+
+instance dt_hosting_deployment : DTDFVocab:Deployment [
+    base:desc "Deployment details are not explicitly documented. All Python processes, the TimescaleDB database, and the MQTT broker are implied to run locally on the same host that controls the Physical Crane, suggesting an on‑premise, edge‑like deployment. No information is provided about cloud hosting, scalability mechanisms, or availability guarantees."
+]

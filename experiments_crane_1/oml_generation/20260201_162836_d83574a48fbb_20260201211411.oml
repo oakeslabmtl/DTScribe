@@ -1,0 +1,292 @@
+// C1: Physical Sensing Components
+instance SwingAngleEncoder : DTDFVocab:SensingComponent [
+    base:desc "Measures the angular position/swing motion of the hoist arm of the gantry crane"
+]
+
+instance Anemometer : DTDFVocab:SensingComponent [
+    base:desc "Measures wind speed (though relevance to twin's primary functions is secondary)"
+]
+
+instance ArduinoSensorInterface : DTDFVocab:SensingComponent [
+    base:desc "Central hub interfacing with all sensors (encoders, electromagnet) and logging data to the digital twin's database"
+    DTDFVocab:producedData EncoderSwingData, WindSpeedData
+]
+
+// C2: Produced Data from Sensing Components
+instance EncoderSwingData : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom SwingAngleEncoder
+]
+
+instance WindSpeedData : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom Anemometer
+]
+
+instance ArduinoSensorLog : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom ArduinoSensorInterface
+]
+
+// C3: Physical Acting Components
+instance CartMotorController : DTDFVocab:ActingComponent [
+    base:desc "Stepper motor (TMC4671-Eval controller) for horizontal movement of the crane carriage"
+]
+
+instance HoistMotorController : DTDFVocab:ActingComponent [
+    base:desc "Stepper motor (TMC4671-Eval controller) for vertical lifting/hoisting of the crane arm"
+]
+
+instance CraneElectromagnet : DTDFVocab:ActingComponent [
+    base:desc "At the crane's end to pick up and release small pucks (containers)"
+]
+
+// C4: Data Types from Acting Components
+instance MotorPositionData : DTDFVocab:Data [
+    base:desc "Real-time motor position data for both cart and hoist motors"
+    DTDFVocab:fromData EncoderSwingData, ArduinoSensorLog
+]
+
+instance ElectromagnetStatusData : DTDFVocab:Data [
+    base:desc "Status data for the crane's electromagnet operation"
+    DTDFVocab:fromData ArduinoSensorLog
+]
+
+// C5: Enablers/Tools
+instance TimescaleDB : DTDFVocab:Enabler [
+    base:desc "Centralized PostgreSQL-based time-series database for storing all logged crane data"
+    DTDFVocab:enables DataLoggingService, ContinuousValidationService
+]
+
+instance EclipseMosquittoMQTT : DTDFVocab:Enabler [
+    base:desc "Lightweight MQTT broker facilitating inter-service communication between all components"
+    DTDFVocab:enables DataLoggingService, TrajectoryGeneratorService, ContinuousValidationService
+]
+
+instance GrafanaDashboard : DTDFVocab:Enabler [
+    base:desc "Visualization platform displaying real-time and historical trajectory traces with simulated confidence bounds"
+    DTDFVocab:enables DataVisualizationService
+]
+
+instance GantryLibPython : DTDFVocab:Enabler [
+    base:desc "Python library bundle containing crane control, logging, and validation utilities"
+    DTDFVocab:enables TrajectoryGeneratorService, ContinuousValidationService
+]
+
+instance ArduinoHardwareShield : DTDFVocab:Enabler [
+    base:desc "Custom KiCad-designed Arduino shield for sensor/control interfacing"
+    DTDFVocab:enables ArduinoSensorInterface
+]
+
+instance CapellaSystemModeling : DTDFVocab:Enabler [
+    base:desc "Capella-based system modeling for Arcadia teaching applications"
+    DTDFVocab:inputTo ArcadiaSystemModel
+]
+
+instance Fusion360CAD : DTDFVocab:Enabler [
+    base:desc "Autodesk Fusion 360 CAD models of the crane's physical structure"
+    DTDFVocab:inputTo PhysicalCraneModel
+]
+
+// C6: Services
+instance DataLoggingService : DTDFVocab:Service [
+    base:desc "Continuous storage of crane state data (positions, speeds, angles) in TimescaleDB"
+    DTDFVocab:provides MotorPositionData, EncoderSwingData, ArduinoSensorLog
+]
+
+instance DataVisualizationService : DTDFVocab:Service [
+    base:desc "Grafana Dashboard displays real-time and historical trajectory traces with simulated confidence bounds"
+    DTDFVocab:provides TrajectoryVisualizationInsight
+]
+
+instance TrajectoryGeneratorService : DTDFVocab:Service [
+    base:desc "Kinematic model-based trajectory optimization producing zero-swing trajectories"
+    DTDFVocab:provides OptimalTrajectoryAction
+]
+
+instance ContinuousValidationService : DTDFVocab:Service [
+    base:desc "Compares real-time measurements with simulations, triggering alerts for deviations"
+    DTDFVocab:provides ContinuousValidationInsight
+]
+
+instance HMISystem : DTDFVocab:Service [
+    base:desc "Python-based frontend for operators to configure crane operations, loggers, and monitor status"
+    DTDFVocab:provides OperatorConfigurationAction
+]
+
+// C7: Models/Data Relationships
+instance PhysicalCraneModel : DTDFVocab:Model [
+    base:desc "Autodesk Fusion 360 CAD models of the gantry crane's physical structure"
+    DTDFVocab:inputTo Fusion360CAD
+]
+
+instance KinematicTrajectoryModel : DTDFVocab:Model [
+    base:desc "Kinematic model used by Trajectory Generator Service to compute optimal zero-swing trajectories"
+    DTDFVocab:inputTo GantryLibPython
+]
+
+instance ArcadiaSystemModel : DTDFVocab:Model [
+    base:desc "Capella-based system models for teaching applications"
+    DTDFVocab:inputTo CapellaSystemModeling
+]
+
+instance TrajectorySimulationData : DTDFVocab:Data [
+    base:desc "Virtual trajectories generated by Simulation Service for validation against real measurements"
+    DTDFVocab:fromData SimulationService
+]
+
+// C8: Data Flow Connections
+instance MotorPositionData : DTDFVocab:Data [
+    base:desc "Time-series data of motor positions/velocities from both crane motors"
+    DTDFVocab:fromData EncoderSwingData, ArduinoSensorLog
+    DTDFVocab:inputTo TimescaleDB, ContinuousValidationService
+]
+
+instance SwingAngleData : DTDFVocab:Data [
+    base:desc "Time-series data of swing angle measurements from encoder"
+    DTDFVocab:fromData EncoderSwingData
+    DTDFVocab:inputTo TimescaleDB, ContinuousValidationService
+]
+
+instance WindData : DTDFVocab:Data [
+    base:desc "Time-series data of wind speed measurements"
+    DTDFVocab:fromData WindSpeedData
+    DTDFVocab:inputTo TimescaleDB
+]
+
+// C9: Insights and Actions
+instance TrajectoryVisualizationInsight : DTDFVocab:Insight [
+    base:desc "Real-time and historical trajectory traces displayed with simulated confidence bounds (upper/lower bounds)"
+]
+
+instance OptimalTrajectoryAction : DTDFVocab:Action [
+    base:desc "Generated zero-swing trajectories minimizing operational errors"
+    DTDFVocab:IsAutomatic true
+]
+
+instance ContinuousValidationInsight : DTDFVocab:Insight [
+    base:desc "Alerts operators when real-world trajectories deviate from simulations beyond acceptable thresholds"
+]
+
+instance OperatorConfigurationAction : DTDFVocab:Action [
+    base:desc "Python-based frontend actions for operators to configure crane operations and loggers"
+    DTDFVocab:IsAutomatic false
+]
+
+instance HistoricalAnalysisInsight : DTDFVocab:Insight [
+    base:desc "Trend analysis of motor wear and fault frequency from historical TimescaleDB data"
+]
+
+instance FaultLocalizationInsight : DTDFVocab:Insight [
+    base:desc "Time-series classification identifying specific faults (e.g., encoder misalignment) without physical intervention"
+]
+
+// C10: System Environment
+instance PhysicalCraneEnvironment : DTDFVocab:Environment [
+    base:contains SwingAngleEncoder, CartMotorController, HoistMotorController, CraneElectromagnet, ArduinoSensorInterface
+]
+
+instance DigitalTwinEnvironment : DTDFVocab:Environment [
+    base:contains TimescaleDB, EclipseMosquittoMQTT, GrafanaDashboard, TrajectoryGeneratorService, ContinuousValidationService, HMISystem
+]
+
+instance CombinedSystemEnvironment : DTDFVocab:Environment [
+    base:contains PhysicalCraneEnvironment, DigitalTwinEnvironment
+]
+
+// Additional missing SimulationService instance added based on context
+instance SimulationService : DTDFVocab:Service [
+    base:desc "Virtual model of the crane for trajectory validation"
+    DTDFVocab:provides TrajectorySimulationData
+]
+
+instance virtual_to_physical_interaction : DTDFVocab:VirtualToPhysical [
+    base:desc "The digital twin interacts with the physical system via:
+  - **Optimal trajectory generation**: The **Trajectory Generator Service** (kinematic model-based) produces zero-swing trajectories, which are sent to the **Control Application** to guide the crane’s motors.
+  - **Simulation feedback**: The **Simulation Service** generates virtual trajectories for comparison with real-world execution, enabling continuous validation.
+  - **Fault localization**: The **Continuous Validation Service** classifies faults using time-series classification techniques (e.g., WSC 2024) and notifies operators via the **Dashboard** (Grafana) if thresholds are breached."
+]
+
+instance twinning_time_scale : DTDFVocab:TimeScale [
+    base:desc "The twinning time scale is **real-time to near-real-time**:
+  - **Data logging frequency**: Continuous (logged at the rate of sensor updates, typically tied to motor controller cycles, e.g., ~100Hz for stepper motors).
+  - **Trajectory execution**: Operated in real-time, with minimal latency for operator commands (e.g., <100ms for trajectory generation and execution).
+  - **Continuous validation**: Runs in real-time, with validation metrics recalculated for each executed segment of a trajectory (e.g., per second or per motor cycle).
+  - **Simulation synchronization**: The **Simulation Service** replicates real-time data to generate confidence bounds for trajectory validation."
+]
+
+instance dt_constellation : DTDFVocab:Constellation [
+    base:desc "The digital twin constellation is **decentralized and service-oriented**, orchestrated as follows:
+  - **Physical Crane** (hardware) ↔ **Physical Crane Interface** (Python) ↔ **Control Application** (Python) ↔ **Human Machine Interface** (Python).
+  - **Digital Twin Services** (centralized in the **gantrylib** module) interact via:
+    1. **Database (TimescaleDB)**: Stores all logged data.
+    2. **MQTT Broker (Eclipse Mosquitto)**: Facilitates inter-service communication (e.g., trajectory generation ↔ validation).
+    3. **Dashboard (Grafana)**: Aggregates and visualizes data from the database.
+  - **Trajectory Flow**: Operators → HMI → Control Application → Physical Crane (via motors/controllers) ↔ Digital Twin (Trajectory Generator → Simulation → Validation)."
+]
+
+instance life_cycle_stages : DTDFVocab:EvolutionStage [
+    base:desc "The digital twin covers the **operated stage** of the physical system’s lifecycle, focusing on:
+  - **As-operated**: Real-time monitoring, trajectory optimization, and continuous validation during active crane operation.
+  - **Representation phase**: Uses CAD models (Autodesk Fusion 360) and kinematic models (Capella Arcadia) for trajectory generation and simulation, but these are not directly tied to the operational DT.
+  - **No explicit stages for design/manufacture**: The exemplar emphasizes operational use, with future work proposed for virtual commissioning (simulated versions)."
+]
+
+instance fidelity_and_validity_considerations : DTDFVocab:FidelityConsideration [
+    base:desc "Fidelity and validity are ensured through:
+  - **Continuous Validation**: The **Continuous Validation Service** compares real-time measurements (e.g., encoder readings) with simulated trajectories, calculating distance metrics (e.g., Euclidean distance) and triggering alerts if thresholds exceed acceptable limits.
+  - **Model Accuracy**:
+    - Kinematic model (used by Trajectory Generator) is validated against real-world crane behavior.
+    - Simulation Service replicates physical dynamics for trajectory validation.
+  - **Uncertainty Handling**:
+    - Confidence bounds (upper/lower) in Grafana dashboard represent simulation uncertainty.
+    - Wind speed data (anemometer) is logged but not directly used in trajectory optimization (focus is on kinematics).
+  - **Verification/Validation**:
+    - **Publications** (e.g., WSC 2024) validate fault detection methods using time-series classification.
+    - **Teaching**: Used in doctoral schools (e.g., SpaceRaise) to demonstrate digital twin concepts."
+]
+
+instance dt_technical_connection : DTDFVocab:TechnicalConnection [
+    base:desc "Technical connections between the physical twin and digital twin include:
+  - **Network Protocols**:
+    - **MQTT**: Used for inter-service communication (e.g., Trajectory Generator → Control Application).
+    - **HTTP/REST**: Likely used for API calls between the **Dashboard** and database (TimescaleDB).
+  - **Data Transmission**:
+    - Sensor data (e.g., swing angle, wind speed) streams from Arduino → Python **Logging Application** → TimescaleDB.
+    - Trajectory commands flow from **Human Machine Interface** → **Control Application** → Motor controllers (TMC4671-Eval).
+  - **Latency**: Minimal latency (<100ms) for critical operations (e.g., trajectory execution) due to real-time synchronization."
+]
+
+instance dt_hosting_deployment : DTDFVocab:Deployment [
+    base:desc "The digital twin is hosted/deployed on a **single personal computer** with the following setup:
+  - **Containerized Services**: **Database (TimescaleDB)**, **MQTT Broker (Eclipse Mosquitto)**, and **Dashboard (Grafana)** are containerized using Docker and managed via a **docker-compose** file.
+  - **Python Services**: **gantrylib** module (logging, control, validation) runs as standalone Python applications.
+  - **Deployment Workflow**:
+    1. Install dependencies (`pip install gantrylib`).
+    2. Start containers via `docker-compose up`.
+    3. Initialize database and dashboard during first-time setup (automated via docker-compose).
+  - **Scalability**: Designed for single-node deployment; future work could extend to distributed architectures."
+]
+
+instance horizontal_integration : DTDFVocab:HoriIntegration [
+    base:desc "Horizontal integration with external systems is **not explicitly detailed** in the documents. The exemplar focuses on the crane’s internal DT ecosystem (e.g., no mention of integration with harbor-wide systems, IoT devices, or other digital twins). Future teaching extensions (e.g., harbor simulations) may include horizontal integration, but this is not part of the current implementation."
+]
+
+instance data_ownership_and_privacy : DTDFVocab:DataOwnershipPrivacy [
+    base:desc "Data ownership and privacy are **not explicitly addressed** in the documents. The exemplar uses open-source tools (e.g., TimescaleDB, Grafana, Eclipse Mosquitto) and does not specify:
+  - Whether data is owned by the crane operator, research institution, or DT service provider.
+  - Privacy measures for sensor data (e.g., anonymization, encryption).
+  - Compliance with regulations (e.g., GDPR) is not mentioned."
+]
+
+instance standardization : DTDFVocab:Standardization [
+    base:desc "The exemplar follows **ad-hoc standardization** with no explicit adherence to digital twin frameworks or industry standards:
+  - **No commercial frameworks**: Uses open-source tools (e.g., Docker, MQTT) without a dedicated DT framework (e.g., Eclipse Ditto/BaSyx).
+  - **Custom protocols**: MQTT is used for inter-service communication, but no standardized DT protocols (e.g., AutomationML) are implemented.
+  - **Modeling**: CAD models (Fusion 360) and Arcadia (Capella) are used for teaching but not standardized for industry adoption."
+]
+
+instance security_and_safety_considerations : DTDFVocab:SecuritySafety [
+    base:desc "Security and safety are addressed implicitly through:
+  - **Physical Safety**: The crane operates in a controlled lab environment with no remote execution risks (e.g., no mention of human-in-the-loop automation).
+  - **Data Security**: No explicit mention of encryption for sensor data or MQTT messages, but the use of open-source tools (e.g., Mosquitto) suggests minimal risk.
+  - **Validation Safety**: Continuous validation ensures real-time fidelity, reducing the risk of misaligned trajectories (e.g., collisions).
+  - **Future Work**: Proposed integration with commercial frameworks (e.g., BaSyx) could introduce standardized security measures (e.g., TLS for MQTT)."
+]
