@@ -1,0 +1,194 @@
+// ------------------------------------------------------------
+// Acting Component
+// ------------------------------------------------------------
+instance HeatBedActuator : DTDFVocab:ActingComponent [
+    base:desc "Primary heating element (heat‑bed) that provides thermal energy to raise the incubator temperature; commanded by the digital twin via set‑point commands."
+]
+
+// ------------------------------------------------------------
+// Physical Sensing Components
+// ------------------------------------------------------------
+instance InternalTempSensorA : DTDFVocab:SensingComponent [
+    base:desc "DS18S20 digital temperature sensor mounted inside the incubator (location A); 1‑wire interface, samples at 1 Hz, accuracy ±0.5 °C, resolution 0.0625 °C."
+    DTDFVocab:producedData InternalTempDataTransmittedA
+]
+
+instance InternalTempSensorB : DTDFVocab:SensingComponent [
+    base:desc "DS18S20 digital temperature sensor mounted inside the incubator (location B); 1‑wire interface, samples at 1 Hz, accuracy ±0.5 °C, resolution 0.0625 °C."
+    DTDFVocab:producedData InternalTempDataTransmittedB
+]
+
+instance ExternalTempSensor : DTDFVocab:SensingComponent [
+    base:desc "DS18S20 digital temperature sensor placed on the exterior of the insulated box; 1‑wire interface, samples at 1 Hz, accuracy ±0.5 °C, resolution 0.0625 °C."
+    DTDFVocab:producedData ExternalTempDataTransmitted
+]
+
+// ------------------------------------------------------------
+// Physical‑to‑Virtual Interaction (Data Transmitted)
+// ------------------------------------------------------------
+instance InternalTempDataTransmittedA : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom InternalTempSensorA
+]
+
+instance InternalTempDataTransmittedB : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom InternalTempSensorB
+]
+
+instance ExternalTempDataTransmitted : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom ExternalTempSensor
+]
+
+// ------------------------------------------------------------
+// Data Instances
+// ------------------------------------------------------------
+instance RawTempDataInternalA : DTDFVocab:Data [
+    base:desc "Raw temperature reading (timestamped) from InternalTempSensorA as received via RabbitMQ."
+    DTDFVocab:fromData InternalTempDataTransmittedA
+    DTDFVocab:inputTo DataAcquisitionEnabler
+]
+
+instance RawTempDataInternalB : DTDFVocab:Data [
+    base:desc "Raw temperature reading (timestamped) from InternalTempSensorB as received via RabbitMQ."
+    DTDFVocab:fromData InternalTempDataTransmittedB
+    DTDFVocab:inputTo DataAcquisitionEnabler
+]
+
+instance RawTempDataExternal : DTDFVocab:Data [
+    base:desc "Raw temperature reading (timestamped) from ExternalTempSensor as received via RabbitMQ."
+    DTDFVocab:fromData ExternalTempDataTransmitted
+    DTDFVocab:inputTo DataAcquisitionEnabler
+]
+
+instance ProcessedTempData : DTDFVocab:Data [
+    base:desc "Aggregated and filtered temperature dataset (averaged internal, external, time‑aligned) used for model calibration and monitoring."
+    DTDFVocab:fromData InternalTempDataTransmittedA, InternalTempDataTransmittedB, ExternalTempDataTransmitted
+    DTDFVocab:inputTo CalibrationEnabler, MonitoringEnabler
+]
+
+// ------------------------------------------------------------
+// Models
+// ------------------------------------------------------------
+instance SimpleThermalModel : DTDFVocab:Model [
+    base:desc "Analytical temperature dynamics model with two free parameters (gain and offset); used for fast calibration."
+    DTDFVocab:inputTo CalibrationEnabler
+]
+
+instance DetailedThermalModel : DTDFVocab:Model [
+    base:desc "Differential‑equation based model with four free parameters capturing thermal inertia of the heat‑bed; provides high‑fidelity predictions."
+    DTDFVocab:inputTo CalibrationEnabler
+]
+
+// ------------------------------------------------------------
+// Enablers
+// ------------------------------------------------------------
+instance DataAcquisitionEnabler : DTDFVocab:Enabler [
+    base:desc "RabbitMQ based data‑collection middleware that ingests raw sensor packets, timestamps them and forwards to downstream components."
+    DTDFVocab:enables DataAcquisitionService
+]
+
+instance CalibrationEnabler : DTDFVocab:Enabler [
+    base:desc "Calibration algorithm component that estimates best‑fit parameters for the thermal models using ProcessedTempData."
+    DTDFVocab:enables ModelCalibrationService
+]
+
+instance MonitoringEnabler : DTDFVocab:Enabler [
+    base:desc "Monitoring algorithm that evaluates safety (temperature limits) and optimality (set‑point tracking) on the processed temperature dataset."
+    DTDFVocab:enables MonitoringService
+]
+
+instance SimulationEnabler : DTDFVocab:Enabler [
+    base:desc "Simulation engine that runs the calibrated thermal models to predict future temperature trajectories."
+    DTDFVocab:enables SimulationService
+]
+
+instance OptimisationEnabler : DTDFVocab:Enabler [
+    base:desc "Optimisation routine that computes optimal heat‑bed power set‑points to maintain target temperature while minimizing energy use."
+    DTDFVocab:enables OptimisationService
+]
+
+// ------------------------------------------------------------
+// Services
+// ------------------------------------------------------------
+instance DataAcquisitionService : DTDFVocab:Service [
+    base:desc "Provides continuous acquisition of temperature data from physical sensors."
+    DTDFVocab:provides RawDataInsight
+]
+
+instance ModelCalibrationService : DTDFVocab:Service [
+    base:desc "Calibrates SimpleThermalModel and DetailedThermalModel with the latest ProcessedTempData."
+    DTDFVocab:provides CalibratedParametersInsight
+]
+
+instance MonitoringService : DTDFVocab:Service [
+    base:desc "Monitors temperature safety limits and optimality; triggers corrective actions when violations are detected."
+    DTDFVocab:provides SafetyAssessmentInsight, TemperatureOptimalityInsight, AdjustHeatBedPowerAction
+]
+
+instance SimulationService : DTDFVocab:Service [
+    base:desc "Runs simulations of the incubator temperature using calibrated models for prediction and scenario analysis."
+    DTDFVocab:provides PredictedTemperatureInsight
+]
+
+instance OptimisationService : DTDFVocab:Service [
+    base:desc "Computes optimal heating set‑points based on predictions and energy efficiency criteria."
+    DTDFVocab:provides OptimisationRecommendationInsight
+]
+
+// ------------------------------------------------------------
+// Insights and Actions
+// ------------------------------------------------------------
+instance RawDataInsight : DTDFVocab:Insight [
+    base:desc "Indicates successful receipt and integrity of raw temperature measurements."
+]
+
+instance CalibratedParametersInsight : DTDFVocab:Insight [
+    base:desc "Provides the estimated best‑fit parameters for the thermal models after calibration."
+]
+
+instance SafetyAssessmentInsight : DTDFVocab:Insight [
+    base:desc "Detects temperature excursions beyond predefined safety thresholds."
+]
+
+instance TemperatureOptimalityInsight : DTDFVocab:Insight [
+    base:desc "Evaluates deviation of current temperature from the target set‑point."
+]
+
+instance PredictedTemperatureInsight : DTDFVocab:Insight [
+    base:desc "Forecasted temperature trajectory for the next planning horizon."
+]
+
+instance OptimisationRecommendationInsight : DTDFVocab:Insight [
+    base:desc "Recommended heat‑bed power level that balances target tracking and energy consumption."
+]
+
+instance AdjustHeatBedPowerAction : DTDFVocab:Action [
+    base:desc "Command sent to HeatBedActuator to adjust power level in response to safety or optimality violations."
+    DTDFVocab:IsAutomatic true
+]
+
+// ------------------------------------------------------------
+// Environment and Components (optional contextualization)
+// ------------------------------------------------------------
+instance IncubatorEnvironment : DTDFVocab:Environment [
+    base:contains HeatBedActuator, FanComponent, InternalTempSensorA, InternalTempSensorB, ExternalTempSensor, RaspberryPiController
+]
+
+instance FanComponent : DTDFVocab:Component [
+    base:desc "Fan that distributes heat uniformly inside the insulated box."
+]
+
+instance RaspberryPiController : DTDFVocab:Component [
+    base:desc "Raspberry Pi running the plant‑level controller; timestamps sensor packets, forwards data via RabbitMQ, and receives set‑point commands."
+]
+
+instance virtual_to_physical_interaction : DTDFVocab:VirtualToPhysical [
+    base:desc "The Raspberry Pi generates control commands for the heat‑bed and the fan to regulate temperature; these commands constitute the flow from the digital twin to the physical twin. The document does not provide details on command format, validation, or acknowledgment mechanisms."
+]
+
+instance fidelity_and_validity_considerations : DTDFVocab:FidelityConsideration [
+    base:desc "Model fidelity is addressed by comparing the predictive performance of the two temperature simulation models. Experimental results showed that the four‑parameter model more accurately reproduced the thermal inertia of the heat‑bed, indicating higher fidelity. Calibration algorithms are used to update model parameters based on sensor data, providing a validation loop. The documents do not detail quantitative uncertainty quantification, error detection mechanisms, or formal QA processes."
+]
+
+instance dt_hosting_deployment : DTDFVocab:Deployment [
+    base:desc "The computational part of the digital twin is hosted on the Raspberry Pi that also acts as the controller for the incubator; the document does not provide further details on cloud/edge deployment, resource specifications, scalability, or redundancy."
+]

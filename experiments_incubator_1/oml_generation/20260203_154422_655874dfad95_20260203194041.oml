@@ -1,0 +1,225 @@
+instance ThermalIncubatorEnvironment : DTDFVocab:Environment [
+    base:desc "Physical thermal incubator system consisting of styrofoam insulated container, heatbed, fan, and sensors for maintaining set temperature"
+    base:contains Heatbed, Fan, AmbientTemperatureSensor, InternalTemperatureSensor1, InternalTemperatureSensor2, RaspberryPi4ModelB
+]
+
+instance Heatbed : DTDFVocab:ActingComponent [
+    base:desc "Heating element for thermal regulation in incubator system"
+]
+
+instance Fan : DTDFVocab:ActingComponent [
+    base:desc "Fan for air distribution ensuring uniform temperature distribution"
+]
+
+instance RaspberryPi4ModelB : DTDFVocab:Component [
+    base:desc "Raspberry Pi 4 Model B hardware controller for system operations"
+]
+
+instance AmbientTemperatureSensor : DTDFVocab:SensingComponent [
+    base:desc "Temperature sensor measuring external ambient conditions outside insulated box"
+    DTDFVocab:producedData AmbientTemperatureDataTransmitted
+]
+
+instance InternalTemperatureSensor1 : DTDFVocab:SensingComponent [
+    base:desc "First internal temperature sensor inside styrofoam container for thermal distribution monitoring"
+    DTDFVocab:producedData InternalTemperatureDataTransmitted
+]
+
+instance InternalTemperatureSensor2 : DTDFVocab:SensingComponent [
+    base:desc "Second internal temperature sensor inside styrofoam container for thermal distribution monitoring"
+    DTDFVocab:producedData InternalTemperatureDataTransmitted
+]
+
+instance AmbientTemperatureDataTransmitted : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom AmbientTemperatureSensor
+]
+
+instance AmbientTemperatureData : DTDFVocab:Data [
+    base:desc "Ambient temperature data transmitted from physical sensor"
+    DTDFVocab:fromData AmbientTemperatureDataTransmitted
+    DTDFVocab:inputTo KalmanFilter, NonLinearLeastSquaresSolver, TimeSeriesDatabase, SimulationEngine
+]
+
+instance InternalTemperatureDataTransmitted : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom InternalTemperatureSensor1, InternalTemperatureSensor2
+]
+
+instance InternalTemperatureData : DTDFVocab:Data [
+    base:desc "Averaged internal temperature data from dual sensors mitigating thermal non-uniformity"
+    DTDFVocab:fromData InternalTemperatureDataTransmitted
+    DTDFVocab:inputTo KalmanFilter, NonLinearLeastSquaresSolver, TimeSeriesDatabase, SimulationEngine
+]
+
+instance ModelA : DTDFVocab:Model [
+    base:desc "Thermal model with all four assumptions: uniform temperature distribution, no wall heat accumulation, constant specific heat capacity, and complete energy transfer from heatbed to air two free parameters"
+    DTDFVocab:inputTo SimulationEngine
+]
+
+instance ModelB : DTDFVocab:Model [
+    base:desc "Thermal model relaxing Assumption 4 to account for heatbed thermal inertia four free parameters"
+    DTDFVocab:inputTo SimulationEngine
+]
+
+instance RabbitMQ : DTDFVocab:Enabler [
+    base:desc "Message broker for communication between Raspberry Pi controller, low-level driver, and simulation components"
+]
+
+instance LowLevelDriver : DTDFVocab:Enabler [
+    base:desc "Software component handling sensor/actuator interaction with safety protocols enforcement"
+    DTDFVocab:enables ActuationService
+]
+
+instance BangBangController : DTDFVocab:Enabler [
+    base:desc "Bang-bang controller with parameters (Lower Limit, Upper Limit, Heating duration, Waiting duration) for temperature regulation"
+    DTDFVocab:enables ControlService
+]
+
+instance KalmanFilter : DTDFVocab:Enabler [
+    base:desc "Kalman filter for correlating measured data with Model B to estimate non-measured heatbed temperature and detect anomalies"
+    DTDFVocab:inputTo InternalTemperatureData, AmbientTemperatureData
+    DTDFVocab:enables AnomalyDetectionService, HeatbedStateEstimationService
+]
+
+instance NonLinearLeastSquaresSolver : DTDFVocab:Enabler [
+    base:desc "Non-linear least squares solver for model calibration using experimental data"
+    DTDFVocab:inputTo ModelB, InternalTemperatureData, AmbientTemperatureData
+    DTDFVocab:enables CalibrationService
+]
+
+instance TimeSeriesDatabase : DTDFVocab:Enabler [
+    base:desc "Time series database for storing sensor data to support real-time visualization"
+    DTDFVocab:inputTo AmbientTemperatureData, InternalTemperatureData
+    DTDFVocab:enables RealTimeVisualizationService
+]
+
+instance Dashboard : DTDFVocab:Enabler [
+    base:desc "Dashboard interface for real-time system data visualization"
+    DTDFVocab:inputTo TimeSeriesDatabase
+    DTDFVocab:enables RealTimeVisualizationService
+]
+
+instance SimulationEngine : DTDFVocab:Enabler [
+    base:desc "Simulation engine executing Model A and Model B for temperature dynamics prediction and what-if scenarios"
+    DTDFVocab:inputTo ModelA, ModelB, InternalTemperatureData, AmbientTemperatureData
+    DTDFVocab:enables SimulationService
+]
+
+instance SimulationService : DTDFVocab:Service [
+    base:desc "Simulation services using Model A and Model B to predict internal temperature dynamics"
+    DTDFVocab:provides WhatIfSimulation
+]
+
+instance CalibrationService : DTDFVocab:Service [
+    base:desc "Calibration services adjusting model parameters based on experimental data from Physical Twin"
+    DTDFVocab:provides RecalibrateModelB
+]
+
+instance AnomalyDetectionService : DTDFVocab:Service [
+    base:desc "Service for detecting anomalies in system behavior using Kalman filter"
+    DTDFVocab:provides AnomalyDetection
+]
+
+instance HeatbedStateEstimationService : DTDFVocab:Service [
+    base:desc "Service for estimating non-measured heatbed temperature via Kalman filter correlation"
+    DTDFVocab:provides HeatbedStateEstimation
+]
+
+instance RealTimeVisualizationService : DTDFVocab:Service [
+    base:desc "Real-time visualization service relaying controller and driver messages through dashboard"
+    DTDFVocab:provides RealTimeVisualization
+]
+
+instance ControlService : DTDFVocab:Service [
+    base:desc "Control service for sending commands to actuators based on temperature feedback per statechart"
+    DTDFVocab:provides SwitchHeatingState, SwitchFanState
+]
+
+instance ActuationService : DTDFVocab:Service [
+    base:desc "Actuation service controlling heatbed and fan per safety protocols"
+    DTDFVocab:provides ActuateHeatbed, ActuateFan
+]
+
+instance SelfAdaptationService : DTDFVocab:Service [
+    base:desc "Self-adaptation loop detecting plant behavior changes, scheduling experiments, reconfiguring controllers, and optimizing behavior"
+    DTDFVocab:provides DetectPlantBehaviorChanges, ScheduleExperiment, ReconfigureController, OptimizeControllerBehavior
+]
+
+instance AnomalyDetection : DTDFVocab:Insight [
+    base:desc "Real-time anomaly detection in system behavior using Kalman filter"
+]
+
+instance HeatbedStateEstimation : DTDFVocab:Insight [
+    base:desc "Estimated non-measured heatbed temperature derived from sensor data and Model B"
+]
+
+instance RealTimeVisualization : DTDFVocab:Insight [
+    base:desc "Dynamic visualization of system temperature and control states"
+]
+
+instance WhatIfSimulation : DTDFVocab:Insight [
+    base:desc "Simulation results for controller parameter optimization scenarios"
+]
+
+instance DetectPlantBehaviorChanges : DTDFVocab:Insight [
+    base:desc "Detection of changes in physical plant behavior requiring adaptation"
+]
+
+instance ScheduleExperiment : DTDFVocab:Action [
+    base:desc "Scheduling of experiments for model calibration and validation"
+    DTDFVocab:IsAutomatic true
+]
+
+instance ReconfigureController : DTDFVocab:Action [
+    base:desc "Reconfiguring bang-bang controller parameters based on new data"
+    DTDFVocab:IsAutomatic true
+]
+
+instance RecalibrateModelB : DTDFVocab:Action [
+    base:desc "Recalibrating Model B parameters using non-linear least squares solver"
+    DTDFVocab:IsAutomatic true
+]
+
+instance OptimizeControllerBehavior : DTDFVocab:Action [
+    base:desc "Optimizing controller behavior through co-simulations with historical or real-time data"
+    DTDFVocab:IsAutomatic true
+]
+
+instance SwitchHeatingState : DTDFVocab:Action [
+    base:desc "Switching heatbed between heating and idle states per control logic"
+    DTDFVocab:IsAutomatic true
+]
+
+instance SwitchFanState : DTDFVocab:Action [
+    base:desc "Switching fan between operational and idle states per control logic"
+    DTDFVocab:IsAutomatic true
+]
+
+instance ActuateHeatbed : DTDFVocab:Action [
+    base:desc "Physical activation of heatbed for thermal energy transfer"
+    DTDFVocab:IsAutomatic true
+]
+
+instance ActuateFan : DTDFVocab:Action [
+    base:desc "Physical activation of fan for air circulation and uniformity"
+    DTDFVocab:IsAutomatic true
+]
+
+instance virtual_to_physical_interaction : DTDFVocab:VirtualToPhysical [
+    base:desc "Control commands for heatbed and fan are sent via RabbitMQ using a bang-bang controller with parameters LL (lower limit), UL (upper limit), H (heating duration), and C (waiting duration) as defined in Figure 8. The low-level driver validates commands through a safe protocol to ensure safe actuation, with feedback from temperature sensors continuously updating the controller state."
+]
+
+instance dt_constellation : DTDFVocab:Constellation [
+    base:desc "The Digital Twin system employs RabbitMQ as a message broker to facilitate communication between the Physical Twin's Raspberry Pi controller and low-level driver components, where Digital Twin components listen to messages published to RabbitMQ for sensor data and control command synchronization."
+]
+
+instance fidelity_and_validity_considerations : DTDFVocab:FidelityConsideration [
+    base:desc "Model validation is conducted by comparing simulation results with experimental data from section 4, where Model B demonstrated improved accuracy in predicting heatbed thermal inertia. Assumption 1 (uniform temperature distribution) was experimentally tested in section 4. Calibration of models uses a non-linear least squares solver. Uncertainty quantification and error correction mechanisms are not explicitly detailed in the document."
+]
+
+instance dt_technical_connection : DTDFVocab:TechnicalConnection [
+    base:desc "RabbitMQ serves as the central message broker for publish-subscribe communication between physical and digital components. The network architecture routes messages between the Raspberry Pi controller, low-level driver, and DT components, with RabbitMQ deployed either on-premises or in the cloud as a mature, lightweight solution. No bandwidth, latency, or security protocol details are specified."
+]
+
+instance dt_hosting_deployment : DTDFVocab:Deployment [
+    base:desc "Edge deployment on Raspberry Pi for physical twin components (controller, low-level driver), with RabbitMQ message broker hosted on-premises or in the cloud. Software is open-source via GitHub, requiring minimal computational resources suitable for edge devices. No specific storage scalability or high-availability mechanisms are documented."
+]

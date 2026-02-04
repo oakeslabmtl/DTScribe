@@ -1,0 +1,221 @@
+// C1: Acting Components
+instance HeatbedController : DTDFVocab:Actuator [
+    base:desc "MOSFET-driven heatbed actuator (214mm×214mm×3mm) delivering ≥100W power via GPIO-controlled signals through optocouplers for current isolation (4A)."
+]
+
+instance FanController : DTDFVocab:Actuator [
+    base:desc "12V/24V fan (0.02m³/s airflow) for air circulation, actuated via GPIO-controlled signals through Raspberry Pi's low-level driver."
+]
+
+// C2: Physical Sensing Components
+instance InternalAirTemperatureSensor : DTDFVocab:SensingComponent [
+    base:desc "DS18S20 sensor measuring hottest air temperature within styrofoam box (1-Wire bus, ±10.5°C accuracy)."
+    DTDFVocab:producedData InternalAirTemperatureData
+]
+
+instance ColdestAirTemperatureSensor : DTDFVocab:SensingComponent [
+    base:desc "DS18S20 sensor measuring coldest air temperature within styrofoam box (1-Wire bus, ±10.5°C accuracy)."
+    DTDFVocab:producedData ColdestAirTemperatureData
+]
+
+instance RoomTemperatureSensor : DTDFVocab:SensingComponent [
+    base:desc "DS18S20 sensor measuring external room temperature (1-Wire bus, ±10.5°C accuracy)."
+    DTDFVocab:producedData RoomTemperatureData
+]
+
+// C3: Data Transmission
+instance InternalAirTemperatureData : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom InternalAirTemperatureSensor
+]
+
+instance ColdestAirTemperatureData : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom ColdestAirTemperatureSensor
+]
+
+instance RoomTemperatureData : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom RoomTemperatureSensor
+]
+
+// C4: Data Storage
+instance InternalAirTemperatureDataStored : DTDFVocab:Data [
+    base:desc "Raw temperature readings (T_hot) from InternalAirTemperatureSensor, synchronized with controller state (H/C timing)."
+    DTDFVocab:fromData InternalAirTemperatureData
+    DTDFVocab:inputTo RabbitMQMessageBroker
+]
+
+instance ColdestAirTemperatureDataStored : DTDFVocab:Data [
+    base:desc "Raw temperature readings (T_cold) from ColdestAirTemperatureSensor, synchronized with controller state (H/C timing)."
+    DTDFVocab:fromData ColdestAirTemperatureData
+    DTDFVocab:inputTo RabbitMQMessageBroker
+]
+
+instance RoomTemperatureDataStored : DTDFVocab:Data [
+    base:desc "Raw room temperature readings from RoomTemperatureSensor, synchronized with controller state (H/C timing)."
+    DTDFVocab:fromData RoomTemperatureData
+    DTDFVocab:inputTo RabbitMQMessageBroker
+]
+
+instance HeatbedStatusDataTransmitted : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom HeatbedController
+]
+
+instance FanStatusDataTransmitted : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom FanController
+]
+
+instance HeatbedPowerDataStored : DTDFVocab:Data [
+    base:desc "Actuator logs for heatbed status (ON/OFF) and power inputs (V, I) from HeatbedController."
+    DTDFVocab:fromData HeatbedStatusDataTransmitted
+    DTDFVocab:inputTo RabbitMQMessageBroker
+]
+
+instance FanPowerDataStored : DTDFVocab:Data [
+    base:desc "Actuator logs for fan status (ON/OFF) and power inputs from FanController."
+    DTDFVocab:fromData FanStatusDataTransmitted
+    DTDFVocab:inputTo RabbitMQMessageBroker
+]
+
+instance CalibrationTrajectoriesData : DTDFVocab:Data [
+    base:desc "Experimental temperature trajectories (Section 4.2) used for non-linear least squares calibration of Model B parameters."
+    DTDFVocab:inputTo PythonScipyOptimizer
+]
+
+// C5: Models
+instance ModelA : DTDFVocab:Model [
+    base:desc "Differential equation model (eq. 5) with 2 parameters (G_box, C_air) representing thermal dynamics of styrofoam box."
+    DTDFVocab:inputTo PythonScipyOptimizer
+]
+
+instance ModelB : DTDFVocab:Model [
+    base:desc "Extended model (eqs. 6-9) with 4 parameters (G_box, G_heater, C_air, C_heater) representing comprehensive thermal behavior including heater effects."
+    DTDFVocab:inputTo PythonScipyOptimizer
+    DTDFVocab:inputTo RabbitMQMessageBroker
+]
+
+// C6: Services
+instance TemperatureRegulationService : DTDFVocab:Service [
+    base:desc "Modified bang-bang controller regulating temperature between assumed limits (300K and 300K) with parameters H (heating duration) and C (waiting duration)."
+    DTDFVocab:provides TemperatureControlAction
+    DTDFVocab:provides OvershootMitigationInsight
+]
+
+instance ModelCalibrationService : DTDFVocab:Service [
+    base:desc "Non-linear least squares optimization (Python Scipy) calibrating two dynamic models (Model A: 2 parameters Model B: 4 parameters) via residual error minimization."
+    DTDFVocab:provides ParameterOptimizationInsight
+]
+
+// C7: Insights/Actions
+instance TemperatureControlAction : DTDFVocab:Action [
+    base:desc "Automatic bang-bang control action adjusting heatbed/fan status based on temperature readings to maintain target range (293K→300K)."
+    DTDFVocab:IsAutomatic true
+]
+
+instance OvershootMitigationInsight : DTDFVocab:Insight [
+    base:desc "Optimized H/C timing parameters reduce temperature overshoot during heating cycles, validated via experimental results (Section 4.1)."
+]
+
+instance ParameterOptimizationInsight : DTDFVocab:Insight [
+    base:desc "Calibrated Model B parameters (G_box, G_heater, C_air, C_heater) improve thermal inertia prediction and operational efficiency."
+]
+
+// C8: Enablers
+instance RabbitMQMessageBroker : DTDFVocab:Enabler [
+    base:desc "Asynchronous message broker (RabbitMQ) on Raspberry Pi handling continuous temperature data streaming (1-Wire bus) and controller synchronization."
+]
+
+instance PythonScipyOptimizer : DTDFVocab:Enabler [
+    base:desc "Python Scipy library implementing non-linear least squares calibration for model parameter optimization using residual error minimization."
+]
+
+instance LowLevelGPIODriver : DTDFVocab:Enabler [
+    base:desc "Raspberry Pi GPIO abstraction layer managing sensor/actuator communication (1-Wire bus, optocouplers) for isolated control signals."
+]
+
+// C9: Environment
+instance ThermalIncubatorEnvironment : DTDFVocab:Environment [
+    base:contains HeatbedController
+    base:contains FanController
+    base:contains InternalAirTemperatureSensor
+    base:contains ColdestAirTemperatureSensor
+    base:contains RoomTemperatureSensor
+    base:contains RabbitMQMessageBroker
+    base:contains PythonScipyOptimizer
+    base:contains LowLevelGPIODriver
+]
+
+instance virtual_to_physical_interaction : DTDFVocab:VirtualToPhysical [
+    base:desc "The **virtual-to-physical interaction** involves:
+  - **Command transmission**: The DT (via RabbitMQ) sends control commands to the Raspberry Pi controller, which executes them through:
+    - **Heatbed actuation**: GPIO signals routed via MOSFETs and optocouplers to deliver ≥4A current.
+    - **Fan actuation**: Direct GPIO control (12V/24V power supply).
+  - **Protocol**: RabbitMQ for message-based command delivery (e.g., ON/OFF states for heatbed/fan).
+  - **Latency**: Implicitly tied to the controller’s statechart timing (H = heating duration, C = waiting duration)."
+]
+
+instance twinning_time_scale : DTDFVocab:TimeScale [
+    base:desc "The **twinning time scale** is defined by:
+  - **Control loop rate**: Implicitly tied to the controller’s statechart (H + C cycles per heating event).
+  - **Model update frequency**: Calibration occurs post-experiment (offline) using historical data, with no real-time parameter updates mentioned.
+  - **Synchronization**: Data/control commands are synchronized via RabbitMQ (low-latency, real-time streaming)."
+]
+
+instance dt_constellation : DTDFVocab:Constellation [
+    base:desc "The DT constellation is **centralized** and orchestrated as follows:
+  - **Components**:
+    - **Physical Twin (PT)**: Incubator hardware (styrofoam box, heatbed, fan, sensors).
+    - **Digital Twin (DT)**: RabbitMQ server (co-located with Raspberry Pi), Python-based calibration engine, and visualization tools (implied for experimental results).
+  - **Data flow**:
+    - Sensors → RabbitMQ (data streaming).
+    - RabbitMQ → Controller (command routing).
+    - Controller → Actuators (heatbed/fan actuation).
+  - **Architecture**: Decoupled cyber-physical layers with RabbitMQ as the central communication hub."
+]
+
+instance life_cycle_stages : DTDFVocab:EvolutionStage [
+    base:desc "The DT lifecycle stages are:
+  - **Design**: Ideal model development (Assumptions 1–4) and model formulation (eqs. 5–9).
+  - **Manufactured**: Calibration of physical parameters (e.g., *G_box*, *C_air*) using experimental data (Section 4.2).
+  - **Operated**: Real-time monitoring (temperature sensors) and control (bang-bang controller) with model validation via experimental results (Section 4.1)."
+]
+
+instance fidelity_and_validity_considerations : DTDFVocab:FidelityConsideration [
+    base:desc "The **fidelity and validity considerations** include:
+  - **Verification**:
+    - Assumptions 1–4 (uniform temperature, negligible heat loss, constant *c*).
+    - Model validation via experimental results (Section 4.1: temperature uniformity; Section 4.2: parameter calibration).
+  - **Uncertainty**:
+    - **Sensors**: ±0.5°C accuracy (DS18S20).
+    - **Model parameters**: Estimated via least squares (residual error minimization).
+    - **Assumptions**: Assumption 4 (heatbed/fan heat loss) relaxed in Model B.
+  - **Validation**: Model B outperforms Model A in predicting thermal inertia (Section 3)."
+]
+
+instance dt_technical_connection : DTDFVocab:TechnicalConnection [
+    base:desc "The **DT technical connection** uses:
+  - **Network protocols**:
+    - **1-Wire bus** (DS18S20 sensors).
+    - **RabbitMQ** (message-based communication, TCP/IP).
+  - **Architecture**:
+    - **Co-located**: Raspberry Pi hosts RabbitMQ, low-level driver, and controller.
+    - **Latency**: Implicitly low (<2s for fan air circulation, <H+C cycles for control loop)."
+]
+
+instance dt_hosting_deployment : DTDFVocab:Deployment [
+    base:desc "The DT is **deployment**:
+  - **Hardware**: Raspberry Pi 4 Model B (co-located with incubator).
+  - **Software**:
+    - **RabbitMQ**: Runs on the Raspberry Pi (on-premises/cloud-ready).
+    - **Calibration engine**: Python-based (Scipy), deployed post-experiment.
+  - **Scalability**: Open-source hardware/software (GitHub repository) enables replication."
+]
+
+instance security_and_safety_considerations : DTDFVocab:SecuritySafety [
+    base:desc "The **security and safety considerations** include:
+  - **Safety**:
+    - **Hardware isolation**: Optocouplers prevent Raspberry Pi from direct high-current (4A) exposure.
+    - **Control protocol**: RabbitMQ ensures message integrity and command sequencing.
+  - **Cybersecurity**:
+    - **RabbitMQ**: Open-source, but no explicit security hardening mentioned (e.g., TLS).
+    - **Physical access**: Raspberry Pi co-located with incubator (reduced remote risks).
+  - **Human safety**: No remote actuation of heatbed/fan is enabled (localized control)."
+]

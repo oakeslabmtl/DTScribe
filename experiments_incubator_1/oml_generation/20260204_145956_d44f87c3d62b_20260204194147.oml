@@ -1,0 +1,229 @@
+// Physical sensing components
+instance InternTempSensorBox1 : DTDFVocab:SensingComponent [
+    base:desc "Temperature sensor located on the interior wall of the insulated styrofoam incubator, measuring air temperature in °C."
+    DTDFVocab:producedData InternTempMsg1
+]
+
+instance InternTempSensorBox2 : DTDFVocab:SensingComponent [
+    base:desc "Second temperature sensor positioned inside the incubator, providing redundant interior temperature measurements in °C."
+    DTDFVocab:producedData InternTempMsg2
+]
+
+instance ExternalTempSensorAmbient : DTDFVocab:SensingComponent [
+    base:desc "Temperature sensor mounted outside the incubator, reporting ambient air temperature in °C."
+    DTDFVocab:producedData ExternalTempMsg
+]
+
+// Physical-to-virtual interaction (data transmitted)
+instance InternTempMsg1 : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom InternTempSensorBox1
+]
+
+instance InternTempMsg2 : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom InternTempSensorBox2
+]
+
+instance ExternalTempMsg : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom ExternalTempSensorAmbient
+]
+
+// Data instances
+instance InternTempData1 : DTDFVocab:Data [
+    base:desc "Temperature value in °C read by InternTempSensorBox1."
+    DTDFVocab:fromData InternTempMsg1
+    DTDFVocab:inputTo RabbitMQConsumerEnabler
+]
+
+instance InternTempData2 : DTDFVocab:Data [
+    base:desc "Temperature value in °C read by InternTempSensorBox2."
+    DTDFVocab:fromData InternTempMsg2
+    DTDFVocab:inputTo RabbitMQConsumerEnabler
+]
+
+instance ExternalTempData : DTDFVocab:Data [
+    base:desc "Ambient temperature value in °C read by ExternalTempSensorAmbient."
+    DTDFVocab:fromData ExternalTempMsg
+    DTDFVocab:inputTo RabbitMQConsumerEnabler
+]
+
+instance InteriorAvgTempData : DTDFVocab:Data [
+    base:desc "Average of the two interior temperature sensor readings, computed by the DT."
+    DTDFVocab:fromData InternTempMsg1, InternTempMsg2
+    DTDFVocab:inputTo SimulationEnabler
+    DTDFVocab:inputTo KalmanFilterEnabler
+]
+
+// New data instances for actuator signals
+instance HeatBedOnData : DTDFVocab:Data [
+    base:desc "Signal indicating the heatbed has been turned on."
+]
+
+instance HeatBedOffData : DTDFVocab:Data [
+    base:desc "Signal indicating the heatbed has been turned off."
+]
+
+instance FanOnData : DTDFVocab:Data [
+    base:desc "Signal indicating the fan has been turned on."
+]
+
+instance FanOffData : DTDFVocab:Data [
+    base:desc "Signal indicating the fan has been turned off."
+]
+
+// Acting components
+instance HeatBedActuator : DTDFVocab:ActingComponent [
+    base:desc "Heatbed that provides heating to the incubator interior when switched on."
+    DTDFVocab:producedData HeatBedOnData, HeatBedOffData
+]
+
+instance FanActuator : DTDFVocab:ActingComponent [
+    base:desc "Fan that distributes heat within the incubator when switched on."
+    DTDFVocab:producedData FanOnData, FanOffData
+]
+
+// Actions
+instance HeatBedOnAction : DTDFVocab:Action [
+    base:desc "Command to activate the heatbed and initiate heating."
+    DTDFVocab:IsAutomatic true
+]
+
+instance HeatBedOffAction : DTDFVocab:Action [
+    base:desc "Command to deactivate the heatbed and cease heating."
+    DTDFVocab:IsAutomatic true
+]
+
+instance FanOnAction : DTDFVocab:Action [
+    base:desc "Command to activate the fan for heat distribution."
+    DTDFVocab:IsAutomatic true
+]
+
+instance FanOffAction : DTDFVocab:Action [
+    base:desc "Command to deactivate the fan."
+    DTDFVocab:IsAutomatic true
+]
+
+// Enablers
+instance RabbitMQConsumerEnabler : DTDFVocab:Enabler [
+    base:desc "Consumer that subscribes to temperature topics on RabbitMQ, aggregates interior temperatures, and forwards data to downstream services."
+    DTDFVocab:enables MonitoringService, PredictionService, AnomalyService
+]
+
+instance InfluxDBStorageEnabler : DTDFVocab:Enabler [
+    base:desc "Component that stores time‑series temperature data from RabbitMQ into InfluxDB for long‑term visualization."
+    DTDFVocab:enables MonitoringService
+]
+
+instance BangBangControllerEnabler : DTDFVocab:Enabler [
+    base:desc "Bang‑bang controller that toggles the heatbed and fan based on lower/upper temperature limits and timing constraints."
+    DTDFVocab:enables ControlService
+]
+
+instance KalmanFilterEnabler : DTDFVocab:Enabler [
+    base:desc "Kalman filter that fuses Model B predictions with dual temperature sensor data to estimate the heatbed temperature state."
+    DTDFVocab:enables AnomalyService
+]
+
+instance SimulationEnabler : DTDFVocab:Enabler [
+    base:desc "Enabler that runs analytical models (Model A and Model B) to predict temperature evolution."
+    DTDFVocab:enables PredictionService
+]
+
+instance CalibrationEnabler : DTDFVocab:Enabler [
+    base:desc "Online calibration enabler that estimates free parameters of Model B using nonlinear least‑squares from sensor measurements."
+    DTDFVocab:enables CalibrationService
+]
+
+// Models
+instance ModelA : DTDFVocab:Model [
+    base:desc "Model A assumes 100 % conversion of electrical power to air heating and neglects thermal inertia of the heatbed."
+    DTDFVocab:inputTo SimulationEnabler
+]
+
+instance ModelB : DTDFVocab:Model [
+    base:desc "Model B introduces a fourth free parameter to capture heatbed inertia, enabling more accurate temperature prediction."
+    DTDFVocab:inputTo SimulationEnabler
+    DTDFVocab:inputTo CalibrationEnabler
+]
+
+// Services
+instance MonitoringService : DTDFVocab:Service [
+    base:desc "Service that aggregates sensor data, stores it, and feeds the operator dashboard."
+    DTDFVocab:provides RealTimeVisualizationInsight, SelfAdaptationLoopInsight
+]
+
+instance PredictionService : DTDFVocab:Service [
+    base:desc "Service that runs numerical predictions using Model A and Model B and offers what‑if simulation."
+    DTDFVocab:provides HeatBedStateEstimationInsight, WhatIfSimulationInsight
+]
+
+instance CalibrationService : DTDFVocab:Service [
+    base:desc "Service that performs online calibration of Model B parameters."
+    DTDFVocab:provides CalibrationResultInsight
+]
+
+instance AnomalyService : DTDFVocab:Service [
+    base:desc "Service that uses the Kalman filter to detect anomalies and estimate the heatbed temperature state."
+    DTDFVocab:provides AnomalyDetectionInsight
+]
+
+instance ControlService : DTDFVocab:Service [
+    base:desc "Service that executes bang‑bang control commands to actuate the heatbed and fan."
+    DTDFVocab:provides HeatBedOnAction, HeatBedOffAction, FanOnAction, FanOffAction
+]
+
+// Insights
+instance RealTimeVisualizationInsight : DTDFVocab:Insight [
+    base:desc "Provides live visualization of temperature traces and controller status on the operator dashboard."
+]
+
+instance SelfAdaptationLoopInsight : DTDFVocab:Insight [
+    base:desc "Offers confidence‑aware recommendations from the self‑adaptation loop based on Kalman filter covariance."
+]
+
+instance HeatBedStateEstimationInsight : DTDFVocab:Insight [
+    base:desc "Estimates the unmeasured heatbed temperature from dual sensor readings and model predictions."
+]
+
+instance WhatIfSimulationInsight : DTDFVocab:Insight [
+    base:desc "Allows operators to run co‑simulation of historical or live data for controller optimization."
+]
+
+instance AnomalyDetectionInsight : DTDFVocab:Insight [
+    base:desc "Uses a Kalman filter to flag out‑of‑range behaviour and detect anomalies in heatbed operation."
+]
+
+instance CalibrationResultInsight : DTDFVocab:Insight [
+    base:desc "Reports updated parameter values for Model B after online calibration."
+]
+
+instance virtual_to_physical_interaction : DTDFVocab:VirtualToPhysical [
+    base:desc "Control commands originate from the digital twin controller running on the Raspberry Pi. The controller receives temperature measurements from RabbitMQ, executes a bang‑bang control strategy, and publishes command messages to RabbitMQ to turn the heatbed and fan on or off. Command messages are conveyed over AMQP using a simple payload that indicates actuator state (e.g., 'heatbed: ON', 'fan: OFF'). A safe protocol in the low‑level driver validates incoming commands, ensures they obey safety limits, and confirms execution by publishing status updates back to the broker. The low‑level driver then forwards the validated command to the corresponding actuator and reports execution success or failure. No authentication, encryption, or conflict resolution mechanisms beyond the safety checks are described."
+]
+
+instance twinning_time_scale : DTDFVocab:TimeScale [
+    base:desc "The Digital Twin exchanges information with the physical incubator through an event‑driven message bus (RabbitMQ).  The low‑level driver on the Raspberry Pi periodically reads the two inside temperature sensors and the outside temperature sensor and publishes the readings to a RabbitMQ queue; the controller consumes these messages, drives the fan and heatbed, and publishes its control state back to the same queue.  The temporal granularity of the DT is thus defined by the polling interval of the low‑level driver and by the message round‑trip through RabbitMQ; the exact cycle time is not specified in the documents, but the system is designed to operate within a few seconds per observation cycle."
+]
+
+instance dt_constellation : DTDFVocab:Constellation [
+    base:desc "The DT is implemented on a single Raspberry Pi platform and follows a centralized CPS‑centric architecture.  Key components include: 1) the low‑level driver, which abstracts sensor/actuator I/O with a safe protocol and publishes sensor data to RabbitMQ; 2) a RabbitMQ communication server hosted on the Pi, acting as the central message broker for bi‑directional data and control flow; 3) the controller, a bang‑bang temperature regulator with parameters LL, UL, H, and C, that consumes sensor topics and publishes control commands; 4) a real‑time dashboard that subscribes to broker topics, writes telemetry to a time‑series database, and presents live visualizations; 5) an on‑demand calibration service that invokes a non‑linear least‑squares solver to tune the parameters of Model B during experimental runs; 6) a Kalman filter module that uses the calibrated Model B for anomaly detection and heat‑bed state estimation; 7) a co‑simulation module for what‑if experiments that integrates historical or live PT data with the dynamic models.  All services communicate exclusively via RabbitMQ topics, enabling modular scaling while maintaining tight coupling for rapid feedback loops and supporting the self‑adaptation loop (detection → experiment → calibration → re‑control)."
+]
+
+instance life_cycle_stages : DTDFVocab:EvolutionStage [
+    base:desc "The incubator Digital Twin follows a four‑phase lifecycle. 1) **Design & Model Development** – Physical and cyber subsystems are described (styrofoam box, heatbed, fan, temperaturesensors, Raspberry Pi controller) and two simulation models are built (Model A with four free parameters, Model B with two). 2) **Integration & Calibration** – The models are integrated into the DT framework (low‑level driver, RabbitMQ communication server, Kalman‑filter‑based monitor). During operation on‑demand calibration (Section 3.3) restores model parameters to the best‑fit values. 3) **Monitoring & Adaptation** – Continuous data streams from PT sensors feed the DT; monitors check safety and performance, triggering anomaly detection or controller re‑configuration. 4) **Experiment & Re‑calibration** – When a change in the plant is detected (e.g., a new bucket of water), the DT schedules experiments, gathers new data, recalibrates Model B, and re‑optimises the controller. Transition between stages is managed by the calibration loop that shifts the twin from predictive simulation to monitoring mode and back. No explicit lifecycle governance or management pattern is documented in the provided materials."
+]
+
+instance fidelity_and_validity_considerations : DTDFVocab:FidelityConsideration [
+    base:desc "Model fidelity is defined by the set of assumptions underlying Model A and Model B: Assumption 1 (uniform internal temperature), Assumption 2 (negligible wall heat accumulation), Assumption 3 (constant air specific heat), and Assumption 4 (complete conversion of electrical power to air heating). Model B removes Assumption 4, adding a parameter that captures the heatbed’s thermal inertia. Calibration is performed online by estimating the free parameters via a least‑squares or similar optimisation routine whenever new data are collected. Validation and verification rely on co‑simulation between the DT and the real incubator, what‑if simulation scenarios, and Kalman‑filter‑based anomaly detection that flags deviations from expected temperature trajectories. Uncertainty quantification is implicit in the Kalman filter’s covariance; error detection is realised through monitor violations of safety bounds and drift detection. Corrective actions include re‑calibration, controller re‑configuration, and controller parameter optimisation. Quality assurance rests on periodic sensor validation, safety‑protocol enforcement by the low‑level driver, and the ability to replay historical data for model‑dataset consistency checks."
+]
+
+instance dt_technical_connection : DTDFVocab:TechnicalConnection [
+    base:desc "The technical backbone of the incubator DT comprises an AMQP‑based RabbitMQ message broker that mediates all data and control traffic between the low‑level driver, controller, and the virtual twin components. The architecture is a star topology where the Raspberry Pi (hosting the driver and controller) connects to the local network and publishes/subscribes to RabbitMQ queues. The communication relies on the AMQP protocol; no explicit bandwidth or latency requirements are specified. RabbitMQ can be configured in a clustered setup to provide redundancy and high availability, although such configuration is not shown in the documentation. The implementation does not describe additional security protocols such as TLS or access control; all messages are exchanged on the trusted local network."
+]
+
+instance dt_hosting_deployment : DTDFVocab:Deployment [
+    base:desc "The entire Digital Twin stack is hosted on the Raspberry Pi linked to the incubator. The low‑level driver, the bang‑bang controller, the RabbitMQ server, and the digital twin services that subscribe to message feeds all run locally on the Pi (edge deployment). The system stores aggregated data and time‑series records on the Pi’s onboard storage, with the possibility to publish it to external dashboards. The deployment is managed on‑premises, aligning with the documented “on‑premises and in the cloud” capability of RabbitMQ."
+]
+
+instance security_and_safety_considerations : DTDFVocab:SecuritySafety [
+    base:desc "The low‑level driver incorporates a safe protocol to keep the incubator in a safe operating state.  This safety‑enhancing mechanism ensures that sensor readings and actuator commands are processed only when the system is confirmed to be within safe limits, thereby preventing hazardous operating conditions.  The documents do not specify additional security or access‑control measures beyond this safe‑protocol implementation."
+]
