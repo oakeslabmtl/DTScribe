@@ -647,6 +647,10 @@ def plot_double_lollipop_retry_behavior(model_df: pd.DataFrame, save_path: pathl
 
     fig, ax = plt.subplots()
 
+    ax.set_ylim(1.0, 5.0)
+    ax.set_yticks(np.arange(1.0, 5.1, 0.5))
+    ax.yaxis.set_major_formatter(plt.FormatStrFormatter('%.1f'))
+
     # Vertical lines
     for _, row in grouped.iterrows():
         if not (np.isnan(row["initial_score"]) or np.isnan(row["final_score"])):
@@ -998,6 +1002,10 @@ def main():
     # Get unique models
     unique_models = df['model_name'].unique()
     print(f"Found models: {unique_models}")
+
+    # Create double lollipop plot for all models combined before per-model analysis
+    print(f"\n--- Generating Double Lollipop Retry Behavior Plot (All Models) ---")
+    plot_double_lollipop_retry_behavior(df, save_path=output_dir / "double_lollipop_retry_behavior_all_models.png")
 
     for model_name in unique_models:
         print(f"\n{'='*40}")
