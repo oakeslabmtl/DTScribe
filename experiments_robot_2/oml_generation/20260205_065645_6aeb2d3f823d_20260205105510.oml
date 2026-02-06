@@ -1,0 +1,249 @@
+// C3: Physical Sensing Components
+instance MotorPositionEncoder : DTDFVocab:SensingComponent [
+    base:desc "Motor encoder mounted directly on the motor shaft for each axis, providing high-resolution position feedback for closed-loop control."
+    DTDFVocab:producedData MotorPositionDataStream
+]
+
+instance GearboxPositionEncoder : DTDFVocab:SensingComponent [
+    base:desc "Secondary encoder positioned behind the gearbox to measure the actual axis position, ensuring path repeatability and compensating for gearbox compliance."
+    DTDFVocab:producedData GearboxPositionDataStream
+]
+
+instance AxisCurrentSensor : DTDFVocab:SensingComponent [
+    base:desc "Current sensor measuring the input current to each PMSM motor, used for torque estimation and overload protection."
+    DTDFVocab:producedData AxisCurrentDataStream
+]
+
+instance AxisTorqueSensor : DTDFVocab:SensingComponent [
+    base:desc "Torque sensor integrated with the gearbox to measure transmitted torque, enabling joint friction analysis and dynamic load monitoring."
+    DTDFVocab:producedData AxisTorqueDataStream
+]
+
+instance AxisVelocitySensor : DTDFVocab:SensingComponent [
+    base:desc "Velocity sensor derived from position encoders, providing angular velocity data for speed control and dynamic response analysis."
+    DTDFVocab:producedData AxisVelocityDataStream
+]
+
+// C4: Physical-to-Virtual Interaction
+instance MotorPositionDataStream : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom MotorPositionEncoder
+    base:desc "Time-series stream of motor shaft position data transmitted via MQTT protocol for real-time monitoring."
+]
+
+instance GearboxPositionDataStream : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom GearboxPositionEncoder
+    base:desc "Time-series stream of gearbox output position data transmitted via MQTT protocol, ensuring path repeatability validation."
+]
+
+instance AxisCurrentDataStream : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom AxisCurrentSensor
+    base:desc "Time-series stream of motor input current measurements transmitted via MQTT for torque estimation and overload detection."
+]
+
+instance AxisTorqueDataStream : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom AxisTorqueSensor
+    base:desc "Time-series stream of transmitted torque measurements transmitted via MQTT for joint friction analysis and dynamic load monitoring."
+]
+
+instance AxisVelocityDataStream : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom AxisVelocitySensor
+    base:desc "Time-series stream of angular velocity data derived from position encoders, transmitted via MQTT for speed control validation."
+]
+
+// C10: Models/Data
+instance RobotKinematicModel : DTDFVocab:Model [
+    base:desc "Forward and inverse kinematic model of the MABI MAX 100 six-axis robot, implemented in MathWorks Simulink for trajectory planning and position validation."
+    DTDFVocab:inputTo SimulinkIntegrationEnabler
+]
+
+instance RobotDynamicModel : DTDFVocab:Model [
+    base:desc "Dynamic model capturing motor-gearbox interactions, including joint friction effects, implemented in Simulink for performance optimization."
+    DTDFVocab:inputTo SimulinkIntegrationEnabler
+]
+
+instance RobotControlLogicModel : DTDFVocab:Model [
+    base:desc "Control logic model representing the Siemens SINUMERIK 840D sl controller behavior, including PID tuning and trajectory generation."
+    DTDFVocab:inputTo SimulinkIntegrationEnabler
+]
+
+instance EncoderDataAggregationModel : DTDFVocab:Model [
+    base:desc "Data aggregation model processing dual encoder streams to resolve gearbox compliance and ensure path repeatability within specified tolerances."
+    DTDFVocab:inputTo MontiArcIntegrationEnabler
+]
+
+instance SensorDataTimeSeries : DTDFVocab:Data [
+    base:desc "Aggregated time-series data from all sensor streams (position, current, torque, velocity) preprocessed for contextual analysis."
+    DTDFVocab:fromData MotorPositionDataStream, GearboxPositionDataStream, AxisCurrentDataStream, AxisTorqueDataStream, AxisVelocityDataStream
+    DTDFVocab:inputTo MQTTDataIngestionEnabler, MontiArcIntegrationEnabler
+]
+
+instance SimulatedVsMeasuredComparisonData : DTDFVocab:Data [
+    base:desc "Comparison dataset containing simulated trajectories from RobotKinematicModel and RobotDynamicModel against measured physical data for validation."
+    DTDFVocab:fromData SensorDataTimeSeries
+    DTDFVocab:inputTo SysMLValidationEnabler
+]
+
+instance JointFrictionAnalysisData : DTDFVocab:Data [
+    base:desc "Derived dataset analyzing torque-position-velocity relationships to identify and quantify joint friction effects in the gearboxes."
+    DTDFVocab:fromData AxisTorqueDataStream, AxisVelocityDataStream
+    DTDFVocab:inputTo FrictionAnalysisEnabler
+]
+
+// C11: Enablers
+instance MQTTDataIngestionEnabler : DTDFVocab:Enabler [
+    base:desc "Lightweight publish-subscribe mechanism for real-time ingestion of sensor time-series data via MQTT protocol, ensuring low-latency communication."
+    DTDFVocab:enables SensorDataStreamingService
+]
+
+instance SimulinkIntegrationEnabler : DTDFVocab:Enabler [
+    base:desc "Integration layer connecting SysML models to MathWorks Simulink for dynamic system simulation and behavioral analysis."
+    DTDFVocab:enables KinematicSimulationService, DynamicAnalysisService, ControlLogicValidationService
+]
+
+instance MontiArcIntegrationEnabler : DTDFVocab:Enabler [
+    base:desc "Architecture description layer using MontiArc ADL to define component interfaces, connectors, and composition for logical architecture modeling."
+    DTDFVocab:enables EncoderDataProcessingService, LogicalBehaviorModelingService
+]
+
+instance SysMLValidationEnabler : DTDFVocab:Enabler [
+    base:desc "SysML-based validation framework using Internal Block Diagrams (IBDs) and state machines to verify model consistency and traceability."
+    DTDFVocab:enables ModelValidationService
+]
+
+instance FrictionAnalysisEnabler : DTDFVocab:Enabler [
+    base:desc "Specialized analytics toolset for processing torque-velocity-position data to identify and quantify joint friction characteristics."
+    DTDFVocab:enables JointFrictionInsightService
+]
+
+instance AssetAdministrationShellEnabler : DTDFVocab:Enabler [
+    base:desc "Standardized data exchange framework using Asset Administration Shells (AAS) to enable interoperability between heterogeneous modeling tools."
+    DTDFVocab:enables DataInteroperabilityService
+]
+
+// C6: Services
+instance SensorDataStreamingService : DTDFVocab:Service [
+    base:desc "Real-time service aggregating and transmitting sensor time-series data from physical robot to digital twin via MQTT protocol."
+    DTDFVocab:provides SensorDataStreamInsight
+]
+
+instance KinematicSimulationService : DTDFVocab:Service [
+    base:desc "Service simulating robot trajectories using forward/inverse kinematic models to validate path planning and position accuracy."
+    DTDFVocab:provides KinematicValidationInsight
+]
+
+instance DynamicAnalysisService : DTDFVocab:Service [
+    base:desc "Service analyzing dynamic behavior including joint friction effects using torque-velocity-position data from physical system."
+    DTDFVocab:provides DynamicPerformanceInsight
+]
+
+instance ControlLogicValidationService : DTDFVocab:Service [
+    base:desc "Service validating SINUMERIK controller logic against simulated and measured system responses for compliance and performance."
+    DTDFVocab:provides ControlValidationInsight
+]
+
+instance EncoderDataProcessingService : DTDFVocab:Service [
+    base:desc "Service processing dual encoder streams to resolve gearbox compliance and ensure path repeatability within manufacturing tolerances."
+    DTDFVocab:provides PathRepeatabilityInsight
+]
+
+instance LogicalBehaviorModelingService : DTDFVocab:Service [
+    base:desc "Service defining logical architecture components, interfaces, and connectors using MontiArc ADL for system decomposition."
+    DTDFVocab:provides LogicalArchitectureInsight
+]
+
+instance ModelValidationService : DTDFVocab:Service [
+    base:desc "Service validating model consistency and traceability between physical and digital representations using SysML IBDs and state machines."
+    DTDFVocab:provides ModelConsistencyInsight
+]
+
+instance JointFrictionInsightService : DTDFVocab:Service [
+    base:desc "Service identifying and quantifying joint friction effects in gearboxes using torque-velocity-position data analysis."
+    DTDFVocab:provides JointFrictionInsight
+]
+
+instance DataInteroperabilityService : DTDFVocab:Service [
+    base:desc "Service enabling standardized data exchange between heterogeneous modeling tools via Asset Administration Shells (AAS)."
+    DTDFVocab:provides DataInteroperabilityInsight
+]
+
+// C17: Insights/Actions
+instance SensorDataStreamInsight : DTDFVocab:Insight [
+    base:desc "Real-time visualization of aggregated sensor time-series data (position, current, torque, velocity) for operational monitoring."
+]
+
+instance KinematicValidationInsight : DTDFVocab:Insight [
+    base:desc "Comparison of simulated trajectories from RobotKinematicModel against measured physical positions to validate path accuracy."
+]
+
+instance DynamicPerformanceInsight : DTDFVocab:Insight [
+    base:desc "Analysis of dynamic performance including joint friction effects, presented as torque-velocity-position relationships for optimization."
+]
+
+instance ControlValidationInsight : DTDFVocab:Insight [
+    base:desc "Validation results comparing SINUMERIK controller outputs against simulated and measured system responses for compliance verification."
+]
+
+instance PathRepeatabilityInsight : DTDFVocab:Insight [
+    base:desc "Quantitative assessment of path repeatability using dual encoder data to ensure manufacturing tolerances are met."
+]
+
+instance LogicalArchitectureInsight : DTDFVocab:Insight [
+    base:desc "Visual representation of logical architecture components, interfaces, and connectors defined using MontiArc ADL."
+]
+
+instance ModelConsistencyInsight : DTDFVocab:Insight [
+    base:desc "Traceability matrix and consistency checks between physical system data and digital twin models using SysML validation framework."
+]
+
+instance JointFrictionInsight : DTDFVocab:Insight [
+    base:desc "Identified joint friction characteristics presented as torque-position-velocity maps for predictive maintenance and optimization."
+]
+
+instance DataInteroperabilityInsight : DTDFVocab:Insight [
+    base:desc "Status of data exchange between heterogeneous tools via Asset Administration Shells, including integration points and data flow validation."
+]
+
+// C2: Acting Components
+instance PermanentMagnetSynchronousMotor : DTDFVocab:ActingComponent [
+    base:desc "PMSM motor per axis providing actuation with maximum speed of 75 deg/s, controlled via Siemens SINUMERIK 840D sl controller."
+]
+
+instance SiemensSinumerik840DslController : DTDFVocab:ActingComponent [
+    base:desc "Industrial controller accepting position, speed, or acceleration inputs to govern robot motion while enforcing safety boundaries."
+]
+
+// C1: System Under Study
+instance MabiMax100SixAxisRobot : DTDFVocab:Component [
+    base:desc "Modular six-axis serial robot (MABI MAX 100) with hierarchical architecture including motors, gearboxes, and Siemens SINUMERIK controller for industrial automation."
+    base:isContainedIn IndustrialAutomationEnvironment
+]
+
+instance IndustrialAutomationEnvironment : DTDFVocab:Environment [
+    base:desc "Manufacturing/industrial automation domain requiring precision, real-time control, and interoperability for digital twin applications."
+    base:contains MabiMax100SixAxisRobot, PermanentMagnetSynchronousMotor, SiemensSinumerik840DslController,
+                  MotorPositionEncoder, GearboxPositionEncoder, AxisCurrentSensor, AxisTorqueSensor, AxisVelocitySensor
+]
+
+instance dt_constellation : DTDFVocab:Constellation [
+    base:desc "The **Digital Twin (DT) constellation** in this context is implicitly structured around **MBSE methodologies** and **architecture description languages (ADLs)** to orchestrate system-wide coordination. Key aspects include:
+  1. **Architecture Patterns**: Systems are modeled using **component & connector perspectives** (e.g., **SysML IBDs, ACME, AADL, MontiArc**), defining **interfaces, interconnections, and composition** of DT components.
+  2. **Resource Management**: Heterogeneous stakeholders and perspectives (e.g., requirements, functional, logical, physical layers) are integrated via **multi-notation modeling tools** (e.g., **SysML, Simulink, C++/Java code**), requiring **cross-tool synchronization** for cohesive DT operation.
+  3. **System-Wide Coordination**: Behavior is described using **state machines (SysML v1.7), MontiArc Automaton, or simulation tools**, enabling **dynamic coordination** between physical and digital layers. However, no explicit orchestration framework (e.g., microservices, event-driven architectures) is mentioned."
+]
+
+instance life_cycle_stages : DTDFVocab:EvolutionStage [
+    base:desc "The Digital Twin lifecycle stages are structured into **multi-level abstraction phases** aligned with Model-Based Systems Engineering (MBSE) methodologies. These phases include:
+  1. **Requirements Phase**: Defines functional and non-functional requirements for the Digital Twin, serving as the foundational input for subsequent modeling.
+  2. **Functional Architecture Phase**: Utilizes **architecture description languages (ADLs)** such as **ACME, AADL, MontiArc, or SysML Internal Block Diagrams (IBDs)** to decompose the system into **components, connectors, interfaces, and compositions**, abstracting high-level functional behavior.
+  3. **Logical Architecture Phase**: Refines the functional model into a **logical architecture** using ADLs (e.g., **MontiArc Automaton** or **SysML state machines**) to define **behavioral dynamics**, including state transitions and interactions between components.
+  4. **Product/Technical Layer Phase**: Implements the logical architecture into a **physical/technical representation** via tools like **MathWorks Simulink, simulation environments (e.g., [29], [30]), or general-purpose programming languages (e.g., C++, Java)** to ensure operational fidelity.
+  Transition management between phases is governed by **iterative refinement** and **model integration**, where heterogeneous models (e.g., SysML for architecture, Simulink for behavior) are harmonized. Lifecycle governance is implicit in MBSE, emphasizing **stakeholder alignment** and **consistency validation** across abstraction levels to mitigate complexity in large-scale systems (e.g., manufacturing or robotics)."
+]
+
+instance fidelity_and_validity_considerations : DTDFVocab:FidelityConsideration [
+    base:desc "The Digital Twin’s **model fidelity** is ensured through **MBSE methodologies** (e.g., SysML, ADLs) and integration with simulation tools (Simulink), but explicit **validation and verification (V&V) techniques** or **uncertainty quantification** are not detailed in the provided documents. The **Digital Shadow Reference Model** highlights the need for **active software components** to interpret and process **one-way automated data flows** from physical objects, mitigating passive data collection limitations. **Quality assurance** relies on the integration of **heterogeneous tools and stakeholder perspectives** [31], though no specific error detection/correction mechanisms or formal validation protocols (e.g., model calibration, traceability matrices) are described."
+]
+
+instance dt_technical_connection : DTDFVocab:TechnicalConnection [
+    base:desc "The Digital Shadow system leverages **MQTT protocol** for **lightweight, publish-subscribe-based communication** between physical sensors and the digital representation, ensuring efficient data streaming. While the document does not specify network topology, bandwidth, or latency requirements, the use of MQTT implies support for **low-power, high-frequency sensor data transmission** in industrial environments. No explicit details on reliability, redundancy, or security protocols (e.g., TLS, encryption) are provided, though the integration with modeling tools (e.g., Simulink, SysML) suggests adherence to standard industrial communication practices. The system’s passive nature precludes active control flows, limiting technical connection details to data-centric protocols."
+]
