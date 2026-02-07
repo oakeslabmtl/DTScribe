@@ -889,6 +889,72 @@ def export_latex_matrix(df: pd.DataFrame, paper_id: str, save_path: pathlib.Path
     print(f"LaTeX matrix table saved to {save_path}")
 
 
+def calculate_resource_stats(df: pd.DataFrame, title="Resource Usage Statistics", save_path: pathlib.Path = None):
+    """Calculates and prints resource usage statistics per configuration."""
+    if df.empty:
+        return
+
+    # Ensure columns exist
+    if 'max_judge_retries' not in df.columns:
+        df['max_judge_retries'] = 0
+    if 'baseline_full_doc' not in df.columns:
+        df['baseline_full_doc'] = False
+        
+    df['max_judge_retries'] = df['max_judge_retries'].fillna(0)
+
+    # First aggregate by experiment to get totals
+    # We sum tokens and processing time across all blocks for each experiment
+    # Note: 'processing_time' here is per block, so sum gives total extraction time
+    exp_totals = df.groupby(['experiment_id', 'baseline_full_doc', 'max_judge_retries'])[[
+        'input_tokens', 'output_tokens', 'processing_time'
+    ]].sum().reset_index()
+
+    configs = [
+        {
+            'label': 'Base',
+            'filter': lambda d: (d['baseline_full_doc'] == True) & (d['max_judge_retries'] == 0)
+        },
+        {
+            'label': '+Cluster',
+            'filter': lambda d: (d['baseline_full_doc'] == False) & (d['max_judge_retries'] == 0)
+        },
+        {
+            'label': '+Judge',
+            'filter': lambda d: (d['baseline_full_doc'] == True) & (d['max_judge_retries'] > 0)
+        },
+        {
+            'label': '+Cluster+Judge',
+            'filter': lambda d: (d['baseline_full_doc'] == False) & (d['max_judge_retries'] > 0)
+        }
+    ]
+
+    print(f"\n--- {title} (Average per Experiment) ---")
+    
+    stats_data = []
+    
+    for cfg in configs:
+        sub_df = exp_totals[cfg['filter'](exp_totals)]
+        if not sub_df.empty:
+            avg_in = sub_df['input_tokens'].mean()
+            avg_out = sub_df['output_tokens'].mean()
+            avg_time = sub_df['processing_time'].mean()
+            print(f"[{cfg['label']}] ({len(sub_df)} experiments)")
+            print(f"  Mean Input Tokens:  {avg_in:.0f}")
+            print(f"  Mean Output Tokens: {avg_out:.0f}")
+            print(f"  Mean Processing Time: {avg_time:.0f} s")
+            
+            stats_data.append({
+                "Configuration": cfg['label'],
+                "Mean_Input_Tokens": f"{avg_in:.0f}",
+                "Mean_Output_Tokens": f"{avg_out:.0f}",
+                "Mean_Time_Seconds": f"{avg_time:.0f}"
+            })
+            
+    if save_path and stats_data:
+        pd.DataFrame(stats_data).to_csv(save_path, index=False)
+        print(f"Saved resource stats to {save_path}")
+
+
 def main():
     """Main execution function."""
     parser = argparse.ArgumentParser(description="Characteristics Extraction Visualization")
@@ -940,6 +1006,9 @@ def main():
 
         safe_model = re.sub(r'[^a-zA-Z0-9_\-]', '_', model_name)
         model_df = df[df['model_name'] == model_name].copy()
+
+        # Calculate and print resource stats
+        calculate_resource_stats(model_df, title=f"Resource Usage ({model_name})")
 
         if ground_truth and 'accuracy' in model_df.columns:
             print(f"\n--- Accuracy Analysis ({model_name} / Target Paper: {args.paper}) ---")
@@ -1014,6 +1083,9 @@ def main():
         df,
         save_path=viz_dir / "correlation_heatmap.png"
     )
+
+    # Calculate global resource stats across all models
+    calculate_resource_stats(df, title="GLOBAL RESOURCE USAGE STATISTICS (ALL MODELS)", save_path=analysis_dir / "resource_usage_extraction.csv")
     
     # Save detailed metrics
     df.to_csv(analysis_dir / "detailed_block_metrics.csv", index=False)

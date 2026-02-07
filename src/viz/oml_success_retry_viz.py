@@ -87,6 +87,11 @@ def load_data_from_jsons(exp_path):
                     row['model_name'] = d['config']['model']
                 else:
                     row['model_name'] = 'Unknown'
+                
+                # Extract resource usage metrics
+                row['total_input_tokens'] = d.get('total_input_tokens', 0)
+                row['total_output_tokens'] = d.get('total_output_tokens', 0)
+                row['generation_time_seconds'] = d.get('generation_time_seconds', 0.0)
 
                 data.append(row)
                     
@@ -170,6 +175,15 @@ def generate_plots_for_model(model_df, model_name, viz_dir, max_retry_index, sum
         sub_df = model_df[cfg['filter'](model_df)]
         if not sub_df.empty:
             print(f"Data points for [{cfg['label']}]: {len(sub_df)}")
+            
+            # Compute and print average resource usage
+            avg_input_tokens = sub_df['total_input_tokens'].mean()
+            avg_output_tokens = sub_df['total_output_tokens'].mean()
+            avg_gen_time = sub_df['generation_time_seconds'].mean()
+            print(f"  [Stats] Mean Input Tokens: {avg_input_tokens:.2f}")
+            print(f"  [Stats] Mean Output Tokens: {avg_output_tokens:.2f}")
+            print(f"  [Stats] Mean Generation Time: {avg_gen_time:.2f} s")
+
             cumul, step = calculate_stats(sub_df, max_retry_index)
             active_lines.append({
                 'cfg': cfg,
@@ -333,6 +347,65 @@ def generate_plots_for_model(model_df, model_name, viz_dir, max_retry_index, sum
         print(line['cumul'].to_string(index=False))
         print(f"\n[Model: {model_name}] CONDITIONAL SUCCESS RATE SUMMARY ({line['cfg']['label']})")
         print(line['step'].to_string(index=False))
+
+def calculate_global_resource_stats(df, save_path=None):
+    """Calculates and prints global resource usage statistics across all models."""
+    if df.empty:
+        return
+
+    # Ensure max_judge_retries column exists and fill NaNs
+    if 'max_judge_retries' not in df.columns:
+        df['max_judge_retries'] = 0
+    df['max_judge_retries'] = df['max_judge_retries'].fillna(0)
+
+    configs = [
+        {
+            'label': 'Base',
+            'filter': lambda d: (d['baseline_full_doc'] == True) & (d['max_judge_retries'] == 0)
+        },
+        {
+            'label': '+Cluster',
+            'filter': lambda d: (d['baseline_full_doc'] == False) & (d['max_judge_retries'] == 0)
+        },
+        {
+            'label': '+Judge',
+            'filter': lambda d: (d['baseline_full_doc'] == True) & (d['max_judge_retries'] > 0)
+        },
+        {
+            'label': '+Cluster+Judge',
+            'filter': lambda d: (d['baseline_full_doc'] == False) & (d['max_judge_retries'] > 0)
+        }
+    ]
+
+    print(f"\n{'='*40}")
+    print("GLOBAL RESOURCE USAGE STATISTICS (ALL MODELS)")
+    print(f"{'='*40}")
+
+    stats_data = []
+
+    for cfg in configs:
+        sub_df = df[cfg['filter'](df)]
+        if not sub_df.empty:
+            avg_in = sub_df['total_input_tokens'].mean()
+            avg_out = sub_df['total_output_tokens'].mean()
+            avg_time = sub_df['generation_time_seconds'].mean()
+            
+            print(f"[{cfg['label']}] (Total samples: {len(sub_df)})")
+            print(f"  Mean Input Tokens:     {avg_in:.0f}")
+            print(f"  Mean Output Tokens:    {avg_out:.0f}")
+            print(f"  Mean Generation Time:  {avg_time:.0f} s")
+            
+            stats_data.append({
+                "Configuration": cfg['label'],
+                "Mean_Input_Tokens": f"{avg_in:.0f}",
+                "Mean_Output_Tokens": f"{avg_out:.0f}",
+                "Mean_Time_Seconds": f"{avg_time:.0f}"
+            })
+            
+    if save_path and stats_data:
+        pd.DataFrame(stats_data).to_csv(save_path, index=False)
+        print(f"Saved global resource stats to {save_path}")
+
 
 def export_latex_matrix(df: pd.DataFrame, paper_id: str, save_path: pathlib.Path):
     """Generates the LaTeX matrix table for success rate comparison."""
@@ -530,6 +603,9 @@ if __name__ == "__main__":
         out_csv = analysis_dir / "oml_success_summary.csv"
         summary_df.to_csv(out_csv, index=False)
         print(f"\nSaved success summary table to {out_csv}")
+    
+    # Calculate global resource stats
+    calculate_global_resource_stats(df, save_path=analysis_dir / "resource_usage_oml.csv")
     
     # Generate LaTeX Matrix Table if requested (or always if paper is not strictly required but we can default)
     print("\n--- Generating LaTeX Matrix Table ---")
