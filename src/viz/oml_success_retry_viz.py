@@ -138,6 +138,15 @@ def calculate_stats(df, max_retry_index):
     return cumulated_df, step_df
 
 def generate_plots_for_model(model_df, model_name, viz_dir, max_retry_index, summary_list=None):
+
+    # get model accuracy summary data
+    acc_path = viz_dir.parent / "model_accuracy_summary.csv"
+    acc_df = pd.read_csv(acc_path)
+
+    acc_df['baseline_full_doc'] = acc_df['Baseline_Full_Doc']
+    acc_df['max_judge_retries'] = acc_df['Max_Judge_Retries']
+    acc_df['model_name'] = acc_df['Model']
+
     # Ensure max_judge_retries column exists and fill NaNs
     if 'max_judge_retries' not in model_df.columns:
         model_df['max_judge_retries'] = 0
@@ -169,6 +178,7 @@ def generate_plots_for_model(model_df, model_name, viz_dir, max_retry_index, sum
     ]
 
     active_lines = []
+    scatter_points = []
     print(f"--- Stats for model: {model_name} ---")
     
     for cfg in configs:
@@ -215,6 +225,24 @@ def generate_plots_for_model(model_df, model_name, viz_dir, max_retry_index, sum
                     'Last_Success': last_succ,
                     'LaTeX_Cell': latex_str
                 })
+
+        acc_sub = acc_df[
+            (acc_df['model_name'] == model_name) &
+            cfg['filter'](acc_df)
+        ]
+
+        if acc_sub.empty:
+            continue
+
+        accuracy_mean = acc_sub['Accuracy_Mean'].iloc[0]
+
+        scatter_points.append({
+            'label': cfg['label'],
+            'accuracy': accuracy_mean,
+            'last_success': last_succ,
+            'color': cfg['color'],
+            'marker': cfg['marker']
+        })
 
     # Safe filename
     safe_model = re.sub(r'[^a-zA-Z0-9_\-]', '_', model_name)
@@ -340,6 +368,31 @@ def generate_plots_for_model(model_df, model_name, viz_dir, max_retry_index, sum
     plt.savefig(save_path3, dpi=300, bbox_inches='tight')
     print(f"Saved combined plot to {save_path3}")
     plt.close(fig3)
+
+    # ==================== GRAPH 4: Scatter Plot of Accuracy vs Last Success ====================
+
+    fig4, ax4 = plt.subplots(figsize=(6, 4))
+    fig4.subplots_adjust(left=0.12, right=0.95, top=0.88, bottom=0.12)
+
+    for point in scatter_points:
+        ax4.scatter(point['accuracy'], point['last_success'], 
+                   marker=point['marker'], s=120, c=point['color'], label=point['label'])
+
+    ax4.set_xlabel("Accuracy (%)", fontsize=12, fontweight='bold')
+    ax4.set_ylabel("Final Cumulative Success Rate (%)", fontsize=12, fontweight='bold')
+    ax4.set_title(f"Accuracy vs Final Cumulative Success Rate ({model_name})", fontsize=12, fontweight='bold')
+    ax4.set_xlim(0, 1)
+    ax4.set_ylim(0, 100)
+    ax4.grid(True, alpha=0.3)
+    ax4.legend(title="Configurations", fontsize=8)
+
+    plt.tight_layout(pad=2.5)
+    save_path4 = viz_dir / f"oml_accuracy_vs_last_success_{safe_model}.png"
+    plt.savefig(save_path4, dpi=300, bbox_inches='tight')
+    print(f"Saved scatter plot to {save_path4}")
+    plt.close(fig4)
+
+
 
     # Display summary tables
     for line in active_lines:
@@ -562,6 +615,7 @@ if __name__ == "__main__":
 
     print("Attempting to load raw JSON data...")
     df = load_data_from_jsons(args.exp_path)
+    # print(df.head()) # oml_valid  oml_repetition_count  max_oml_retries  max_judge_retries  baseline_full_doc  model_name
 
     if df.empty:
         print("No valid JSON data found. Exiting.")

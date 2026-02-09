@@ -6,6 +6,7 @@ Plots:
 - Number of retries per block
 """
 
+from httpx import head
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
@@ -148,22 +149,37 @@ def extract_block_metrics(data: List[Dict[str, Any]], ground_truth: List[int] = 
         block_initial_scores = {}
 
         for block_num in block_numbers:
+
+            # Case 1: retry_1 exists
             key = f"block_{block_num}_retry_preserve_info"
             block_info = metadata.get(key, {})
 
-            retry_1 = block_info.get("retry_1", {})
-            preserved = retry_1.get("preserved", [])
-            retried = retry_1.get("retried", [])
+            retry_1 = block_info.get("retry_1")
+            scores = []
 
-            scores = [
-                item.get("score")
-                for item in preserved + retried
-                if isinstance(item, dict) and item.get("score") is not None
-            ]
+            if isinstance(retry_1, dict):
+                preserved = retry_1.get("preserved", [])
+                retried = retry_1.get("retried", [])
+
+                scores = [
+                    item.get("score")
+                    for item in preserved + retried
+                    if isinstance(item, dict) and item.get("score") is not None
+                ]
+
+            # Case 2: no retry_1 → fallback to first judge pass
+            if not scores:
+                judge_data = metadata.get(f"block_{block_num}_judge", [])
+                if isinstance(judge_data, list):
+                    scores = [
+                        item.get("score")
+                        for item in judge_data
+                        if isinstance(item, dict) and item.get("score") is not None
+                    ]
 
             block_initial_scores[block_num] = (
                 float(np.mean(scores)) if scores else np.nan
-            )     
+            )    
 
         # Handle case where no blocks are found (e.g. baseline full doc) but we want to record accuracy
         if not block_numbers and accuracy is not None:
@@ -695,6 +711,418 @@ def plot_double_lollipop_retry_behavior(model_df: pd.DataFrame, save_path: pathl
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
         print(f"Saved plot to {save_path}")
 
+
+def plot_retry_lollipop_by_model(extraction_df: pd.DataFrame, save_path: pathlib.Path = None):
+    """
+    Double lollipop chart showing retry effect per block, grouped by model.
+
+    X-axis: block_number (1..6)
+    Y-axis: average_score
+    Each lollipop: average_initial_score -> average_score
+    Color: model_name
+    """
+    #filter out max_judge_retries = 0 since they have no retry data
+    print(f"Original extraction_df shape: {extraction_df.shape}")
+    extraction_df = extraction_df[extraction_df["max_judge_retries"] > 0]
+    print(f"Filtered extraction_df shape (max_judge_retries > 0): {extraction_df.shape}")
+
+    fig, ax = plt.subplots()
+
+    blocks = sorted(extraction_df["block_number"].unique())
+    models = sorted(extraction_df["model_name"].unique())
+
+    # Color mapping per model
+    cmap = plt.cm.get_cmap("tab10", len(models))
+    model_colors = {m: cmap(i) for i, m in enumerate(models)}
+
+    # Horizontal offsets so models don't overlap inside each block
+    n_models = len(models)
+    offset_width = 0.6
+    offsets = np.linspace(
+        -offset_width / 2,
+        offset_width / 2,
+        n_models
+    )
+
+    for m_idx, model in enumerate(models):
+        model_df = extraction_df[extraction_df["model_name"] == model]
+
+        # print(f"Plotting model: {model} with {len(model_df)} rows")
+        # print(model_df.head(10))
+
+        for block in blocks:
+            row = model_df[model_df["block_number"] == block]
+            if row.empty:
+                continue
+
+            y_initial = row["average_initial_score"].values[0]
+            y_final = row["average_score"].values[0]
+
+            # Skip if retry info does not exist
+            if pd.isna(y_initial) or pd.isna(y_final):
+                print(f"Skipping model {model} block {block} due to missing score data")
+                continue
+
+            x = block + offsets[m_idx]
+            color = model_colors[model]
+
+            # Stick
+            ax.plot(
+                [x, x],
+                [y_initial, y_final],
+                color=color,
+                linewidth=2,
+                zorder=1
+            )
+
+            # Initial point
+            ax.scatter(
+                x,
+                y_initial,
+                color=color,
+                s=40,
+                zorder=2
+            )
+
+            # Final point (hollow marker)
+            ax.scatter(
+                x,
+                y_final,
+                facecolors="none",
+                edgecolors=color,
+                s=60,
+                linewidths=1.5,
+                zorder=3
+            )
+
+    # Axes styling
+    ax.set_xlabel("Block")
+    ax.set_ylabel("Average Judge Score")
+    ax.set_xticks(blocks)
+    ax.set_ylim(1, 5)
+
+    # Legend (one entry per model)
+    legend_handles = [
+        plt.Line2D(
+            [0], [0],
+            color=model_colors[m],
+            lw=2,
+            label=m
+        )
+        for m in models
+    ]
+    ax.legend(
+        handles=legend_handles,
+        title="Model",
+        loc="best"
+    )
+
+    ax.set_title("Retry Mechanism Effect on Judge Scores")
+
+    plt.tight_layout()
+
+    if save_path:
+        retry_path = save_path.with_name(save_path.stem + "_double_lollipop_all_models.png")
+        plt.savefig(retry_path, dpi=300, bbox_inches='tight')
+        print(f"Saved plot to {retry_path}")
+
+    # =========================
+    # Grouped bar chart: deltas
+    # =========================
+    fig_delta, ax_delta = plt.subplots()
+
+    for m_idx, model in enumerate(models):
+        model_df = extraction_df[extraction_df["model_name"] == model]
+
+        delta_vals = []
+        x_positions = []
+
+        for block in blocks:
+            row = model_df[model_df["block_number"] == block]
+            if row.empty:
+                continue
+
+            y_initial = row["average_initial_score"].values[0]
+            y_final = row["average_score"].values[0]
+
+            if pd.isna(y_initial) or pd.isna(y_final):
+                continue
+
+            delta = (y_final - y_initial) / (5 - y_initial) if y_initial != 5 else 0  # normalized delta
+            # delta = y_final - y_initial  # raw delta
+            x = block + offsets[m_idx]
+
+            delta_vals.append(delta)
+            x_positions.append(x)
+
+        ax_delta.bar(
+            x_positions,
+            delta_vals,
+            width=offset_width / n_models,
+            color=model_colors[model],
+            label=model
+        )
+
+    # Axes styling
+    ax_delta.set_xlabel("Block")
+    ax_delta.set_ylabel("Δ Average Judge Score (Final − Initial) / (5 − Initial)")
+    ax_delta.set_xticks(blocks)
+    # ax_delta.axhline(0, linewidth=1)  # baseline for positive/negative effect
+    ax_delta.set_ylim(0, 1)
+
+    ax_delta.set_title("Retry Gain per Block and Model")
+
+    ax_delta.legend(title="Model", loc="best")
+    plt.tight_layout()
+
+    if save_path:
+        delta_path = save_path.with_name(save_path.stem + "_delta_barchart.png")
+        plt.savefig(delta_path, dpi=300, bbox_inches='tight')
+        print(f"Saved delta bar chart to {delta_path}")
+
+    # =========================
+    # Percentage gain bar chart
+    # =========================
+    fig_pct, ax_pct = plt.subplots()
+
+    for m_idx, model in enumerate(models):
+        model_df = extraction_df[extraction_df["model_name"] == model]
+
+        pct_vals = []
+        x_positions = []
+
+        for block in blocks:
+            row = model_df[model_df["block_number"] == block]
+            if row.empty:
+                continue
+
+            y_initial = row["average_initial_score"].values[0]
+            y_final = row["average_score"].values[0]
+
+            # Skip invalid or non-retry cases
+            if pd.isna(y_initial) or pd.isna(y_final):
+                continue
+            if y_initial <= 0:
+                continue
+
+            pct_gain = ((y_final - y_initial) / y_initial) * 100.0
+            x = block + offsets[m_idx]
+
+            pct_vals.append(pct_gain)
+            x_positions.append(x)
+
+        ax_pct.bar(
+            x_positions,
+            pct_vals,
+            width=offset_width / n_models,
+            color=model_colors[model],
+            label=model
+        )
+
+    # Axes styling
+    ax_pct.set_xlabel("Block")
+    ax_pct.set_ylabel("Percentage Gain (%)")
+    ax_pct.set_xticks(blocks)
+    ax_pct.axhline(0, linewidth=1)
+    # ax_pct.set_ylim(0, 100)
+
+    ax_pct.set_title("Relative Retry Gain per Block and Model")
+
+    ax_pct.legend(title="Model", loc="best")
+    plt.tight_layout()
+
+    if save_path:
+        pct_gain_path = save_path.with_name(save_path.stem + "_percentage_gain_barchart.png")
+        plt.savefig(pct_gain_path, dpi=300, bbox_inches='tight')
+        print(f"Saved percentage gain bar chart to {pct_gain_path}")
+
+
+
+def plot_retry_lollipop_by_model_aggregated(
+    extraction_df: pd.DataFrame,
+    save_path: pathlib.Path = None
+):
+    """
+    Double lollipop chart showing retry effect aggregated per model (w/o blocks separation)
+
+    X-axis: model_name
+    Y-axis: average judge score
+    Each lollipop: mean(average_initial_score) -> mean(average_score)
+    """
+
+    print(f"Original extraction_df shape: {extraction_df.shape}")
+    extraction_df = extraction_df[extraction_df["max_judge_retries"] > 0]
+    print(f"Filtered extraction_df shape (max_judge_retries > 0): {extraction_df.shape}")
+
+    fig, ax = plt.subplots(figsize=(5, 4))
+
+    models = sorted(extraction_df["model_name"].unique())
+    x_positions = np.arange(len(models))
+
+    cmap = plt.cm.get_cmap("tab10", len(models))
+    # model_colors = {m: cmap(i) for i, m in enumerate(models)}
+
+    # Define weights based on number of characteristics per block
+    block_weights = {
+        1: 3,
+        2: 4,
+        3: 4,
+        4: 4,
+        5: 4,
+        6: 2
+    }
+
+    delta_vals = []
+    norm_delta_vals = []
+    pct_vals = []
+        
+    for i, model in enumerate(models):
+        model_df = extraction_df[extraction_df["model_name"] == model]
+
+        # Calculate weighted averages
+        model_df_copy = model_df.copy()
+        model_df_copy['weight'] = model_df_copy['block_number'].map(block_weights)
+        
+        # Keep only blocks where both valid scores exist
+        valid = model_df_copy[
+            model_df_copy["average_initial_score"].notna() &
+            model_df_copy["average_score"].notna()
+        ]
+        # print(f"Model {model} valid: {valid.shape[0]} rows after filtering for valid scores")
+
+        if valid.empty:
+            print(f"Skipping model {model}: no valid retry data")
+            delta_vals.append(0)
+            norm_delta_vals.append(0)
+            pct_vals.append(0)
+            continue
+
+        total_weight = valid["weight"].sum()
+
+        y_initial = (valid["average_initial_score"] * valid["weight"]).sum() / total_weight
+        y_final = (valid["average_score"] * valid["weight"]).sum() / total_weight
+
+        norm_delta = (y_final - y_initial) / (5 - y_initial) if y_initial != 5 else 0
+        delta = (y_final - y_initial)
+
+        delta_vals.append(delta)
+        norm_delta_vals.append(norm_delta)
+
+        if y_initial <= 0:
+            pct_vals.append(0)
+        else:
+            pct_gain = ((y_final - y_initial) / y_initial) * 100.0
+            pct_vals.append(pct_gain)
+
+        x = x_positions[i]
+        # color = model_colors[model]
+
+        # Stick
+        ax.plot(
+            [x, x],
+            [y_initial, y_final],
+            color="black",
+            linewidth=1.5,
+            zorder=1
+        )
+
+        # Initial point
+        ax.scatter(
+            x,
+            y_initial,
+            color="black",
+            s=60,
+            zorder=2
+        )
+
+        # Final point
+        ax.scatter(
+            x,
+            y_final,
+            facecolors="white",
+            edgecolors="black",
+            s=80,
+            linewidths=1,
+            zorder=3
+        )
+
+    ax.set_xlabel("Model")
+    ax.set_ylabel("Average Judge Score")
+    ax.set_xticks(x_positions)
+    ax.set_xticklabels(models, rotation=30, ha="right")
+    ax.set_ylim(1, 5)
+
+    ax.set_title("Retry Mechanism Effect on Judge Scores per Model")
+
+    plt.tight_layout()
+
+    if save_path:
+        agg_path = save_path.with_name(save_path.stem + "_double_lollipop_all_models.png")
+        plt.savefig(agg_path, dpi=300, bbox_inches='tight')
+        print(f"Saved aggregated lollipop chart to {agg_path}")
+
+    # =========================
+    # Aggregated delta bar chart
+    # =========================
+    fig_delta, ax_delta = plt.subplots(figsize=(6, 4))
+
+    ax_delta.bar(x_positions, delta_vals, width=0.5, color='steelblue', edgecolor='black', linewidth=1)
+    ax_delta.set_xlabel("Model", fontsize=12, fontweight='bold')
+    ax_delta.set_ylabel("Δ Average Judge Score", fontsize=12, fontweight='bold')
+    ax_delta.set_xticks(x_positions)
+    ax_delta.set_xticklabels(models, rotation=30, ha="right")
+    ax_delta.axhline(0, linewidth=1, color='black')
+    # ax_delta.set_ylim(0, 1)
+    ax_delta.set_title("Retry Gain per Model")
+    plt.tight_layout()
+
+    if save_path:
+        delta_path = save_path.with_name(save_path.stem + "_delta_barchart.png")
+        plt.savefig(delta_path, dpi=300, bbox_inches='tight')
+        print(f"Saved delta bar chart to {delta_path}")        
+
+    # =========================
+    # Aggregated normalized delta bar chart
+    # =========================
+    fig_norm_delta, ax_norm_delta = plt.subplots(figsize=(6, 4))
+
+    ax_norm_delta.bar(x_positions, norm_delta_vals, width=0.5, color='steelblue', edgecolor='black', linewidth=1)
+    ax_norm_delta.set_xlabel("Model", fontsize=12, fontweight='bold')
+    ax_norm_delta.set_ylabel("Δ Average Judge Score (normalized)", fontsize=12, fontweight='bold')
+    ax_norm_delta.set_xticks(x_positions)
+    ax_norm_delta.set_xticklabels(models, rotation=30, ha="right")
+    ax_norm_delta.axhline(0, linewidth=1, color='black')
+    ax_norm_delta.set_ylim(0, 1)
+    ax_norm_delta.set_title("Retry Gain per Model")
+    plt.tight_layout()
+
+    if save_path:
+        delta_path = save_path.with_name(save_path.stem + "_norm_delta_barchart.png")
+        plt.savefig(delta_path, dpi=300, bbox_inches='tight')
+        print(f"Saved normalized delta bar chart to {delta_path}")        
+
+
+    # =========================
+    # Aggregated percentage gain bar chart
+    # =========================
+    fig_pct, ax_pct = plt.subplots(figsize=(7, 4))
+
+    ax_pct.bar(x_positions, pct_vals, width=0.6, color='lightseagreen', edgecolor='black', linewidth=1.2)
+    ax_pct.set_xlabel("Model", fontsize=12, fontweight='bold')
+    ax_pct.set_ylabel("Percentage Gain (%)", fontsize=12, fontweight='bold')
+    ax_pct.set_xticks(x_positions)
+    ax_pct.set_xticklabels(models, rotation=30, ha="right")
+    ax_pct.axhline(0, linewidth=1, color='black')
+    ax_pct.set_ylim(0, 100)
+    ax_pct.set_title("Relative Retry Gain per Model")
+    plt.tight_layout()
+
+    if save_path:
+        pct_path = save_path.with_name(save_path.stem + "_percentage_gain_barchart.png")
+        plt.savefig(pct_path, dpi=300, bbox_inches='tight')
+        print(f"Saved percentage gain bar chart to {pct_path}")
+
+
 def generate_summary_statistics(df: pd.DataFrame) -> pd.DataFrame:
     """Generate comprehensive summary statistics."""
     agg_dict = {
@@ -1003,9 +1431,6 @@ def main():
     unique_models = df['model_name'].unique()
     print(f"Found models: {unique_models}")
 
-    # Create double lollipop plot for all models combined before per-model analysis
-    print(f"\n--- Generating Double Lollipop Retry Behavior Plot (All Models) ---")
-    plot_double_lollipop_retry_behavior(df, save_path=output_dir / "double_lollipop_retry_behavior_all_models.png")
 
     for model_name in unique_models:
         print(f"\n{'='*40}")
@@ -1092,9 +1517,20 @@ def main():
         save_path=viz_dir / "correlation_heatmap.png"
     )
 
+    print(f"\n--- Generating Double Lollipop Retry Behavior Plot (All Models) ---")
+    plot_retry_lollipop_by_model(
+        df, save_path=viz_dir / "retry_behavior"
+    )
+    
+    print(f"\n--- Generating Aggregated Double Lollipop Retry Behavior Plot (All Models) ---")
+    plot_retry_lollipop_by_model_aggregated(
+        df, save_path=viz_dir / "retry_behavior_aggregated"
+    )
+    
+
     # Calculate global resource stats across all models
     calculate_resource_stats(df, title="GLOBAL RESOURCE USAGE STATISTICS (ALL MODELS)", save_path=analysis_dir / "resource_usage_extraction.csv")
-    
+
     # Save detailed metrics
     df.to_csv(analysis_dir / "detailed_block_metrics.csv", index=False)
     print(f"Detailed metrics saved to {analysis_dir / 'detailed_block_metrics.csv'}")
