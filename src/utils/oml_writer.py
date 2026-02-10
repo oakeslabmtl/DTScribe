@@ -88,7 +88,7 @@ class OMLFileWriter(IOMLWriter):
                 col_num = int(m.group(2))
                 message = m.group(3).strip()
                 # Compose concise inline comment keeping column info
-                comment = f"TODO: Fix the error on this line helped with this error message: '{message}'"
+                comment = f"TODO: Fix the error on this line using the following error message: '{message}'"
                 line_errors.setdefault(line_num, []).append(comment)
 
         # Append errors as inline comments at the end of their respective lines
