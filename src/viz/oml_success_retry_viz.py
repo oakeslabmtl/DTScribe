@@ -248,7 +248,7 @@ def generate_plots_for_model(model_df, model_name, viz_dir, max_retry_index, sum
     safe_model = re.sub(r'[^a-zA-Z0-9_\-]', '_', model_name)
 
     # ==================== GRAPH 1: Cumulated Success Rate ====================
-    fig1, ax1 = plt.subplots(figsize=(7, 4))
+    fig1, ax1 = plt.subplots(figsize=(4, 4))
     fig1.subplots_adjust(left=0.12, right=0.95, top=0.88, bottom=0.12)
     
     has_data = False
@@ -265,14 +265,14 @@ def generate_plots_for_model(model_df, model_name, viz_dir, max_retry_index, sum
             # Fill
             ax1.fill_between(df_stats['retry_index'], 0, df_stats['success_rate_pct'], alpha=0.3, color=cfg['color'])
 
-            for _, row in df_stats.iterrows():
-                ax1.annotate(f"{row['success_rate_pct']:.1f}%", 
-                             (row['retry_index'], row['success_rate_pct']),
-                             textcoords="offset points", xytext=(0, cfg['offset']), ha='center', fontsize=9, color=cfg['color'])
+            # for _, row in df_stats.iterrows():
+            #     ax1.annotate(f"{row['success_rate_pct']:.1f}%", 
+            #                  (row['retry_index'], row['success_rate_pct']),
+            #                  textcoords="offset points", xytext=(0, cfg['offset']), ha='center', fontsize=9, color=cfg['color'])
 
     ax1.set_xlabel("Retry Index (i)", fontsize=14, fontweight='bold')
     ax1.set_ylabel("Cumulative Success Rate $R_i$ (%)", fontsize=14, fontweight='bold')
-    ax1.set_title(f"Cumulative Success Rate ({model_name})", fontsize=14, fontweight='bold', pad=10)
+    ax1.set_title(f"{model_name.replace('-cloud', '')}", fontsize=14, fontweight='bold', pad=10)
     ax1.set_ylim(0, 100)
     ax1.set_xticks(range(0, max_retry_index + 1))
     ax1.tick_params(labelsize=12)
