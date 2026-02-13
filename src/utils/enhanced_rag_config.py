@@ -955,6 +955,9 @@ OML CODE WITH CONTEXTUAL VALIDATION ERRORS TO FIX MARKED AS 'TODO':
 EXTRACTED CHARACTERISTICS FOR CONTEXT:
 {characteristics}
 
+VALIDATION ERRORS & REASONER FEEDBACK:
+{validation_errors}
+
 ## ERROR ANALYSIS FRAMEWORK:
 
 ### 1. Error Pattern Recognition:
@@ -1131,6 +1134,15 @@ Generate ONLY the corrected OML code with no explanations or comments:
                 relevant = "\n".join(relevant)
                 print(f"Relevant stderr lines:\n{relevant}")
                 validation_output += f"Stderr:\n{relevant}\n"
+
+                if "Execution failed for task ':owlReason'." in result.stderr:
+                     reasoning_path = abs_catalog_path / "build/reports/reasoning.xml"
+                     if reasoning_path.exists():
+                         try:
+                             xml_content = reasoning_path.read_text(encoding="utf-8")
+                             validation_output += f"\nREASONER FEEDBACK (Semantic Consistency Errors):\n```xml\n{xml_content}\n```\n"
+                         except Exception as e:
+                             print(f"Warning: Could not read reasoning report: {e}")
 
             return result.returncode == 0, validation_output
             

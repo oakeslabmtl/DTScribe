@@ -81,8 +81,8 @@ class OMLFileWriter(IOMLWriter):
                     continue
                 m = re.match(r"^\[(\d+),\s*(\d+)\]:\s*(.+)$", raw)
                 if not m:
-                    # If the line doesn't match expected pattern, attach it as a general note to line 1
-                    line_errors.setdefault(1, []).append(raw)
+                    # If the line doesn't match expected pattern, skip it.
+                    # This avoids attaching general logs or XML output to line 1.
                     continue
                 line_num = max(1, int(m.group(1)) - 6)  # Adjust index for header lines and clamp to 1
                 col_num = int(m.group(2))
