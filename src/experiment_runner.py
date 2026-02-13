@@ -25,7 +25,8 @@ def run_experiment_task(
     combo_idx: int,
     rep: int,
     mode: str,
-    exp_id: str
+    exp_id: str,
+    characteristics_file_path: str = None
 ):
     """Worker function to run a single experiment in a separate process."""
     try:
@@ -68,6 +69,20 @@ def run_experiment_task(
             experiment_id = orchestrator.last_experiment_id
 
         if mode in ("oml", "both"):
+             # Load characteristics if in OML-only mode and file path is provided
+            if mode == "oml" and characteristics_file_path:
+                try:
+                    with open(characteristics_file_path, 'r', encoding='utf-8') as f:
+                        data = json.load(f)
+                        if "extracted_characteristics" in data:
+                             orchestrator._state_manager.update_state({"extracted_characteristics": data["extracted_characteristics"]})
+                             # Use the original experiment ID if available to link results
+                             if "experiment_id" in data and not experiment_id:
+                                 experiment_id = data["experiment_id"]
+                             print(f"📄 Loaded characteristics from {Path(characteristics_file_path).name}")
+                except Exception as e:
+                    print(f"⚠️ Failed to load characteristics from {characteristics_file_path}: {e}")
+
             oml_results = orchestrator.run_oml_generation(
                 config=config,
                 experiment_id=experiment_id,
@@ -130,6 +145,30 @@ class ExperimentRunner:
         
         return combinations
 
+    def _map_completed_experiments(self, output_dir: Path) -> Dict[tuple[str, int, int], str]:
+        """Map completed experiments to their characteristics file path."""
+        file_map = {}
+        results_dir = output_dir / "characteristics_extraction"
+        if not results_dir.exists():
+            return file_map
+        
+        for file_path in results_dir.glob("*.json"):
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    # Extract identification info
+                    params = data.get("config", {}).get("custom_params", {}).get("custom_params", {})
+                    batch = params.get("experiment_batch")
+                    combo = params.get("parameter_combination")
+                    rep = params.get("repetition")
+                    
+                    if batch and combo is not None and rep is not None:
+                        file_map[(batch, int(combo), int(rep))] = str(file_path)
+            except Exception as e:
+                print(f"⚠️ Error reading {file_path}: {e}")
+        
+        return file_map
+
     def _get_completed_experiments(self, output_dir: Path) -> set[tuple[str, int, int]]:
         """Identify completed experiments from results directory."""
         completed = set()
@@ -191,10 +230,22 @@ class ExperimentRunner:
 
         experiment_counter = 0
 
+        existing_files_map = {}
+        if mode == "oml":
+             existing_files_map = self._map_completed_experiments(self.output_dir)
+             print(f"🔍 Found {len(existing_files_map)} existing characteristic files for OML generation.")
+
         for combo_idx, params in enumerate(parameter_combinations, 1):
             for rep in range(repeat_experiments):
-                if resume and (experiment_name, combo_idx, rep + 1) in completed_experiments:
+                if resume and (experiment_name, combo_idx, rep + 1) in completed_experiments and mode != "oml":
                     continue
+                
+                characteristics_file = None
+                if mode == "oml":
+                    characteristics_file = existing_files_map.get((experiment_name, combo_idx, rep + 1))
+                    if not characteristics_file:
+                         continue
+
                 experiment_counter += 1
                 tasks_args.append((
                     self.input_path,
@@ -205,7 +256,8 @@ class ExperimentRunner:
                     combo_idx,
                     rep,
                     mode,
-                    exp_id
+                    exp_id,
+                    characteristics_file
                 ))
         
         total_experiments = len(tasks_args)
@@ -378,6 +430,7 @@ def main():
     parser.add_argument("--input-path", default="data/papers/Ramdhan et al. - 2025 - Engineering Automotive Digital Twins on Standardized Architectures A Case Study.pdf", help="Path to the input PDF or directory")
     parser.add_argument("--workers", type=int, default=1, help="Number of parallel workers")
     parser.add_argument("--resume", action="store_true", help="Resume from failed/missing experiments")
+    parser.add_argument("--mode", default="both", choices=["both", "extraction", "oml"], help="Experiment mode")
     
     args = parser.parse_args()
     
@@ -406,9 +459,9 @@ def main():
         'chunk_size': [3000],
         "chunk_overlap": [500],
         'judge_model_name': ["glm-4.7:cloud"],
-        "max_judge_retries": [0, 2],
+        "max_judge_retries": [0],
         "max_oml_retries": [4],
-        "baseline_full_doc": [False, True],
+        "baseline_full_doc": [True],
         "baseline_max_chars": [24000],
     }
 
@@ -435,7 +488,7 @@ def main():
             repeat_experiments=25,
             experiment_name=experiment_name,
             param_grid=param_grid,
-            mode="both",
+            mode=args.mode,
             exp_id=None,
             workers=workers,
             resume=args.resume
