@@ -426,27 +426,24 @@ def main():
 
     # Configuration
     parser = argparse.ArgumentParser(description="Experiment Runner for Digital Twin Characteristics Extraction")
-    parser.add_argument("--output-dir", default="experiments", help="Path to the experiments directory")
-    parser.add_argument("--input-path", default="data/papers/Ramdhan et al. - 2025 - Engineering Automotive Digital Twins on Standardized Architectures A Case Study.pdf", help="Path to the input PDF or directory")
+    parser.add_argument("--output-dir", nargs="+", default=["experiments"], help="Path(s) to the experiments directory")
+    parser.add_argument("--input-path", nargs="+", default=["data/papers/Ramdhan et al. - 2025 - Engineering Automotive Digital Twins on Standardized Architectures A Case Study.pdf"], help="Path(s) to the input PDF or directory")
     parser.add_argument("--workers", type=int, default=1, help="Number of parallel workers")
     parser.add_argument("--resume", action="store_true", help="Resume from failed/missing experiments")
     parser.add_argument("--mode", default="both", choices=["both", "extraction", "oml"], help="Experiment mode")
     
     args = parser.parse_args()
     
-    base_output_dir = Path(args.output_dir)
-    input_arg = Path(args.input_path)
+    input_paths = args.input_path
+    output_dirs = args.output_dir
     workers = args.workers
 
-    # Determine files to process
-    files_to_process = []
-    if input_arg.is_dir():
-        files_to_process = list(input_arg.glob("*.pdf"))
-        print(f"📂 Found {len(files_to_process)} PDF files in {input_arg}")
-    elif input_arg.exists():
-        files_to_process = [input_arg]
-    else:
-        print(f"❌ Input path not found: {input_arg}")
+    # Handle broadcasting of single output dir to multiple inputs
+    if len(output_dirs) == 1 and len(input_paths) > 1:
+        output_dirs = output_dirs * len(input_paths)
+
+    if len(input_paths) != len(output_dirs):
+        print(f"❌ Configuration Error: Provided {len(input_paths)} inputs but {len(output_dirs)} outputs.")
         return
 
     param_grid = {
@@ -459,44 +456,64 @@ def main():
         'chunk_size': [3000],
         "chunk_overlap": [500],
         'judge_model_name': ["glm-4.7:cloud"],
-        "max_judge_retries": [0],
+        "max_judge_retries": [0, 2],
         "max_oml_retries": [4],
-        "baseline_full_doc": [True],
+        "baseline_full_doc": [False, True],
         "baseline_max_chars": [24000],
     }
 
     print(f"🧪 Parameter grid defined with {len(param_grid)} keys.")
 
-    for i, file_path in enumerate(files_to_process):
-        print("\n" + "=" * 80)
-        print(f"📄 Processing file {i+1}/{len(files_to_process)}: {file_path.name}")
+    # Process each configured input/output pair
+    for cfg_idx, (in_path_str, out_dir_str) in enumerate(zip(input_paths, output_dirs)):
+        input_arg = Path(in_path_str)
+        base_output_dir = Path(out_dir_str)
         
-        # Determine output directory for this specific experiment
-        if len(files_to_process) > 1:
-            experiment_name = str(base_output_dir / file_path.stem)
+        print(f"\n" + "=" * 80)
+        print(f"🚀 Configuration {cfg_idx+1}/{len(input_paths)}")
+        print(f"📥 Input: {input_arg}")
+        print(f"📤 Output: {base_output_dir}")
+
+        files_to_process = []
+        if input_arg.is_dir():
+            files_to_process = list(input_arg.glob("*.pdf"))
+            print(f"📂 Found {len(files_to_process)} PDF files in {input_arg}")
+        elif input_arg.exists():
+            files_to_process = [input_arg]
         else:
-            experiment_name = str(base_output_dir)
+            print(f"❌ Input path not found: {input_arg}")
+            continue
+
+        for i, file_path in enumerate(files_to_process):
+            print("\n" + "-" * 40)
+            print(f"📄 Processing file {i+1}/{len(files_to_process)}: {file_path.name}")
             
-        print(f"📂 Output directory: {experiment_name}")
-    
-        # Create experiment runner
-        orchestrator = ExtractionPipelineFactory.create_orchestrator(with_experiment_tracking=True, output_dir=experiment_name)
-        runner = ExperimentRunner(str(file_path), orchestrator=orchestrator)
+            # Determine output directory for this specific experiment
+            if len(files_to_process) > 1:
+                experiment_name = str(base_output_dir / file_path.stem)
+            else:
+                experiment_name = str(base_output_dir)
+                
+            print(f"📂 Output directory: {experiment_name}")
+        
+            # Create experiment runner
+            orchestrator = ExtractionPipelineFactory.create_orchestrator(with_experiment_tracking=True, output_dir=experiment_name)
+            runner = ExperimentRunner(str(file_path), orchestrator=orchestrator)
 
-        runner.run_experiment_batch(
-            max_experiments=-1,
-            repeat_experiments=25,
-            experiment_name=experiment_name,
-            param_grid=param_grid,
-            mode=args.mode,
-            exp_id=None,
-            workers=workers,
-            resume=args.resume
-        )
+            runner.run_experiment_batch(
+                max_experiments=-1,
+                repeat_experiments=25,
+                experiment_name=experiment_name,
+                param_grid=param_grid,
+                mode=args.mode,
+                exp_id=None,
+                workers=workers,
+                resume=args.resume
+            )
 
-        # TODO: Fix this part
-        # Analyze and visualize results
-        # runner.analyze_and_visualize_results(experiment_results)
+            # TODO: Fix this part
+            # Analyze and visualize results
+            # runner.analyze_and_visualize_results(experiment_results)
 
     print("\n✅ All experiments completed!")
 
