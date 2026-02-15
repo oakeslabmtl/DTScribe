@@ -169,10 +169,10 @@ class ExperimentRunner:
         
         return file_map
 
-    def _get_completed_experiments(self, output_dir: Path) -> set[tuple[str, int, int]]:
+    def _get_completed_experiments(self, output_dir: Path, subdir: str = "characteristics_extraction") -> set[tuple[str, int, int]]:
         """Identify completed experiments from results directory."""
         completed = set()
-        results_dir = output_dir / "characteristics_extraction"
+        results_dir = output_dir / subdir
         if not results_dir.exists():
             return completed
         
@@ -181,7 +181,13 @@ class ExperimentRunner:
                 with open(file_path, 'r', encoding='utf-8') as f:
                     data = json.load(f)
                     # Extract identification info
-                    params = data.get("config", {}).get("custom_params", {}).get("custom_params", {})
+                    config = data.get("config", {})
+                    params = config.get("custom_params", {})
+                    
+                    # Handle potential nested custom_params
+                    if "custom_params" in params and isinstance(params["custom_params"], dict):
+                        params = params["custom_params"]
+
                     batch = params.get("experiment_batch")
                     combo = params.get("parameter_combination")
                     rep = params.get("repetition")
@@ -210,9 +216,14 @@ class ExperimentRunner:
         self.output_dir.mkdir(exist_ok=True)
 
         completed_experiments = set()
+        completed_oml = set()
+        
         if resume:
-            completed_experiments = self._get_completed_experiments(self.output_dir)
-            print(f"🔄 Resuming experiment batch. Found {len(completed_experiments)} completed experiments.")
+            completed_experiments = self._get_completed_experiments(self.output_dir, "characteristics_extraction")
+            if mode in ["oml", "both"]:
+                completed_oml = self._get_completed_experiments(self.output_dir, "oml_generation")
+            
+            print(f"🔄 Resuming experiment batch. Found {len(completed_experiments)} completed extractions and {len(completed_oml)} completed OML generations.")
 
         if param_grid is None:
             print("❌ No parameter grid provided for experiments.")
@@ -237,8 +248,15 @@ class ExperimentRunner:
 
         for combo_idx, params in enumerate(parameter_combinations, 1):
             for rep in range(repeat_experiments):
-                if resume and (experiment_name, combo_idx, rep + 1) in completed_experiments and mode != "oml":
-                    continue
+                key = (experiment_name, combo_idx, rep + 1)
+                
+                if resume:
+                    if mode == "extraction" and key in completed_experiments:
+                        continue
+                    elif mode == "oml" and key in completed_oml:
+                        continue
+                    elif mode == "both" and key in completed_experiments and key in completed_oml:
+                        continue
                 
                 characteristics_file = None
                 if mode == "oml":
