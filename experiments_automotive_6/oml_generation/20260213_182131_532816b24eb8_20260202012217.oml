@@ -1,0 +1,180 @@
+// ==================== Sensing Components ====================
+instance LidarSensor : DTDFVocab:SensingComponent [
+    base:desc "LiDAR sensor mounted on the 1/10‑scale autonomous vehicle, provides raw point‑cloud data"
+    DTDFVocab:producedData LidarDataTransmitted
+]
+
+instance VehicleSpeedSensor : DTDFVocab:SensingComponent [
+    base:desc "Onboard sensor measuring ego‑vehicle speed, streamed to the Physical Twin Entity"
+    DTDFVocab:producedData VehicleSpeedDataTransmitted
+]
+
+instance SteeringAngleSensor : DTDFVocab:SensingComponent [
+    base:desc "Steering angle sensor reporting the current steering wheel position"
+    DTDFVocab:producedData SteeringAngleDataTransmitted
+]
+
+// ==================== Data Transmitted ====================
+instance LidarDataTransmitted : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom LidarSensor
+]
+
+instance VehicleSpeedDataTransmitted : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom VehicleSpeedSensor
+]
+
+instance SteeringAngleDataTransmitted : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom SteeringAngleSensor
+]
+
+// ==================== Data Objects ====================
+instance LidarPointCloudData : DTDFVocab:Data [
+    base:desc "Raw LiDAR point‑cloud stream used for environment perception"
+    DTDFVocab:fromData LidarDataTransmitted
+    DTDFVocab:inputTo DataTranslationFE
+]
+
+instance EgoSpeedData : DTDFVocab:Data [
+    base:desc "Ego‑vehicle longitudinal speed measurement"
+    DTDFVocab:fromData VehicleSpeedDataTransmitted
+    DTDFVocab:inputTo DataTranslationFE
+]
+
+instance SteeringAngleData : DTDFVocab:Data [
+    base:desc "Current steering angle of the vehicle"
+    DTDFVocab:fromData SteeringAngleDataTransmitted
+    DTDFVocab:inputTo DataTranslationFE
+]
+
+// ==================== Enablers (Functional Entities) ====================
+instance DataTranslationFE : DTDFVocab:Enabler [
+    base:desc "Cross‑system Data Translation FE serialises messages, aligns types and performs unit conversions"
+    DTDFVocab:enables DataMonitoringService
+]
+
+instance PointCloudClusteringTrackingFE : DTDFVocab:Enabler [
+    base:desc "Point Cloud Clustering & Tracking FE applies DBSCAN clustering and a Kalman filter to produce object tracks"
+    DTDFVocab:enables DataMonitoringService
+]
+
+instance AccComputationOffloadingFE : DTDFVocab:Enabler [
+    base:desc "ACC Computation Offloading FE executes lead‑vehicle detection and distance‑based speed calculation in cloud resources"
+    DTDFVocab:enables ComputationOffloadingService
+]
+
+instance RemoteManagementFE : DTDFVocab:Enabler [
+    base:desc "Remote Management FE allows operators to enable/disable ACC, set target speed, and issue emergency‑brake commands via UI"
+    DTDFVocab:enables RemoteManagementService
+]
+
+// ==================== Models ====================
+instance PointCloudClusteringModel : DTDFVocab:Model [
+    base:desc "Behavioral model that converts raw LiDAR point clouds into geometric object tracks"
+    DTDFVocab:inputTo PointCloudClusteringTrackingFE
+]
+
+instance AccControlModel : DTDFVocab:Model [
+    base:desc "Adaptive Cruise Control model computing desired speed from lead‑vehicle distance"
+    DTDFVocab:inputTo AccComputationOffloadingFE
+]
+
+// ==================== Services ====================
+instance DataMonitoringService : DTDFVocab:Service [
+    base:desc "Data Monitoring service displays real‑time vehicle state, projected path, and object tracks; supports data save and report generation"
+    DTDFVocab:provides RealTimeVehicleStateInsight, GenerateReportAction
+]
+
+instance ComputationOffloadingService : DTDFVocab:Service [
+    base:desc "Computation Offloading service runs ACC control logic in the cloud and returns desired speed to the vehicle"
+    DTDFVocab:provides DesiredSpeedInsight
+]
+
+instance RemoteManagementService : DTDFVocab:Service [
+    base:desc "Remote Management service lets operators remotely enable/disable ACC, set target speed, and trigger emergency braking"
+    DTDFVocab:provides EnableACCAction, DisableACCAction, SetTargetSpeedAction, EmergencyBrakeAction
+]
+
+// ==================== Insights ====================
+instance RealTimeVehicleStateInsight : DTDFVocab:Insight [
+    base:desc "Insight into the current vehicle state, trajectory and detected surrounding objects"
+]
+
+instance DesiredSpeedInsight : DTDFVocab:Insight [
+    base:desc "Insight providing the cloud‑computed desired speed for ACC actuation"
+]
+
+// ==================== Actions ====================
+instance GenerateReportAction : DTDFVocab:Action [
+    base:desc "Action to generate and export a report of collected sensor and control data"
+    DTDFVocab:IsAutomatic false
+]
+
+instance EnableACCAction : DTDFVocab:Action [
+    base:desc "Action to remotely enable Adaptive Cruise Control"
+    DTDFVocab:IsAutomatic false
+]
+
+instance DisableACCAction : DTDFVocab:Action [
+    base:desc "Action to remotely disable Adaptive Cruise Control"
+    DTDFVocab:IsAutomatic false
+]
+
+instance SetTargetSpeedAction : DTDFVocab:Action [
+    base:desc "Action to set a target speed for the ACC algorithm"
+    DTDFVocab:IsAutomatic false
+]
+
+instance EmergencyBrakeAction : DTDFVocab:Action [
+    base:desc "Action to command an immediate emergency brake"
+    DTDFVocab:IsAutomatic true
+]
+
+// ==================== Acting Components ====================
+instance MotorActuator : DTDFVocab:ActingComponent [
+    base:desc "Motor actuator providing propulsion commands to the 1/10‑scale vehicle"
+]
+
+instance SteeringServoActuator : DTDFVocab:ActingComponent [
+    base:desc "Steering servo actuator translating steering commands into wheel angle adjustments"
+]
+
+// ==================== Environment ====================
+instance VehicleEnvironment : DTDFVocab:Environment [
+    base:contains LidarSensor, VehicleSpeedSensor, SteeringAngleSensor, MotorActuator, SteeringServoActuator
+]
+
+instance virtual_to_physical_interaction : DTDFVocab:VirtualToPhysical [
+    base:desc "The Digital Twin Entity runs the ACC Controlling FE that, based on the object tracks, determines the lead vehicle and computes a desired speed. The desired speed is packaged by the Data Translation FE, sent over the same Wi‑Fi UDP link to the Physical Twin Entity where the Actuation FE converts the speed command into motor voltage commands and forwards them to the vehicle actuators (motor, steering servo). Remote‑management commands issued from the User Interface FE (enable/disable ACC, set desired speed, emergency brake) follow the same path: UI → Data Translation FE → UDP → Actuation FE (or ACC Controlling FE) → vehicle. Execution confirmation is implicit in the actuation FE applying the voltage command; explicit validation or authentication mechanisms are not described in the documents."
+]
+
+instance twinning_time_scale : DTDFVocab:TimeScale [
+    base:desc "The system requires a shared notion of time across devices with a maximum clock drift of 100 ms to meet safety‑critical vehicular standards; this accuracy is enforced for computation offloading between the physical twin and digital twin components. Low end‑to‑end latency communication is also required for the ACC control loop, although specific latency bounds are not quantified in the documents."
+]
+
+instance dt_constellation : DTDFVocab:Constellation [
+    base:desc "The Digital Twin system orchestrates services (Data Monitoring, Computation Offloading, Remote Management) by mapping each FE to a ROS2 node within ROS2 packages. Intra‑entity communication occurs over a ROS2 network, while inter‑entity messages are transported over Wi‑Fi using UDP. A Data Translation FE (aligned with ISO 23247) performs serialization, message type alignment, and unit conversion for all data streams. Computation offloading moves the ACC algorithm from the vehicle to the DT’s compute resources (e.g., cloud), with the desired speed sent back to the vehicle for actuation."
+]
+
+instance fidelity_and_validity_considerations : DTDFVocab:FidelityConsideration [
+    base:desc "Model fidelity is tied to the 100 ms clock‑synchronisation accuracy required for safety‑critical operations; all entities share a common notion of time to enable correct off‑loading and actuation. The Data Translation FE performs unit conversion and type alignment, serving as a validation step for data consistency. Reporting and visualization components provide runtime monitoring, allowing operators to detect anomalies. However, the documents do not describe explicit validation, verification, uncertainty quantification, or quality‑assurance processes for the computational models, thus those aspects are not specified."
+]
+
+instance dt_technical_connection : DTDFVocab:TechnicalConnection [
+    base:desc "The DT uses a hybrid communication stack. Intra‑entity software components communicate via a ROS2 network (publish/subscribe with DDS). Inter‑entity communication between Physical Twin, Digital Twin, and User Entity is carried out over a Wi‑Fi network using UDP at the transport layer. All exchanged messages are processed by the Data Translation FE for serialization, type alignment and unit conversion. Clock synchronization across devices is required with a maximum skew of 100 ms to satisfy safety‑critical timing constraints. The architecture assumes low end‑to‑end latency sufficient for real‑time monitoring and control, but exact bandwidth, reliability or redundancy mechanisms are not specified."
+]
+
+instance dt_hosting_deployment : DTDFVocab:Deployment [
+    base:desc "The DT services (Data Translation, ACC Controlling, Visualization, Data Collection, Reporting, etc.) are packaged as ROS2 nodes that can be deployed on separate hardware platforms. The case study mentions offloading the ACC computation to better‑suited equipment such as cloud resources, and storing collected data in an external SQL database, implying that hosting may be edge or cloud based with external storage outside the vehicle. Precise computational resource specifications, scalability mechanisms, deployment models, or availability guarantees are not detailed in the provided documents."
+]
+
+instance horizontal_integration : DTDFVocab:HoriIntegration [
+    base:desc "External integration is achieved through the Data Translation FE, which can be implemented using OPC UA (IEC 62541) or a custom communication layer. The system relies on ROS2 for internal data exchange and UDP over Wi‑Fi for entity‑level transport, enabling connectivity to external cloud resources for offloaded computation and to other enterprise systems via standard network protocols."
+]
+
+instance standardization : DTDFVocab:Standardization [
+    base:desc "The DT implementation is explicitly aligned with the ISO 23247 Digital Twin Manufacturing Framework (2021), using Part 2 (Reference Architecture) to structure entities and functional entities. The design also references ISO 26262 for safety‑critical automotive applications, and notes that safety should be promoted as a first‑class citizen. Compatibility with the automotive software standard AUTOSAR is discussed as a rationale for flexible FE deployment. Communication layer options include IEC 62541 (OPC UA) for the Data Translation FE. The broader DT community standards ISO/IEC 30173:2023 (Digital Twin – Concepts and Terminology) are mentioned as high‑level alternatives, indicating awareness of interoperability standards."
+]
+
+instance security_and_safety_considerations : DTDFVocab:SecuritySafety [
+    base:desc "The described Digital Twin System references safety-oriented standards rather than explicit security mechanisms. Safety is addressed by adopting ISO 26262 functional safety for automotive systems (Document 2) and by implementing the ACC control strategy defined in ISO 15622 (Document 5, Section R6). The case study (Document 2) emphasizes that safety should be promoted to a first‑class citizen in automotive DT architectures and recommends relying on existing automotive safety standards such as ISO 26262. No specific cybersecurity protocols, access control, authentication, threat mitigation, or data protection measures are mentioned in the provided documents."
+]

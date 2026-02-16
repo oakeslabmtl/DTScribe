@@ -1,0 +1,141 @@
+// C2: Acting Components
+instance CartStepperMotor : DTDFVocab:ActingComponent [
+    base:desc "Step motor driving horizontal cart movement via GPIO step/direction signals, subject to position and current limits."
+]
+
+instance HoistStepperMotor : DTDFVocab:ActingComponent [
+    base:desc "Step motor raising and lowering the load with precise positioning and operating limits enforced by the controller."
+]
+
+// C3: Physical sensing components
+instance SwingAngleEncoder : DTDFVocab:SensingComponent [
+    base:desc "Swing angle encoder measuring lateral displacement of the crane scaffold."
+    DTDFVocab:producedData SwingAngleEncodedDataTransmission
+]
+
+instance AnemometerSensor : DTDFVocab:SensingComponent [
+    base:desc "Anemometer digitizing wind speed with analog voltage conversion for crane stability monitoring."
+    DTDFVocab:producedData WindSpeedEncodedDataTransmission
+]
+
+// C4: Physical-to-virtual interaction
+instance SwingAngleEncodedDataTransmission : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom SwingAngleEncoder
+]
+
+instance WindSpeedEncodedDataTransmission : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom AnemometerSensor
+]
+
+// C10: Models/Data
+instance EwCADModel : DTDFVocab:Model [
+    base:desc "CAD model of the gantry crane geometry created in Autodesk Fusion360, used for 3‑D visualization."
+    DTDFVocab:inputTo VisualizationEngine
+]
+
+instance KinematicLinkLengthsModel : DTDFVocab:Model [
+    base:desc "Kinematic model defining link lengths and motor positions for motion simulation."
+    DTDFVocab:inputTo SimulationEngine
+]
+
+// Data instances linked to transmitted data
+instance SwingAngleTelemetryData : DTDFVocab:Data [
+    base:desc "Time‑stamped swing angle measurement (13‑bit resolution) at 10 Hz."
+    DTDFVocab:inputTo TimescaleDBEnabler
+    DTDFVocab:fromData SwingAngleEncodedDataTransmission
+]
+
+instance WindSpeedTelemetryData : DTDFVocab:Data [
+    base:desc "Time‑stamped wind speed measurement digitized at 1 Hz."
+    DTDFVocab:inputTo TimescaleDBEnabler
+    DTDFVocab:fromData WindSpeedEncodedDataTransmission
+]
+
+// C11: Enablers
+instance MQTTMessageBroker : DTDFVocab:Enabler [
+    base:desc "Eclipse Mosquitto MQTT broker handling real‑time sensor data publication and command distribution."
+    DTDFVocab:enables ContinuousValidationService, OptimalControlService
+]
+
+instance TimescaleDBEnabler : DTDFVocab:Enabler [
+    base:desc "Dockerised TimescaleDB instance for persistent time‑series storage of telemetry data."
+    DTDFVocab:enables HistoricalLoggingService, ContinuousValidationService
+]
+
+instance SimulationEngine : DTDFVocab:Enabler [
+    base:desc "Python simulation engine executing CAD and kinematic models for trajectory planning and validation."
+    DTDFVocab:enables OptimalControlService, ContinuousValidationService
+]
+
+instance VisualizationEngine : DTDFVocab:Enabler [
+    base:desc "Grafana‑powered visualization engine rendering real‑time telemetry and 3‑D CAD models."
+    DTDFVocab:enables DataVisualizationService, WebDashboardService
+]
+
+// C6: Services
+instance OptimalControlService : DTDFVocab:Service [
+    base:desc "Service computing real‑time optimal motion plans for the gantry crane based on kinematic simulation."
+    DTDFVocab:provides ControlPlanInsight
+]
+
+instance ContinuousValidationService : DTDFVocab:Service [
+    base:desc "Service automatically comparing live sensor data with simulation outputs, measuring deviation and issuing alerts."
+    DTDFVocab:provides DeviationAssessmentInsight, DeviationThresholdExceededAlertAction
+]
+
+instance WebDashboardService : DTDFVocab:Service [
+    base:desc "Web‑based dashboard displaying current and historical crane status with trend analytics."
+    DTDFVocab:provides RealTimeStatusInsight
+]
+
+instance DataVisualizationService : DTDFVocab:Service [
+    base:desc "Service rendering the CAD and kinematic models with real‑time telemetry overlays."
+    DTDFVocab:provides ModelRenderingInsight
+]
+
+instance HistoricalLoggingService : DTDFVocab:Service [
+    base:desc "Service logging historical telemetry streams to TimescaleDB for offline analysis."
+    DTDFVocab:provides LogDataInsight
+]
+
+// C17: Insights/Actions
+instance ControlPlanInsight : DTDFVocab:Insight [
+    base:desc "Optimal control trajectory plan generated for crane motion."
+]
+
+instance DeviationAssessmentInsight : DTDFVocab:Insight [
+    base:desc "Comparative deviation analysis between physical measurement and model outputs."
+]
+
+instance DeviationThresholdExceededAlertAction : DTDFVocab:Action [
+    base:desc "Alert when deviation surpasses the pre‑configured threshold, notifying operators."
+    DTDFVocab:IsAutomatic true
+]
+
+instance RealTimeStatusInsight : DTDFVocab:Insight [
+    base:desc "Current status and trend analytics visualised on the web dashboard."
+]
+
+instance ModelRenderingInsight : DTDFVocab:Insight [
+    base:desc "3‑D CAD and kinematic model rendered with real‑time telemetry annotations."
+]
+
+instance LogDataInsight : DTDFVocab:Insight [
+    base:desc "Historical telemetry log entries accessible for post‑mortem analysis."
+]
+
+instance virtual_to_physical_interaction : DTDFVocab:VirtualToPhysical [
+    base:desc "The Control Application, implemented in Python, utilizes the Physical Crane Interface to issue movement commands to the crane’s controller. The Trajectory Generator Service provides pre‑computed optimal trajectories derived from the crane’s kinematic model, which the Control Application uses to generate the sequence of control commands. Receipt of execution confirmation, command validation procedures, authentication mechanisms, conflict resolution, and feedback loops are not specified in the document."
+]
+
+instance fidelity_and_validity_considerations : DTDFVocab:FidelityConsideration [
+    base:desc "A continuous validation service compares live sensor measurements against the kinematic simulation predictions. When the deviation exceeds a predefined threshold (for example, a few centimeters in position or degrees in swing angle), the service logs a warning and can trigger an automatic safety stop. Data integrity checks such as timestamp ordering, outlier detection, and redundancy of critical sensor streams are employed to ensure model validity."
+]
+
+instance dt_technical_connection : DTDFVocab:TechnicalConnection [
+    base:desc "All services communicate on a local network confined to a single personal computer. Inter‑service signaling is mediated by an MQTT Broker, while persistent data storage is handled by a TimescaleDB database. The Grafana Dashboard retrieves data directly from this database for visualization. No explicit bandwidth, latency, redundancy, or security protocol details are given in the document."
+]
+
+instance dt_hosting_deployment : DTDFVocab:Deployment [
+    base:desc "The system is deployed on‑premise on a personal computer. For deployment convenience, the Database, MQTT Broker, and Dashboard containers are packaged with Docker, indicating a containerized deployment model. No further scalability or high‑availability mechanisms are described in the document."
+]

@@ -1,0 +1,174 @@
+// ---------- Physical Sensing Components ----------
+instance InternalTempSensor1 : DTDFVocab:SensingComponent [
+    base:desc "DS18S20 high‑precision 1‑Wire digital temperature sensor (‑55 °C to +125 °C, ±0.5 °C) measuring interior temperature at location 1 inside the incubator."
+    DTDFVocab:producedData InternalTempDataTransmitted1
+]
+
+instance InternalTempSensor2 : DTDFVocab:SensingComponent [
+    base:desc "DS18S20 high‑precision 1‑Wire digital temperature sensor (‑55 °C to +125 °C, ±0.5 °C) measuring interior temperature at location 2 inside the incubator."
+    DTDFVocab:producedData InternalTempDataTransmitted2
+]
+
+instance AmbientTempSensor : DTDFVocab:SensingComponent [
+    base:desc "DS18S20 high‑precision 1‑Wire digital temperature sensor (‑55 °C to +125 °C, ±0.5 °C) measuring ambient temperature outside the incubator."
+    DTDFVocab:producedData AmbientTempDataTransmitted
+]
+
+// ---------- Data Transmitted ----------
+instance InternalTempDataTransmitted1 : DTDFVocab:DataTransmitted [
+    base:desc "AMQP message published by InternalTempSensor1 containing the current temperature reading."
+    DTDFVocab:producedFrom InternalTempSensor1
+]
+
+instance InternalTempDataTransmitted2 : DTDFVocab:DataTransmitted [
+    base:desc "AMQP message published by InternalTempSensor2 containing the current temperature reading."
+    DTDFVocab:producedFrom InternalTempSensor2
+]
+
+instance AmbientTempDataTransmitted : DTDFVocab:DataTransmitted [
+    base:desc "AMQP message published by AmbientTempSensor containing the current ambient temperature reading."
+    DTDFVocab:producedFrom AmbientTempSensor
+]
+
+// ---------- Data ----------
+instance InternalTempData1 : DTDFVocab:Data [
+    base:desc "Temperature measurement (°C) from InternalTempSensor1."
+    DTDFVocab:fromData InternalTempDataTransmitted1
+    DTDFVocab:inputTo RabbitMQEnabler
+]
+
+instance InternalTempData2 : DTDFVocab:Data [
+    base:desc "Temperature measurement (°C) from InternalTempSensor2."
+    DTDFVocab:fromData InternalTempDataTransmitted2
+    DTDFVocab:inputTo RabbitMQEnabler
+]
+
+instance AmbientTempData : DTDFVocab:Data [
+    base:desc "Ambient temperature measurement (°C) from AmbientTempSensor."
+    DTDFVocab:fromData AmbientTempDataTransmitted
+    DTDFVocab:inputTo RabbitMQEnabler
+]
+
+// ---------- Acting Components ----------
+instance HeatbedActuator : DTDFVocab:ActingComponent [
+    base:desc "Electrically driven heatbed (~100 W, ~4 A) switched via MOSFET driver on the custom PCB."
+]
+
+instance FanActuator : DTDFVocab:ActingComponent [
+    base:desc "Internal fan (12‑24 V, airflow ≤0.02 m³·s⁻¹) switched via MOSFET driver on the custom PCB."
+]
+
+// ---------- Models ----------
+instance ThermalModelA : DTDFVocab:Model [
+    base:desc "Single‑energy‑flow thermal model of the incubator (parameters C_air, G_box)."
+    DTDFVocab:inputTo SimulationEnabler
+]
+
+instance ThermalModelB : DTDFVocab:Model [
+    base:desc "Extended thermal model adding heatbed thermal mass (parameters C_heater, G_heater, C_air, G_box)."
+    DTDFVocab:inputTo SimulationEnabler
+]
+
+// ---------- Enablers ----------
+instance RabbitMQEnabler : DTDFVocab:Enabler [
+    base:desc "RabbitMQ AMQP broker that receives sensor messages and routes them to DT processing components."
+    DTDFVocab:enables MonitoringAndAlertService, FaultDetectionService, PredictionService
+]
+
+instance PythonCalibrationEnabler : DTDFVocab:Enabler [
+    base:desc "Python SciPy least‑squares optimizer used to calibrate model parameters (C_air, G_box, C_heater, G_heater)."
+    DTDFVocab:enables CalibrationService
+]
+
+instance SimulationEnabler : DTDFVocab:Enabler [
+    base:desc "Runtime simulation engine executing calibrated ThermalModelA or ThermalModelB for temperature prediction."
+    DTDFVocab:enables PredictionService
+]
+
+instance ControlEnabler : DTDFVocab:Enabler [
+    base:desc "Control interface that sends actuation commands (heatbed on/off, fan speed) to MOSFET drivers on the PCB."
+    DTDFVocab:enables OptimizationService
+]
+
+// ---------- Services ----------
+instance MonitoringAndAlertService : DTDFVocab:Service [
+    base:desc "Continuously monitors incoming temperature data, detects lower/upper limit violations and generates alerts."
+    DTDFVocab:provides TemperatureLimitViolationInsight, SendAlertAction
+]
+
+instance CalibrationService : DTDFVocab:Service [
+    base:desc "Performs non‑linear least‑squares calibration of thermal model parameters using collected temperature data."
+    DTDFVocab:provides ModelCalibrationInsight
+]
+
+instance PredictionService : DTDFVocab:Service [
+    base:desc "Runs calibrated ThermalModelA/B to provide real‑time interior temperature predictions."
+    DTDFVocab:provides TemperaturePredictionInsight
+]
+
+instance FaultDetectionService : DTDFVocab:Service [
+    base:desc "Analyzes deviation between measured and predicted temperatures to detect faults."
+    DTDFVocab:provides FaultDetectionInsight
+]
+
+instance OptimizationService : DTDFVocab:Service [
+    base:desc "Optimises control actions (heating duration, waiting time) based on insights and triggers actuator commands."
+    DTDFVocab:provides AdjustHeatingAction, AdjustWaitingAction
+]
+
+// ---------- Insights ----------
+instance TemperatureLimitViolationInsight : DTDFVocab:Insight [
+    base:desc "Detects violations of configured lower and upper temperature limits (LL/UL) in the incubator."
+]
+
+instance ModelCalibrationInsight : DTDFVocab:Insight [
+    base:desc "Reports calibrated model parameters (C_air, G_box, C_heater, G_heater) after optimisation."
+]
+
+instance TemperaturePredictionInsight : DTDFVocab:Insight [
+    base:desc "Provides predicted interior temperature trajectory over the upcoming control horizon."
+]
+
+instance FaultDetectionInsight : DTDFVocab:Insight [
+    base:desc "Identifies significant deviations between measured and simulated temperatures indicating possible sensor or actuator faults."
+]
+
+// ---------- Actions ----------
+instance SendAlertAction : DTDFVocab:Action [
+    base:desc "Generates an alert notification (e.g., email, dashboard message) when a temperature limit violation is detected."
+    DTDFVocab:IsAutomatic true
+]
+
+instance AdjustHeatingAction : DTDFVocab:Action [
+    base:desc "Modifies the heatbed on‑time or power setpoint to correct temperature drift."
+    DTDFVocab:IsAutomatic true
+]
+
+instance AdjustWaitingAction : DTDFVocab:Action [
+    base:desc "Changes the waiting duration between heating cycles to stabilise temperature."
+    DTDFVocab:IsAutomatic true
+]
+
+instance virtual_to_physical_interaction : DTDFVocab:VirtualToPhysical [
+    base:desc "The DT publishes control commands (heatbed ON/OFF, fan ON/OFF, set durations) to RabbitMQ; the controller on the Raspberry Pi subscribes to these topics, interprets the commands and drives the MOSFETs on the PCB to actuate the heatbed and fan accordingly."
+]
+
+instance dt_constellation : DTDFVocab:Constellation [
+    base:desc "A centralized DT architecture where the Raspberry Pi hosts the controller, low‑level driver, and RabbitMQ server. The DT consists of model calibration modules and monitoring services that subscribe to the broker, while the PT components publish sensor data and receive actuation commands via the same broker, forming a closed loop."
+]
+
+instance fidelity_and_validity_considerations : DTDFVocab:FidelityConsideration [
+    base:desc "Model B was found to better capture the thermal inertia of the heatbed, improving prediction fidelity. Calibration reduces residual error by minimizing the cost function J (sum of squared differences between measured and modelled temperatures). Assumptions (uniform temperature, negligible wall heat storage, constant air heat capacity, and dominant electrical‑to‑thermal conversion) are explicitly stated, and their impact on model validity is discussed in the experiments."
+]
+
+instance dt_technical_connection : DTDFVocab:TechnicalConnection [
+    base:desc "The PT and DT communicate over a RabbitMQ message broker running on the Raspberry Pi, using the AMQP protocol over the Pi's network interfaces (Wi‑Fi/Bluetooth). Messages contain sensor readings and control commands."
+]
+
+instance dt_hosting_deployment : DTDFVocab:Deployment [
+    base:desc "All DT components (RabbitMQ broker, controller logic, low‑level driver, calibration and monitoring software) are deployed on the Raspberry Pi 4 Model B, which also provides wireless connectivity for remote access."
+]
+
+instance security_and_safety_considerations : DTDFVocab:SecuritySafety [
+    base:desc "The low‑level driver incorporates a safe protocol to keep the device in a safe state, and the DT monitors temperature limits to prevent unsafe overheating. Communication via RabbitMQ can be secured using standard AMQP authentication mechanisms, though specific security measures are not detailed in the document."
+]

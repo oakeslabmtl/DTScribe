@@ -1,0 +1,165 @@
+import DTDFVocab
+
+instance BoxTemperatureSensor1 : DTDFVocab:SensingComponent [
+    base:desc "DS18S20 1‑wire digital thermometer, accurate to ±0.5°C, positioned inside the styrofoam box"
+    DTDFVocab:producedData BoxTempData1
+]
+
+instance BoxTemperatureSensor2 : DTDFVocab:SensingComponent [
+    base:desc "DS18S20 1‑wire digital thermometer, accurate to ±0.5°C, positioned inside the styrofoam box"
+    DTDFVocab:producedData BoxTempData2
+]
+
+instance BoxTemperatureSensor3 : DTDFVocab:SensingComponent [
+    base:desc "DS18S20 1‑wire digital thermometer, accurate to ±0.5°C, positioned inside the styrofoam box"
+    DTDFVocab:producedData BoxTempData3
+]
+
+instance AmbientRoomTemperatureSensor : DTDFVocab:SensingComponent [
+    base:desc "DS18S20 1‑wire digital thermometer, accurate to ±0.5°C, positioned outside the incubator to capture ambient room temperature"
+    DTDFVocab:producedData AmbientTempData
+]
+
+instance BoxTempData1 : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom BoxTemperatureSensor1
+]
+
+instance BoxTempData2 : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom BoxTemperatureSensor2
+]
+
+instance BoxTempData3 : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom BoxTemperatureSensor3
+]
+
+instance AmbientTempData : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom AmbientRoomTemperatureSensor
+]
+
+instance HeatbedStateData : DTDFVocab:DataTransmitted [
+]
+
+instance FanStateData : DTDFVocab:DataTransmitted [
+]
+
+instance HeatbedHeaterActuator : DTDFVocab:ActingComponent [
+    base:desc "Heatbed heater (~100 W) controlled via a MOSFET switched by Raspberry Pi GPIO pins"
+]
+
+instance FanActuator : DTDFVocab:ActingComponent [
+    base:desc "12 V / 24 V fan (~0.02 m³ s⁻¹) controlled via a MOSFET switched by Raspberry Pi GPIO pins"
+]
+
+instance RabbitMQEnabler : DTDFVocab:Enabler [
+    base:desc "RabbitMQ server for bidirectional AMQP messaging between Raspberry Pi and Digital Twin"
+    DTDFVocab:enables TemperatureMonitoringService, SimulationService, SupervisoryDecisionMakingService
+]
+
+instance PythonScipyEnabler : DTDFVocab:Enabler [
+    base:desc "Python runtime using SciPy for parameter estimation, simulation, and model calibration"
+    DTDFVocab:enables SimulationService, SupervisoryDecisionMakingService
+]
+
+instance ModelTemperatureDynamicsA : DTDFVocab:Model [
+    base:desc "Dynamic thermal model A with parameters C_air, G_box, C_heater, G_heater calibrated via nonlinear least‑squares"
+    DTDFVocab:inputTo PythonScipyEnabler
+]
+
+instance ModelTemperatureDynamicsB : DTDFVocab:Model [
+    base:desc "Dynamic thermal model B with parameters C_air, G_box, C_heater, G_heater calibrated via nonlinear least‑squares"
+    DTDFVocab:inputTo PythonScipyEnabler
+]
+
+instance InsightOptimalHeatingDuration : DTDFVocab:Insight [
+    base:desc "Estimated optimal heating duration derived from calibrated thermal models"
+]
+
+instance InsightAdjustFanSpeed : DTDFVocab:Insight [
+    base:desc "Insight indicating necessary fan speed adjustment to correct temperature discrepancies"
+]
+
+instance InsightModelParameterCalibration : DTDFVocab:Insight [
+    base:desc "Calibration adjustment of model parameters (C_air, G_box, C_heater, G_heater) to improve prediction accuracy"
+]
+
+instance InsightControlLimitAnalytics : DTDFVocab:Insight [
+    base:desc "Analytics for tuning lower and upper temperature control limits (LL, UL)"
+]
+
+instance InsightTemperatureStatus : DTDFVocab:Insight [
+    base:desc "Live status of ambient and box temperatures captured by DS18S20 sensors"
+]
+
+instance ActionAdjustHeatbedDuration : DTDFVocab:Action [
+    base:desc "Adjust the heating duration of the heatbed to maintain desired temperature profile"
+    DTDFVocab:IsAutomatic true
+]
+
+instance ActionAdjustFanSpeed : DTDFVocab:Action [
+    base:desc "Modify fan speed based on temperature discrepancies to improve air circulation"
+    DTDFVocab:IsAutomatic true
+]
+
+instance ActionTuneControlLimits : DTDFVocab:Action [
+    base:desc "Tune lower and upper temperature control limits (LL, UL) based on analytical insights"
+    DTDFVocab:IsAutomatic true
+]
+
+instance TemperatureMonitoringService : DTDFVocab:Service [
+    base:desc "Real‑time temperature monitoring and controller state visualization"
+    DTDFVocab:provides InsightTemperatureStatus
+]
+
+instance SimulationService : DTDFVocab:Service [
+    base:desc "Simulation of temperature dynamics using ModelTemperatureDynamicsA and ModelTemperatureDynamicsB"
+    DTDFVocab:provides InsightOptimalHeatingDuration, InsightModelParameterCalibration
+]
+
+instance SupervisoryDecisionMakingService : DTDFVocab:Service [
+    base:desc "Supervisory decision‑making to adjust heating duration and fan speed based on model insights"
+    DTDFVocab:provides ActionAdjustHeatbedDuration, ActionAdjustFanSpeed, ActionTuneControlLimits
+]
+
+instance TemperatureTimeStampedLogs : DTDFVocab:Data [
+    base:desc "Time‑stamped temperature logs aggregated from all box sensors and ambient sensor"
+    DTDFVocab:fromData BoxTempData1, BoxTempData2, BoxTempData3, AmbientTempData
+    DTDFVocab:inputTo RabbitMQEnabler, PythonScipyEnabler
+]
+
+instance ActuatorStateLogs : DTDFVocab:Data [
+    base:desc "Actuator state logs capturing the on/off status of the heatbed heater and fan"
+    DTDFVocab:fromData HeatbedStateData, FanStateData
+    DTDFVocab:inputTo RabbitMQEnabler
+]
+
+instance virtual_to_physical_interaction : DTDFVocab:VirtualToPhysical [
+    base:desc "The DT publishes control commands over RabbitMQ; the controller on the Pi receives these messages and actuates the heatbed or fan via the MOSFETs according to the commanded state."
+]
+
+instance twinning_time_scale : DTDFVocab:TimeScale [
+    base:desc "Real‑time data exchange and control loop executed at the sampling interval of the low‑level driver (typically in seconds); DT updates models and sends control commands within the same time step."
+]
+
+instance dt_constellation : DTDFVocab:Constellation [
+    base:desc "Comprised of a low‑level driver (sensor/actuator abstraction), a control logic module (bang‑bang controller with LL, UL, H, C parameters), a RabbitMQ communication server, and the physical components (heatbed, fan, sensors, Raspberry Pi)."
+]
+
+instance life_cycle_stages : DTDFVocab:EvolutionStage [
+    base:desc "Stages include design (idealized models), manufacturing (actual hardware case, PCB, Raspberry Pi setup), operation (daily temperature regulation), and calibration/validation (parameter estimation and model verification)."
+]
+
+instance fidelity_and_validity_considerations : DTDFVocab:FidelityConsideration [
+    base:desc "Assumptions: uniform temperature inside box, negligible wall heat transfer, constant air specific heat, ignoring fan heat. Model validation through residual error minimization and comparison to experimental temperature trajectories; calibration ensures predictive accuracy for inertial effects of heatbed."
+]
+
+instance dt_technical_connection : DTDFVocab:TechnicalConnection [
+    base:desc "AMQP protocol over LAN/Wi‑Fi between Raspberry Pi (host) and digital twin processes; messages carry sensor readings, control commands, and state updates."
+]
+
+instance dt_hosting_deployment : DTDFVocab:Deployment [
+    base:desc "Digital twin services run locally on the Raspberry Pi executing RabbitMQ; the system is deployable on a single board computer with open‑source code repository, potentially scalable to cloud deployment via the same RabbitMQ broker."
+]
+
+instance security_and_safety_considerations : DTDFVocab:SecuritySafety [
+    base:desc "Low‑level driver implements a safe protocol to prevent unsafe actuator states; RabbitMQ ensures message integrity; critical control commands are monitored for safety violations before execution."
+]

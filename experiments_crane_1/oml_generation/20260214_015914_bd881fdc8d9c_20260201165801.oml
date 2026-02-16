@@ -1,0 +1,255 @@
+// C2: Acting Components
+instance CartMotor : DTDFVocab:ActingComponent [
+    base:desc "Propels the crane horizontally along the gantry beam with closed-loop control for precise positioning. Includes remote control interfaces via embedded controllers (serial/ethernet protocols). Actuation range constrained by track length."
+]
+
+instance HoistMotor : DTDFVocab:ActingComponent [
+    base:desc "Vertically lifts/lowers the load (container puck) via cable-and-pulley system with current/position limits for safety. Includes closed-loop control and remote command routing via motor IDs."
+]
+
+instance CraneElectromagnet : DTDFVocab:ActingComponent [
+    base:desc "Attached to hoist mechanism for picking/dropping container pucks via electromagnetic adhesion. Features timeout-based release for safety and actuation range limited by crane's reachable volume."
+]
+
+// C3: Physical Sensing Components
+instance SwingAngleEncoder : DTDFVocab:SensingComponent [
+    base:desc "Measures angular deviation of suspended load (container puck) during motion with high spatial resolution. Inferred real-time sampling (≥10Hz) for stability control."
+    DTDFVocab:producedData SwingAngleData
+]
+
+instance CraneAnemometer : DTDFVocab:SensingComponent [
+    base:desc "Measures wind speed/direction near crane's operational area. Data transmitted via wireless/serial interfaces with industrial-grade accuracy (±0.1 m/s)."
+    DTDFVocab:producedData WindSpeedData
+]
+
+instance CraneLoadCell : DTDFVocab:SensingComponent [
+    base:desc "Monitors weight of suspended load (container puck) with high precision. Data integrated into continuous validation service for trajectory monitoring."
+    DTDFVocab:producedData LoadMeasurementData
+]
+
+instance CartPositionEncoder : DTDFVocab:SensingComponent [
+    base:desc "Tracks horizontal position of crane cart along gantry beam with high resolution. Enables precise trajectory validation and control feedback."
+    DTDFVocab:producedData CartPositionData
+]
+
+instance HoistPositionEncoder : DTDFVocab:SensingComponent [
+    base:desc "Monitors vertical position of hoist mechanism with high resolution. Critical for trajectory validation and load stability control."
+    DTDFVocab:producedData HoistPositionData
+]
+
+// C4: Physical-to-Virtual Interaction
+instance SwingAngleData : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom SwingAngleEncoder
+]
+
+instance WindSpeedData : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom CraneAnemometer
+]
+
+instance LoadMeasurementData : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom CraneLoadCell
+]
+
+instance CartPositionData : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom CartPositionEncoder
+]
+
+instance HoistPositionData : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom HoistPositionEncoder
+]
+
+instance CraneStateData : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom CartPositionEncoder, HoistPositionEncoder, SwingAngleEncoder, CraneLoadCell
+]
+
+// C10: Models/Data
+instance GantryKinematicModel : DTDFVocab:Model [
+    base:desc "Represents forward/inverse kinematics of the lab-scale gantry crane for trajectory computation and control validation. Implemented in Python with ad-hoc control logic."
+    DTDFVocab:inputTo PythonControlEnabler, Fusion360Enabler
+]
+
+instance CraneSimulationModel : DTDFVocab:Model [
+    base:desc "Physics-based simulation of crane operations leveraging kinematic constraints. Used for predictive behavior analysis under varying conditions."
+    DTDFVocab:inputTo PythonSimulationEnabler, Fusion360Enabler
+]
+
+instance TrajectoryData : DTDFVocab:Data [
+    base:desc "Optimal paths computed for container movement using kinematic constraints. Includes position, velocity, and acceleration profiles."
+    DTDFVocab:fromData CartPositionData, HoistPositionData
+    DTDFVocab:inputTo PythonTrajectoryEnabler
+]
+
+instance HistoricalCraneData : DTDFVocab:Data [
+    base:desc "Time-series operational data including crane positions, velocities, and load measurements stored for post-processing and analysis."
+    DTDFVocab:fromData CraneStateData
+    DTDFVocab:inputTo TimescaleDBEnabler
+]
+
+instance ValidationMetrics : DTDFVocab:Data [
+    base:desc "Distance metrics (Euclidean) quantifying discrepancies between predicted and actual crane states for continuous validation."
+    DTDFVocab:fromData CraneStateData
+    DTDFVocab:inputTo PythonValidationEnabler
+]
+
+// C11: Enablers
+instance PythonControlEnabler : DTDFVocab:Enabler [
+    base:desc "Python-based implementation of kinematic models and control logic for real-time crane operation. Runs on personal computer interfaced with Arduino microcontroller."
+    DTDFVocab:enables TrajectoryGeneratorService
+]
+
+instance TimescaleDBEnabler : DTDFVocab:Enabler [
+    base:desc "Time-series database extension for PostgreSQL storing operational metrics for long-term trend analysis and performance benchmarking."
+    DTDFVocab:enables HistoricalDataLoggingService
+]
+
+instance GrafanaEnabler : DTDFVocab:Enabler [
+    base:desc "Real-time and historical data visualization platform providing 3D CAD overlays and time-series plots for crane state monitoring."
+    DTDFVocab:enables DataVisualizationService
+]
+
+instance MQTTEnabler : DTDFVocab:Enabler [
+    base:desc "Lightweight messaging protocol for bidirectional data streaming between physical crane and digital twin services with low latency."
+]
+
+instance Fusion360Enabler : DTDFVocab:Enabler [
+    base:desc "Autodesk Fusion 360 for 3D design and kinematic modeling of the gantry crane, ensuring alignment between physical and digital representations."
+]
+
+instance DockerEnabler : DTDFVocab:Enabler [
+    base:desc "Containerization platform packaging and deploying digital twin services in reproducible environments for easy dissemination."
+]
+
+instance PythonTrajectoryEnabler : DTDFVocab:Enabler [
+    base:desc "Python implementation computing optimal paths for container movement using kinematic constraints."
+    DTDFVocab:enables TrajectoryGeneratorService
+]
+
+instance PythonSimulationEnabler : DTDFVocab:Enabler [
+    base:desc "Python-based physics simulation service executing crane operation predictions under varying conditions."
+    DTDFVocab:enables SimulationService
+]
+
+instance PythonValidationEnabler : DTDFVocab:Enabler [
+    base:desc "Python service calculating distance metrics between predicted and actual crane states for continuous validation."
+    DTDFVocab:enables ContinuousValidationService
+]
+
+// C6: Services
+instance TrajectoryGeneratorService : DTDFVocab:Service [
+    base:desc "Computes optimal paths for container movement using kinematic models. Targets researchers validating control algorithms for continuous validation or fault detection."
+    DTDFVocab:provides OptimalTrajectoryInsight, ControlCommandAction
+]
+
+instance SimulationService : DTDFVocab:Service [
+    base:desc "Executes physics-based simulations of crane operations to predict behavior under varying conditions. Supports research validation and educational demonstrations."
+    DTDFVocab:provides PredictedCraneBehaviorInsight
+]
+
+instance HistoricalDataLoggingService : DTDFVocab:Service [
+    base:desc "Stores operational data (positions, velocities, load measurements) in TimescaleDB for post-processing and long-term trend analysis."
+    DTDFVocab:provides HistoricalPerformanceInsight
+]
+
+instance DataVisualizationService : DTDFVocab:Service [
+    base:desc "Provides real-time and historical visualization of crane states via Grafana dashboards with 3D CAD overlays and time-series plots."
+    DTDFVocab:provides CraneStateVisualizationInsight, AnomalyDetectionInsight
+]
+
+instance ContinuousValidationService : DTDFVocab:Service [
+    base:desc "Employs distance metrics to validate digital twin accuracy against physical system. Used for fault detection and system evolution tracking via DarTwin notation."
+    DTDFVocab:provides ValidationAccuracyInsight, FaultDetectionAction
+]
+
+// C17: Insights/Actions
+instance OptimalTrajectoryInsight : DTDFVocab:Insight [
+    base:desc "Computed optimal paths for container movement considering kinematic constraints and operational limits."
+]
+
+instance PredictedCraneBehaviorInsight : DTDFVocab:Insight [
+    base:desc "Physics-based predictions of crane behavior under varying operational conditions for research validation."
+]
+
+instance HistoricalPerformanceInsight : DTDFVocab:Insight [
+    base:desc "Long-term trends and performance benchmarks derived from operational data stored in TimescaleDB."
+]
+
+instance CraneStateVisualizationInsight : DTDFVocab:Insight [
+    base:desc "Real-time and historical visualization of crane states including positions, velocities, and load measurements via Grafana dashboards."
+]
+
+instance AnomalyDetectionInsight : DTDFVocab:Insight [
+    base:desc "Identified anomalies or deviations in crane behavior through interactive data exploration."
+]
+
+instance ValidationAccuracyInsight : DTDFVocab:Insight [
+    base:desc "Quantified discrepancies between predicted and actual crane states using Euclidean distance metrics."
+]
+
+instance ControlCommandAction : DTDFVocab:Action [
+    base:desc "Generates and transmits control commands to physical crane actuators based on computed trajectories."
+    DTDFVocab:IsAutomatic true
+]
+
+instance FaultDetectionAction : DTDFVocab:Action [
+    base:desc "Triggers alerts or corrective actions when validation metrics exceed predefined thresholds."
+    DTDFVocab:IsAutomatic true
+]
+
+// C1: Physical System Environment
+instance LabScaleGantryCraneEnvironment : DTDFVocab:Environment [
+    base:desc "Controlled research environment housing the lab-scale gantry crane cyber-physical system."
+    base:contains CraneMechanicalStructure, CraneController, CraneSensingComponents, CraneActingComponents
+]
+
+instance CraneMechanicalStructure : DTDFVocab:Component [
+    base:desc "Scaled-down gantry crane with movable bridge and hoist for simulating industrial crane operations in a controlled environment."
+]
+
+instance CraneController : DTDFVocab:Component [
+    base:desc "Python-based control application running on a personal computer with Arduino microcontroller interface for real-time actuation and sensor data acquisition."
+]
+
+instance CraneSensingComponents : DTDFVocab:Component [
+    base:desc "Embedded sensors including encoders, load cells, and anemometer for position, velocity, load, and environmental monitoring."
+    base:contains SwingAngleEncoder, CraneAnemometer, CraneLoadCell, CartPositionEncoder, HoistPositionEncoder
+]
+
+instance CraneActingComponents : DTDFVocab:Component [
+    base:desc "Actuation components including motors and electromagnet for crane movement and load handling."
+    base:contains CartMotor, HoistMotor, CraneElectromagnet
+]
+
+instance virtual_to_physical_interaction : DTDFVocab:VirtualToPhysical [
+    base:desc "Control commands originate from the **Control Application** and **Human Machine Interface (HMI)**, which interact with the **Physical Crane Interface** (a Python program connecting to crane controllers). The **Trajectory Generator Service** generates optimal trajectories (e.g., swing-free movements) and likely feeds these into the Control Application for execution. The **Continuous Validation Service** compares **executed trajectories** (measured data) with **simulated trajectories** post-execution but does not validate control messages in real-time. No details are provided on command types, message formats, validation/authentication mechanisms, feedback systems, conflict resolution, or command execution confirmation. The **MQTT Broker** facilitates signaling between services but is not explicitly used for control command transmission."
+]
+
+instance twinning_time_scale : DTDFVocab:TimeScale [
+    base:desc "The Digital Twin system exhibits a dual temporal paradigm: **GreenhouseDT** operates with **prerecorded data** in virtual machines, enabling offline analysis and simulation without real-time synchronization. In contrast, the **Air Quality Management** exemplar supports **runtime visualization**, **simulation**, and **prediction**, implying real-time or near-real-time data processing for indoor air quality monitoring. The **Gantry Crane** system, while not explicitly detailed in temporal granularity, aligns with continuous operational demands, as it requires **real-time status updates** and likely **low-latency coordination** for container movement. No explicit synchronization frequencies (e.g., Hz) or latency requirements are specified, but the distinction between **offline (GreenhouseDT)** and **real-time (Air Quality Management/Gantry Crane)** operations is clear. The Air Quality exemplar’s use of **Microsoft Azure tools** suggests cloud-based processing, which may introduce variable latency depending on service tiers, while GreenhouseDT’s **InfluxDB** and **ActiveMQ** imply event-driven or batch-oriented synchronization mechanisms."
+]
+
+instance dt_constellation : DTDFVocab:Constellation [
+    base:desc "The Digital Twin systems in the documents adopt a **lightweight, ad-hoc orchestration approach** without relying on commercial digital twin frameworks. The **GreenhouseDT** exemplar uses **InfluxDB** (a time-series database) and **ActiveMQ** (a message broker) for **event-driven coordination** between physical and digital components, enabling behavioral adaptation. The **Air Quality Management** exemplar employs **AutomationML** for digital twin modeling and **Microsoft Azure tools** for pipeline implementation, suggesting a **hybrid orchestration** combining **model-driven engineering** and **cloud-based services**. The **gantry crane system** (logistics/cyber-physical domain) follows similar design choices, such as **containerization or virtualization**, to facilitate dissemination but lacks explicit details on system-wide coordination. All exemplars emphasize **modularity** and **easy dissemination** via **virtual machines or containers**, with no centralized orchestration layer."
+]
+
+instance fidelity_and_validity_considerations : DTDFVocab:FidelityConsideration [
+    base:desc "The **Lab Scale Gantry Crane** Digital Twin enforces **fidelity** through:
+  1. **Continuous Validation Service**: Operates in **real-time**, comparing **executed trajectories** (from encoders/motors) with **simulated trajectories** (from the kinematic model). **Distance metrics** (e.g., Euclidean error) quantify deviations, triggering **corrective actions** if thresholds are exceeded.
+  2. **Uncertainty Sources**: Primarily stem from **sensor noise** (e.g., encoder quantization), **model approximations** (e.g., simplified kinematics), and **external disturbances** (e.g., wind). Quantification is implicit via **distance metrics** but lacks explicit statistical analysis.
+  3. **Quality Assurance**: Relies on **closed-loop validation**—discrepancies between physical and digital states prompt **adaptive adjustments** (e.g., recalibrating motor controllers). No formal **verification/validation (V&V) protocols** (e.g., ISO 15926) are mentioned, but the **Continuous Validation Service** serves as an **embedded QA mechanism**. The system’s **ad-hoc architecture** prioritizes **practical robustness** over standardized compliance."
+]
+
+instance dt_technical_connection : DTDFVocab:TechnicalConnection [
+    base:desc "The **Digital Twin** system employs a **service-oriented architecture** with containers communicating via an **MQTT Broker** for lightweight, event-driven signaling. The network topology is centralized, with the **Database (TimescaleDB)** as the primary data store and **Grafana Dashboard** for visualization. Communication protocols include **MQTT** for inter-service messaging (e.g., **Logging Application** → **MQTT Broker** → **Dashboard**) and unspecified protocols for **Physical Crane Interface** ↔ **Control Application** (likely TCP/IP or serial). Bandwidth/latency requirements are not quantified, but the **Continuous Validation Service** implies low-latency comparisons between executed and simulated trajectories. Redundancy mechanisms are not described, but the **MQTT Broker** ensures reliable message delivery between services. Security protocols are unspecified, though the **TimescaleDB** database likely enforces access controls for data integrity."
+]
+
+instance dt_hosting_deployment : DTDFVocab:Deployment [
+    base:desc "The **Digital Twin** is deployed on-premise alongside the **Physical Crane**, with no explicit cloud/edge distinction. Computational requirements are distributed across six containers: **Database (TimescaleDB)** for time-series storage, **Trajectory Generator Service** (kinematics-based optimization), **Simulation Service** (physics-based modeling), and **Continuous Validation Service** (real-time trajectory comparison). Storage scales with logged data (e.g., crane state metrics, trajectory logs), but no auto-scaling mechanisms are mentioned. The deployment model is **monolithic for the Physical Crane** (hardware + interface) and **microservices-based for the Digital Twin** (containerized services). Availability/reliability is assured by the **Logging Application**’s continuous data capture and the **Dashboard**’s real-time alerts, though no fault-tolerance protocols (e.g., backups, failovers) are specified."
+]
+
+instance horizontal_integration : DTDFVocab:HoriIntegration [
+    base:desc "The Digital Twin systems demonstrate **limited horizontal integration** with external systems, relying on **ad-hoc or domain-specific protocols**. The **GreenhouseDT** exemplar integrates with **InfluxDB** (for data storage) and **ActiveMQ** (for messaging), but no interoperability standards (e.g., OPC UA, MQTT) or enterprise system dependencies are mentioned. The **Air Quality Management** exemplar uses **AutomationML** for digital twin modeling and **Microsoft Azure tools**, implying potential integration with **cloud-based analytics or enterprise systems**, but no explicit protocols or standards are detailed. The **gantry crane system** (logistics domain) lacks specific integration details, though the use of **C4 Model** suggests modular software architecture. None of the exemplars explicitly describe **cross-Digital Twin coordination** or **enterprise system dependencies** beyond their immediate technical stacks."
+]
+
+instance standardization : DTDFVocab:Standardization [
+    base:desc "The **Air Quality Management** exemplar adheres to **AutomationML** for digital twin modeling, a **standardized engineering format** for automation and control systems, ensuring **interoperability** with other tools in the pipeline. The **GreenhouseDT** exemplar uses **InfluxDB** (a time-series database standard) and **ActiveMQ** (a message broker protocol) for data exchange, though these are not domain-specific standards. The **gantry crane system** employs the **C4 Model** for architecture documentation, which is a **software architecture standard** but not a digital twin-specific one. **Certification requirements** or **compliance frameworks** (e.g., ISO, IEC) are not mentioned. The **ad-hoc approaches** in all exemplars suggest **limited adherence to commercial digital twin frameworks**, prioritizing **domain-specific customization** over standardized compliance."
+]

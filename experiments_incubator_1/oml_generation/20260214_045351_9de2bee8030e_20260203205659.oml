@@ -1,0 +1,156 @@
+// C3: Physical sensing components
+instance TemperatureSensorInside1 : DTDFVocab:SensingComponent [
+    base:desc "Digital 1‑Wire temperature sensor placed inside the insulated incubator box, accuracy ±0.5 °C."
+    DTDFVocab:producedData TemperatureDataTransmittedInside1
+]
+
+instance TemperatureSensorInside2 : DTDFVocab:SensingComponent [
+    base:desc "Second digital 1‑Wire temperature sensor inside the incubator, accuracy ±0.5 °C."
+    DTDFVocab:producedData TemperatureDataTransmittedInside2
+]
+
+instance TemperatureSensorOutside : DTDFVocab:SensingComponent [
+    base:desc "Digital 1‑Wire temperature sensor outside the incubator, accuracy ±0.5 °C."
+    DTDFVocab:producedData TemperatureDataTransmittedOutside
+]
+
+// C4: Physical‑to‑virtual interaction
+instance TemperatureDataTransmittedInside1 : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom TemperatureSensorInside1
+]
+
+instance TemperatureDataTransmittedInside2 : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom TemperatureSensorInside2
+]
+
+instance TemperatureDataTransmittedOutside : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom TemperatureSensorOutside
+]
+
+// C10: Models/Data
+instance TemperatureInside1Data : DTDFVocab:Data [
+    base:desc "Temperature reading from internal sensor 1, accuracy ±0.5 °C."
+    DTDFVocab:inputTo RaspberryPiFirmware, SimulationEngineEnabler
+    DTDFVocab:fromData TemperatureDataTransmittedInside1
+]
+
+instance TemperatureInside2Data : DTDFVocab:Data [
+    base:desc "Temperature reading from internal sensor 2, accuracy ±0.5 °C."
+    DTDFVocab:inputTo RaspberryPiFirmware, SimulationEngineEnabler
+    DTDFVocab:fromData TemperatureDataTransmittedInside2
+]
+
+instance TemperatureOutsideData : DTDFVocab:Data [
+    base:desc "Temperature reading from the external sensor, accuracy ±0.5 °C."
+    DTDFVocab:inputTo RaspberryPiFirmware, SimulationEngineEnabler
+    DTDFVocab:fromData TemperatureDataTransmittedOutside
+]
+
+instance TwoParameterThermalModel : DTDFVocab:Model [
+    base:desc "Simplified two‑parameter thermal model of the incubator, calibrated against experimental data."
+    DTDFVocab:inputTo SimulationEngineEnabler
+]
+
+instance FourParameterThermalModel : DTDFVocab:Model [
+    base:desc "Four‑parameter thermal model capturing heatbed inertia, styrofoam enclosure, and fan‑mediated convection."
+    DTDFVocab:inputTo SimulationEngineEnabler
+]
+
+// C11: Enablers
+instance RaspberryPiFirmware : DTDFVocab:Enabler [
+    base:desc "Raspberry Pi firmware running control logic and data acquisition."
+    DTDFVocab:enables MonitoringService, PredictionService, SafetyCheckService, RemoteControlService
+]
+
+instance RabbitMQBroker : DTDFVocab:Enabler [
+    base:desc "RabbitMQ message broker on the Raspberry Pi mediating communication between control loop and simulation engines."
+    DTDFVocab:enables MonitoringService, RemoteControlService
+]
+
+instance SimulationEngineEnabler : DTDFVocab:Enabler [
+    base:desc "Simulation engine executing differential‑equation based thermal models."
+    DTDFVocab:enables PredictionService
+]
+
+// C6: Services
+instance MonitoringService : DTDFVocab:Service [
+    base:desc "Real‑time monitoring of internal and external temperature sensors."
+    DTDFVocab:provides TemperatureTrendInsight
+]
+
+instance PredictionService : DTDFVocab:Service [
+    base:desc "Predicts future temperature trajectories using two thermal simulation models."
+    DTDFVocab:provides TemperatureTrendInsight, SafetyAlertInsight
+]
+
+instance SafetyCheckService : DTDFVocab:Service [
+    base:desc "Evaluates safety thresholds and triggers bang‑bang control to toggle the heater."
+    DTDFVocab:provides SafetyAlertInsight
+]
+
+instance VisualizationService : DTDFVocab:Service [
+    base:desc "Open‑source dashboard visualizing temperature over time and parameter convergence."
+    DTDFVocab:provides TemperatureTrendInsight
+]
+
+instance RemoteControlService : DTDFVocab:Service [
+    base:desc "Remote control interface to adjust fan and heater settings on the Raspberry Pi."
+    DTDFVocab:provides HeaterToggleAction, FanToggleAction
+]
+
+// C17: Insights/Actions
+instance TemperatureTrendInsight : DTDFVocab:Insight [
+    base:desc "Insight on temperature trend and alignment with target setpoint."
+]
+
+instance SafetyAlertInsight : DTDFVocab:Insight [
+    base:desc "Insight triggered when temperature exceeds safety upper bound or falls below setpoint during control."
+]
+
+instance HeaterToggleAction : DTDFVocab:Action [
+    base:desc "Bang‑bang action toggling the heater ON or OFF based on temperature thresholds."
+    DTDFVocab:IsAutomatic true
+]
+
+instance FanToggleAction : DTDFVocab:Action [
+    base:desc "Bang‑bang action toggling the fan ON or OFF based on temperature thresholds."
+    DTDFVocab:IsAutomatic true
+]
+
+// C1: Acting components
+instance HeaterActuator : DTDFVocab:ActingComponent [
+    base:desc "Heatbed element powered by 12 V or 24 V DC supply, controlled by Raspberry Pi."
+]
+
+instance FanActuator : DTDFVocab:ActingComponent [
+    base:desc "Axial fan providing air circulation, powered by 12 V or 24 V DC supply, controlled by Raspberry Pi."
+]
+
+// C18: Environment and component containment
+instance IncubatorEnvironment : DTDFVocab:Environment [
+    base:contains HeaterActuator, FanActuator, TemperatureSensorInside1, TemperatureSensorInside2, TemperatureSensorOutside
+]
+
+instance virtual_to_physical_interaction : DTDFVocab:VirtualToPhysical [
+    base:desc "The Digital Twin can publish control messages to the RabbitMQ server, which are consumed by the controller running on the Raspberry Pi. The controller implements a bang‑bang control strategy, translating received commands into actuation signals for the heatbed and fan via the low‑level driver. The driver incorporates a safe protocol that validates commands before execution, but the specific validation logic, authentication, or conflict resolution procedures are not specified. The flow includes command delivery to the driver, actuation of the physical twin, and the driver’s periodic state reporting back to RabbitMQ; acknowledgements or confirmation of execution are not mentioned."
+]
+
+instance twinning_time_scale : DTDFVocab:TimeScale [
+    base:desc "The Digital Twin continuously acquires data from the incubator’s two in‑box temperature sensors and one external sensor via the Raspberry Pi controller in a regularly scheduled polling loop, and sends control commands to the heatbed and fan in synchrony with that sampling. The architecture supports real‑time monitoring and low‑latency control, but the exact update period is not specified in the documents."
+]
+
+instance dt_constellation : DTDFVocab:Constellation [
+    base:desc "The digital twin is orchestrated around four core functional blocks: (i) Data acquisition where the low‑level driver streams raw temperature data to a time‑series database; (ii) Simulation models—Model A (two free parameters) and Model B (four free parameters)—which are calibrated on‑demand using the live data; (iii) Algorithms that leverage the calibrated models; notably a Kalman filter that fuses measured temperatures with Model B to estimate the unmeasured heat‑bed temperature and detect anomalies; and (iv) Visualization and control interfaces that expose real‑time dashboards and provide feedback to the Raspberry Pi controller. Co‑simulation enables what‑if scenarios by injecting historical or real‑time PT data into the models to optimise controller parameters. This architecture implements a closed self‑adaptation loop: abnormal plant behaviour triggers automated experiments, re‑calibration, re‑configuration of the Kalman filter, what‑if simulation, and controller retuning, thereby aligning the PT and DT in real time."
+]
+
+instance fidelity_and_validity_considerations : DTDFVocab:FidelityConsideration [
+    base:desc "Model fidelity is addressed by choosing between a simple two‑parameter model and a four‑parameter model to balance accuracy and computational load. Calibration against experimental data and subsequent comparison with measured temperatures is used to validate the models, with the four‑parameter model showing better predictive capability for thermal inertia. Verification and uncertainty quantification are not detailed in the documents. No formal error detection or correction mechanisms are described. Quality assurance is implied through experimental validation during model development."
+]
+
+instance dt_technical_connection : DTDFVocab:TechnicalConnection [
+    base:desc "The technical backbone of the system is a RabbitMQ message broker that mediates all inter‑component communication. The broker is installed on the Raspberry Pi and services the low‑level driver, controller, and Digital Twin listener components through a publish/subscribe messaging pattern. The documents do not specify explicit network protocols (e.g., AMQP shape, version), bandwidth or latency requirements, reliability or redundancy mechanisms, or security protocols for the network. Only the presence of RabbitMQ as the communication middleware is described."
+]
+
+instance dt_hosting_deployment : DTDFVocab:Deployment [
+    base:desc "The physical twin’s software stack—including the low‑level driver, controller, and RabbitMQ server—is hosted on a Raspberry Pi, which is deployed on‑premises. The Digital Twin components are envisioned as listeners to the RabbitMQ message streams, but their concrete hosting environment (edge, cloud, or additional on‑premises nodes) is not detailed in the provided documents. Thus the deployment is on‑premises at the Pi level, with potential for scaling beyond this node if required by future extensions not covered here."
+]

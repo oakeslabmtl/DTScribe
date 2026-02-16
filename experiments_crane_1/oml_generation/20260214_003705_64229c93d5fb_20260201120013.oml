@@ -1,0 +1,155 @@
+// C3: Physical sensing components
+instance XAxisEncoderSensor : DTDFVocab:SensingComponent [
+    base:desc "Encoder sensor on the linear X‑axis carriage that captures position and velocity"
+    DTDFVocab:producedData XAxisPositionDataTransmitted
+]
+
+instance JibAngleEncoderSensor : DTDFVocab:SensingComponent [
+    base:desc "Encoder sensor on the rotating jib that captures jaw angle"
+    DTDFVocab:producedData JibAngleDataTransmitted
+]
+
+instance LoadWeightSensor : DTDFVocab:SensingComponent [
+    base:desc "Load‑weight sensor that measures the weight on the gantry carriage"
+    DTDFVocab:producedData LoadWeightDataTransmitted
+]
+
+// C4: Physical‑to‑virtual data transmission
+instance XAxisPositionDataTransmitted : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom XAxisEncoderSensor
+]
+
+instance JibAngleDataTransmitted : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom JibAngleEncoderSensor
+]
+
+instance LoadWeightDataTransmitted : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom LoadWeightSensor
+]
+
+// C10: Data
+instance XAxisPositionData : DTDFVocab:Data [
+    base:desc "Time‑stamped X‑axis position data written to TimescaleDB"
+    DTDFVocab:fromData XAxisPositionDataTransmitted
+    DTDFVocab:inputTo TimescaleDatabaseEnabler, ThreeDVisualizationEngineEnabler, ValidationEngineEnabler, ComputationEngineEnabler
+]
+
+instance JibAngleData : DTDFVocab:Data [
+    base:desc "Time‑stamped jib angle data written to TimescaleDB"
+    DTDFVocab:fromData JibAngleDataTransmitted
+    DTDFVocab:inputTo TimescaleDatabaseEnabler, ThreeDVisualizationEngineEnabler, ValidationEngineEnabler, ComputationEngineEnabler
+]
+
+instance LoadWeightData : DTDFVocab:Data [
+    base:desc "Time‑stamped load‑weight data written to TimescaleDB"
+    DTDFVocab:fromData LoadWeightDataTransmitted
+    DTDFVocab:inputTo TimescaleDatabaseEnabler, ValidationEngineEnabler, ComputationEngineEnabler
+]
+
+// C7: Acting components
+instance CranePositionActuator : DTDFVocab:ActingComponent [
+    base:desc "Drive motor that moves the carriage along the X‑axis in response to positioning commands"
+]
+
+instance JibAngleActuator : DTDFVocab:ActingComponent [
+    base:desc "Servo motor that rotates the jib based on received angle commands"
+]
+
+// C17: Insights and actions
+instance HistoricalDataAnalysisInsight : DTDFVocab:Insight [
+    base:desc "Insight derived from aggregated historical crane sensor data stored in TimescaleDB"
+]
+
+instance VisualizedCraneStateInsight : DTDFVocab:Insight [
+    base:desc "Insight that displays the real‑time 3D visualization of the crane's state"
+]
+
+instance MotionAccuracyInsight : DTDFVocab:Insight [
+    base:desc "Insight indicating the accuracy of the crane motion compared to the kinematic model"
+]
+
+instance DetectedFaultInsight : DTDFVocab:Insight [
+    base:desc "Insight indicating a detected fault or model drift during continuous validation"
+]
+
+instance ControlOptimizationInsight : DTDFVocab:Insight [
+    base:desc "Optimization insight that indicates the most efficient motion plan computed by the optimal control service"
+]
+
+instance MoveToPositionCommand : DTDFVocab:Action [
+    base:desc "Command to move the crane's X‑axis carriage to a specified position as calculated by the optimal control service"
+    DTDFVocab:IsAutomatic true
+]
+
+// C11: Enablers
+instance TimescaleDatabaseEnabler : DTDFVocab:Enabler [
+    base:desc "PostgreSQL adapter that writes crane sensor data to a TimescaleDB database over the PostgreSQL protocol"
+    DTDFVocab:enables HistoricalDataLoggingService
+]
+
+instance ThreeDVisualizationEngineEnabler : DTDFVocab:Enabler [
+    base:desc "3D rendering engine that consumes live sensor data and CAD/kinematic model to produce a virtual scene"
+    DTDFVocab:enables DataVisualizationService
+]
+
+instance ValidationEngineEnabler : DTDFVocab:Enabler [
+    base:desc "Validation engine that compares live sensor data against the kinematic model to detect model drift or faults"
+    DTDFVocab:enables ContinuousValidationService
+]
+
+instance ComputationEngineEnabler : DTDFVocab:Enabler [
+    base:desc "Computation engine that hosts the Gantry dynamic model and performs control optimization"
+    DTDFVocab:enables OptimalControlService
+]
+
+// C6: Services
+instance HistoricalDataLoggingService : DTDFVocab:Service [
+    base:desc "Historical data logging service that stores live sensor streams in TimescaleDB for post‑mission analysis"
+    DTDFVocab:provides HistoricalDataAnalysisInsight
+]
+
+instance DataVisualizationService : DTDFVocab:Service [
+    base:desc "Data visualization service that renders live and recorded crane states in a 3D scene derived from the CAD and kinematic model"
+    DTDFVocab:provides VisualizedCraneStateInsight
+]
+
+instance ContinuousValidationService : DTDFVocab:Service [
+    base:desc "Continuous validation service that performs real‑time comparison between the physical crane motion and the model"
+    DTDFVocab:provides MotionAccuracyInsight, DetectedFaultInsight
+]
+
+instance OptimalControlService : DTDFVocab:Service [
+    base:desc "Optimal control service that generates model‑based motion plans to minimize energy consumption or travel time"
+    DTDFVocab:provides ControlOptimizationInsight, MoveToPositionCommand
+]
+
+// C10: Models
+instance GantryDynamicModel : DTDFVocab:Model [
+    base:desc "Kinematic model of the gantry crane that computes motion equations based on CAD geometry and kinematic equations"
+    DTDFVocab:inputTo ComputationEngineEnabler
+]
+
+// C18: Environment
+instance CraneEnvironment : DTDFVocab:Environment [
+    base:contains XAxisEncoderSensor, JibAngleEncoderSensor, LoadWeightSensor, CranePositionActuator, JibAngleActuator
+]
+
+instance virtual_to_physical_interaction : DTDFVocab:VirtualToPhysical [
+    base:desc "Control commands originate from the Control Application, also written in Python, which obtains motion trajectories from the Trajectory Generator Service and invokes the Physical Crane Interface to command the crane hardware. The Physical Crane Interface translates high‑level motion instructions into controller commands passed directly to the crane’s field‑bus controllers. The documentation does not describe authentication, conflict resolution or execution acknowledgement mechanisms."
+]
+
+instance dt_constellation : DTDFVocab:Constellation [
+    base:desc "GreenhouseDT orchestrates data flow using an InfluxDB time‑series database that stores sensor telemetry, an Apache ActiveMQ broker that mediates messages between the greenhouse’s physical devices and the digital twin runtime, and virtual machine images containing prerecorded datasets. The Air Quality Management exemplar utilizes Microsoft Azure components—IoT Hub for device ingress, Azure Functions for processing, and Azure Stream Analytics for real‑time aggregation—alongside an AutomationML model that defines the twin’s structure. Both systems employ service‑oriented integration patterns, with message queues (ActiveMQ/JMS or AMQP via Azure IoT Hub) decoupling data ingestion from model updates and analytics."
+]
+
+instance dt_technical_connection : DTDFVocab:TechnicalConnection [
+    base:desc "Inter‑service communication within the digital twin relies on an MQTT broker. The MQTT broker facilitates publish/subscribe messaging for services such as the Trajectory Generator Service, Simulation Service, Continuous Validation Service, and the Dashboard. The broker operates over TCP using the MQTT protocol. The physical crane interface communicates directly with the crane controllers via their native controller interface (not explicitly specified, likely a proprietary field‑bus protocol). No further details on network topology, bandwidth, latency, reliability or security protocols are provided."
+]
+
+instance horizontal_integration : DTDFVocab:HoriIntegration [
+    base:desc "Both exemplars expose sensor streams to external services via standard messaging protocols: ActiveMQ (JMS/AMQP) for GreenhouseDT and Azure IoT Hub (MQTT/AMQP) for the Air Quality Management exemplar. The latter’s AutomationML digital twin model enables interoperability with engineering tools that consume AutomationML, while code and configurations are shared through GitHub repositories and Docker images. No commercial digital twin framework is invoked; the integration relies on open‑source middleware, cloud services, and containerization to interface with downstream analytics, visualization, and prediction services."
+]
+
+instance standardization : DTDFVocab:Standardization [
+    base:desc "The Air Quality Management exemplar adopts the AutomationML standard for twin modelling and employs Microsoft Azure’s IoT and analytics services, which adhere to Azure IoT standards and RESTful APIs for interoperability. The Greenhouse and Gantry Crane exemplars do not follow a dedicated commercial twin framework and instead use an ad‑hoc stack of IoT protocols (e.g., MQTT via ActiveMQ) and open‑source databases (InfluxDB). Compliance with industry standards beyond AutomationML is not documented."
+]
