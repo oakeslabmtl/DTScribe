@@ -639,6 +639,7 @@ JSON:
             "virtual_to_physical_interaction": "VirtualToPhysical",
             "twinning_time_scale": "TimeScale",
             "dt_constellation": "Constellation",
+            "multiplicities": "Multiplicity",
             "life_cycle_stages": "LifeCycleStage",
             "twinning_process_and_dt_evolution": "EvolutionStage",
             "fidelity_and_validity_considerations": "FidelityConsideration",
