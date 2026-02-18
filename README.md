@@ -1,4 +1,4 @@
-# LLM to Digital Twin Description Framework (LLM2DTDF)
+# DTScribe: Generating Models for Digital Twin Reporting using Local Large Language Models
 
 ## Installation
 
@@ -40,28 +40,5 @@ pip install -e .
 
 To run the extraction, you need to do:
 ```bash
-uv run src\main.py
-```
-
-Here is the full list of available parameters:
-```python
-parser.add_argument("--mode", choices=["both", "extraction", "oml"], default="both", help="Run extraction, OML generation, or both")
-parser.add_argument("--pdf", default="data/papers/The Incubator Case Study for Digital Twin Engineering.pdf", help="PDF path for extraction")
-parser.add_argument("--chunk-size", type=int, default=1500)
-parser.add_argument("--chunk-overlap", type=int, default=200)
-parser.add_argument("--temperature", type=float, default=0.1)
-parser.add_argument("--model-name", default="qwen3:8b")
-parser.add_argument("--embedding-model", default="embeddinggemma")
-parser.add_argument("--exp-id", help="Existing experiment id (hash_timestamp or just hash for latest) containing characteristics for standalone OML generation")
-parser.add_argument("--no-save", action="store_true", help="Do not persist results")
-parser.add_argument("--keep-db", action="store_true", help="Keep the vector database even if it exists")
-parser.add_argument("--max-judge-retries", type=int, default=2, help="Maximum retries for low-confidence judge evaluations. Set to 0 to disable judging.")
-parser.add_argument("--max-oml-retries", type=int, default=3, help="Maximum retries for OML generation validation. Set to 0 to skip validation.")
-```
-
-## Analyzing results
-
-Full command for analyzing results and generating a report/figures.
-```bash
-uv run src\viz\results_visualizer.py analyze --experiments-dir experiments --dashboard --show --report
+uv run src\experiment_runner.py
 ```
