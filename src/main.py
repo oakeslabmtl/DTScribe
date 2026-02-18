@@ -1,19 +1,11 @@
 """Main orchestrator & CLI.
-
-Enhancement: allow standalone OML generation from previously saved characteristics
-without re-running extraction (faster iteration). Use --mode oml and provide
---source-experiment-id.
 """
 
-import shutil
 from typing import Dict, Any, List, Optional
-from pathlib import Path
-import pandas as pd
 import time
+import traceback
 from datetime import datetime
 import argparse
-import sys
-
 from abstractions import (
     IBlockProcessor, IPipelineInitializer, IOMLGenerator, 
     IQualityAnalyzer, IStateManager, IDocumentRetriever, ICharacteristicsExtractor
@@ -22,15 +14,16 @@ from implementations import (
     StateManager, DocumentRetriever, CharacteristicsExtractor,
     PipelineInitializer, OMLGenerator, QualityAnalyzer,
     Block1Processor, Block2Processor, Block3Processor,
-    Block4Processor, Block5Processor, Block6Processor
+    Block4Processor, Block5Processor, Block6Processor,
+    DTCharacteristicsProcessor
 )
 from experiment_tracking import (
     ExperimentConfig, ResultsSaver, ExperimentTracker,
     CharacteristicsExtractionResult, OMLGenerationResult
 )
-# from utils.memory import get_memory_usage_mb
-from judge_evaluator import JudgeEvaluator
 
+from langchain_ollama import ChatOllama
+from judge_evaluator import JudgeEvaluator
 
 class ExtractionOrchestrator:
     """Main orchestrator that coordinates the extraction pipeline."""
@@ -42,6 +35,7 @@ class ExtractionOrchestrator:
         oml_generator: IOMLGenerator,
         quality_analyzer: IQualityAnalyzer,
         block_processors: List[IBlockProcessor],
+        baseline_block_processors: Optional[List[IBlockProcessor]] = None,
         experiment_tracker: ExperimentTracker = None,
     ):
         """Initialize orchestrator with its collaborating components."""
@@ -50,13 +44,23 @@ class ExtractionOrchestrator:
         self._oml_generator = oml_generator
         self._quality_analyzer = quality_analyzer
         self._block_processors = block_processors
+        self._baseline_block_processors = baseline_block_processors or []
         self._experiment_tracker = experiment_tracker
 
         self._retriever: IDocumentRetriever = None
         self._extractor: ICharacteristicsExtractor = None
         self.last_experiment_id: Optional[str] = None
 
-    def run_extraction(self, pdf_path: str, experiment_id: Optional[str] = None, config: Optional[ExperimentConfig] = None, save_results: bool = True, no_regenerate_db: bool = True, no_llm_judge: bool = False, max_judge_retries: int = 2) -> Dict[str, Any]:
+    def initialize_pipeline(self, input_path: str, config: ExperimentConfig):
+        """Initialize the pipeline with the given PDF and configuration."""
+        print("🚀 Initializing extraction pipeline...")
+        if self._state_manager.get_state("vectordb"):
+            print("♻️ Resetting existing vector DB...")
+            self._state_manager.get_state("vectordb")._client.reset()
+        init_result = self._initializer.initialize(input_path, config, config.model_name, config.embedding_model)
+        self._state_manager.update_state(init_result)
+
+    def run_extraction(self, input_path: str, experiment_id: Optional[str] = None, config: Optional[ExperimentConfig] = None, save_results: bool = True) -> Dict[str, Any]:
         """Run the complete extraction pipeline with optional experiment tracking."""
         print("🚀 Starting Enhanced Digital Twin Characteristics Extraction")
         print("=" * 60)
@@ -70,34 +74,46 @@ class ExtractionOrchestrator:
             print(f"📊 Using provided Experiment ID: {experiment_id}")
         self.last_experiment_id = experiment_id
 
-        # Only process PDF and create vector DB if it does not exist
-        vector_db_path = Path("vector_db")
-        if no_regenerate_db and vector_db_path.exists() and any(vector_db_path.iterdir()):
-            print("📂 Vector DB found, skipping regeneration as per --no-regenerate-db.")
-            init_result = self._initializer.load_existing_vector_db(str(vector_db_path))
-            self._state_manager.update_state(init_result)
-        else:
-            print("📁 Processing PDF and creating vector DB...")
-            # Delete existing vector DB folder if any
-            if vector_db_path.exists():
-                shutil.rmtree(vector_db_path)
-            init_result = self._initializer.initialize(pdf_path, config, config.model_name)
-            self._state_manager.update_state(init_result)
-
         # Set up retriever and extractor
         rag_pipeline = self._state_manager.get_state("rag_pipeline")
         vectordb = self._state_manager.get_state("vectordb")
 
         self._retriever = DocumentRetriever(rag_pipeline, vectordb)
         self._extractor = CharacteristicsExtractor(rag_pipeline)
-       
-        # print(f"🔁 Max judge retries set to: {max_retries}")
 
-        if no_llm_judge:
-            print("⚠️ Skipping LLM judge step as per --no-llm-judge.")
+
+        if config.max_judge_retries <= 0:
+            print("⚠️ Skipping LLM judge step as max_judge_retries <= 0")
             judge = None
         else:
-            judge = JudgeEvaluator(rag_pipeline.llm)
+            print(f"🧪 Using LLM {config.judge_model_name} for judge")
+            judge_llm = ChatOllama(
+                model=config.judge_model_name,
+                temperature=0.0,
+                seed=42,
+            )
+            judge = JudgeEvaluator(judge_llm)
+
+        judge_init = {
+            "judge_enabled": config.max_judge_retries > 0,
+            "max_judge_retries": config.max_judge_retries,
+        }
+
+        if judge is not None:
+            judge_init.update({
+                "judge_model_name_effective": getattr(config, "judge_model_name", None) or config.model_name,
+                "judge_uses_different_model": (
+                    getattr(config, "judge_model_name", None) is not None
+                    and config.judge_model_name != config.model_name
+                ),
+                "judge_temperature": getattr(judge_llm, "temperature", None),
+                "judge_seed": getattr(judge_llm, "seed", None),
+            })
+
+        existing_metadata = self._state_manager.get_state("extraction_metadata") or {}
+        existing_metadata["judge_init"] = judge_init
+        self._state_manager.update_state({"extraction_metadata": existing_metadata})
+
 
         # Track block processing
         block_metrics = {
@@ -112,11 +128,18 @@ class ExtractionOrchestrator:
         total_input_tokens = 0
         total_output_tokens = 0
 
+        # Decide which processors to run (baseline or standard)
+        raw_custom = getattr(config, "custom_params", {}) or {}
+        cli_custom = raw_custom.get("custom_params", raw_custom)
+        baseline_full_doc = bool(getattr(config, "baseline_full_doc", cli_custom.get("baseline_full_doc", False)))
+        active_processors = self._baseline_block_processors if baseline_full_doc else self._block_processors
+
         # Process all blocks
-        for i, processor in enumerate(self._block_processors, 1):
+        for i, processor in enumerate(active_processors, 1):
+            
             print(f"\n--- Processing Block {i} ---")
 
-            result = processor.process(self._retriever, self._extractor, judge=judge, max_retries=max_judge_retries)
+            result = processor.process(self._retriever, self._extractor, judge=judge, max_retries=config.max_judge_retries)
 
             # Track block metrics
             block_name = result.metadata.get("block_name", f"block_{i}")
@@ -171,7 +194,7 @@ class ExtractionOrchestrator:
 
             characteristics_result = CharacteristicsExtractionResult(
                 experiment_id=experiment_id,
-                pdf_path=pdf_path,
+                input_path=input_path,
                 extracted_characteristics=results.get("extracted_characteristics", {}),
                 extraction_metadata=results.get("extraction_metadata", {}),
                 errors=errors,
@@ -186,9 +209,7 @@ class ExtractionOrchestrator:
                 # total_docs_retrieved=quality_metrics.get('total_docs_retrieved', 0),
                 total_chunks=quality_metrics.get('total_chunks', 0),
                 processing_time_seconds=characteristics_processing_time,
-                block_docs_retrieved=block_metrics.get('docs_retrieved', {}),
                 block_processing_times=block_metrics.get('processing_times', {}),
-                # block_memory_usages=block_metrics.get('memory_usages', {}),
                 block_success_rates=block_metrics.get('success_rates', {}),
                 total_input_tokens=total_input_tokens,
                 total_output_tokens=total_output_tokens,
@@ -203,17 +224,16 @@ class ExtractionOrchestrator:
         state = self._state_manager.get_all_state()
         state['experiment_id'] = experiment_id
         return state
-        
-        
-    def run_oml_generation(self, experiment_id: str = None, save_results: bool = True,
-                            source_experiment_id: str = None, no_validation: bool = False) -> Dict[str, Any]:
+
+
+    def run_oml_generation(self, experiment_id: str = None, save_results: bool = True, config: Optional[ExperimentConfig] = None,
+                            source_experiment_id: str = None) -> Dict[str, Any]:
         """Run OML generation; optionally load characteristics from a saved experiment.
 
         Parameters:
             experiment_id: (optional) ID for this OML generation run.
             save_results: persist results if tracking enabled.
             source_experiment_id: load characteristics from this prior extraction experiment.
-            no_validation: skip OML validation step if True.
         """
         print("\n--- Generating OML ---")
         oml_start_time = time.time()
@@ -234,54 +254,52 @@ class ExtractionOrchestrator:
         if characteristics is None:
             characteristics = self._state_manager.get_state("extracted_characteristics") or {}
         if not characteristics:
-            print("❌ No characteristics available to generate OML. Run extraction first or specify --source-experiment-id.")
+            print("❌ No characteristics available to generate OML. Run extraction first or specify --exp-id.")
             return self._state_manager.get_all_state()
-
-        # TODO: remove this part, ensure functionality
-        # # Ensure RAG pipeline is available (load existing DB if necessary for standalone mode)
-        # if self._state_manager.get_state("rag_pipeline") is None:
-        #     vector_db_path = Path("vector_db")
-        #     if vector_db_path.exists() and any(vector_db_path.iterdir()):
-        #         print("📂 RAG pipeline missing. Loading existing vector DB for OML generation...")
-        #         try:
-        #             init_result = self._initializer.load_existing_vector_db(str(vector_db_path))
-        #             self._state_manager.update_state(init_result)
-        #         except Exception as e:
-        #             print(f"⚠️ Failed to load existing vector DB (continuing): {e}")
-        #     else:
-        #         print("⚠️ No vector DB directory found; proceeding without RAG context (may reduce OML quality).")
 
         try:
             vocab_files = {
                 "DTDFVocab": "data/oml/DTDF/vocab/DTDFVocab.oml",
                 "base": "data/oml/DTDF/vocab/base.oml"
             }
-            oml_output = self._oml_generator.generate(characteristics, vocab_files, no_validation=no_validation)
+            oml_output, oml_repetition_count, validation_status, total_input_tokens, total_output_tokens = self._oml_generator.generate(characteristics, vocab_files, max_retries=config.max_oml_retries)
             self._state_manager.update_state({"oml_output": oml_output})
         except Exception as e:
+            # Check for critical network/rate limit errors
+            error_msg = str(e).lower()
+            is_critical = "429" in error_msg or "500" in error_msg or "too many requests" in error_msg or "503" in error_msg or "service unavailable" in error_msg
+            
+            if is_critical:
+                print(f"🔥 Critical OML generation error: {e}. Bubbling up for experiment retry.")
+                raise e
+
             oml_error = f"OML generation failed: {str(e)}"
             print(f"❌ {oml_error}")
+            traceback.print_exc()
             oml_errors.append(oml_error)
             oml_output = ""
 
         oml_processing_time = time.time() - oml_start_time
-        # mem_after = get_memory_usage_mb()
 
-        if self._experiment_tracker and save_results and oml_output:
+        if self._experiment_tracker and save_results:
             oml_result = OMLGenerationResult(
-                experiment_id=f"{experiment_id}_oml" if experiment_id else f"manual_{int(time.time())}_oml",
+                experiment_id=f"{experiment_id}" if experiment_id else f"manual_{int(time.time())}",
+                timestamp=datetime.now(),
+                config=config,
+                input_path=self._state_manager.get_state("input_path"),
                 characteristics_experiment_id=source_experiment_id or experiment_id or f"manual_{int(time.time())}",
                 generated_oml=oml_output,
                 oml_metadata={},
                 generation_time_seconds=oml_processing_time,
-                # oml_memory_usage_mb=mem_after - mem_before,
+                oml_max_retries=config.max_oml_retries,
+                oml_repetition_count=oml_repetition_count,
                 errors=oml_errors,
                 warnings=oml_warnings,
-                timestamp=datetime.now(),
-                oml_syntax_valid=True,
-                oml_completeness_score=1.0,
+                oml_valid=(validation_status == 1),
                 oml_line_count=len(oml_output.splitlines()),
-                oml_instance_count=oml_output.count("instance")
+                oml_instance_count=oml_output.count("instance"),
+                total_input_tokens=total_input_tokens,
+                total_output_tokens=total_output_tokens,
             )
             saved_oml_path = self._experiment_tracker.results_saver.save_oml_results(oml_result)
             print(f"💾 OML results saved to: {saved_oml_path}")
@@ -296,7 +314,11 @@ class ExtractionPipelineFactory:
     """Factory for creating extraction pipeline components."""
     
     @staticmethod
-    def create_orchestrator(with_experiment_tracking: bool = True) -> ExtractionOrchestrator:
+    def create_orchestrator(
+        with_experiment_tracking: bool = True,
+        output_dir: Optional[str] = "experiments",
+        ) -> ExtractionOrchestrator:
+
         """Create a fully configured extraction orchestrator."""
         
         # Create core components
@@ -307,7 +329,7 @@ class ExtractionPipelineFactory:
         # Create experiment tracking if requested
         experiment_tracker = None
         if with_experiment_tracking:
-            results_saver = ResultsSaver()
+            results_saver = ResultsSaver(base_output_dir=output_dir)
             experiment_tracker = ExperimentTracker(results_saver)
         
         # Create block processors
@@ -319,6 +341,7 @@ class ExtractionPipelineFactory:
             Block5Processor(),
             Block6Processor()
         ]
+        baseline_block_processors = [DTCharacteristicsProcessor()]
         
         # Create a wrapper that handles the OML generator creation
         class DeferredOMLGenerator:
@@ -326,14 +349,14 @@ class ExtractionPipelineFactory:
                 self._state_manager = state_manager
                 self._generator = None
 
-            def generate(self, characteristics: Dict[str, Any], vocab_files: Dict[str, str], no_validation: bool = False) -> str:
+            def generate(self, characteristics: Dict[str, Any], vocab_files: Dict[str, str], max_retries: int = 3) -> str:
                 if self._generator is None:
                     rag_pipeline = self._state_manager.get_state("rag_pipeline")
                     if rag_pipeline is None:
                         # Attempt deferred load failed; provide clearer message
                         raise RuntimeError("RAG pipeline still not available after attempted load.")
                     self._generator = OMLGenerator(rag_pipeline)
-                return self._generator.generate(characteristics, vocab_files, no_validation=no_validation)
+                return self._generator.generate(characteristics, vocab_files, max_retries=max_retries)
 
         oml_generator = DeferredOMLGenerator(state_manager)
         
@@ -343,22 +366,30 @@ class ExtractionPipelineFactory:
             oml_generator=oml_generator,
             quality_analyzer=quality_analyzer,
             block_processors=block_processors,
+            baseline_block_processors=baseline_block_processors,
             experiment_tracker=experiment_tracker
         )
     
     @staticmethod
     def create_config(
-        model_name: str = "qwen3:8b",
-        embedding_model: str = "nomic-embed-text",
-        chunk_size: int = 1500,
-        chunk_overlap: int = 200,
-        temperature: float = 0.1,
-        top_p: float = 0.9,
-        top_k: int = 20,
-        max_pages: int = None,
+        model_name: str,
+        embedding_model: str,
+        chunk_size: int,
+        chunk_overlap: int,
+        temperature: float,
+        top_p: float,
+        top_k: int,
+        max_judge_retries: int = 2,
+        max_oml_retries: int = 3,
+        judge_model_name: Optional[str] = None,
+        baseline_full_doc: bool = False,
+        baseline_max_chars: int = 24000,
         **custom_params
     ) -> ExperimentConfig:
         """Create an experiment configuration."""
+        if judge_model_name is None:
+            judge_model_name = model_name
+
         return ExperimentConfig(
             model_name=model_name,
             embedding_model=embedding_model,
@@ -367,7 +398,11 @@ class ExtractionPipelineFactory:
             temperature=temperature,
             top_p=top_p,
             top_k=top_k,
-            max_pages=max_pages,
+            max_judge_retries=max_judge_retries,
+            max_oml_retries=max_oml_retries,
+            judge_model_name=judge_model_name,
+            baseline_full_doc=baseline_full_doc,
+            baseline_max_chars=baseline_max_chars,
             custom_params=custom_params
         )
 
@@ -375,44 +410,58 @@ class ExtractionPipelineFactory:
 def main():
     parser = argparse.ArgumentParser(description="Extraction / OML generation pipeline")
     parser.add_argument("--mode", choices=["both", "extraction", "oml"], default="both", help="Run extraction, OML generation, or both")
-    parser.add_argument("--pdf", default="data/papers/The Incubator Case Study for Digital Twin Engineering.pdf", help="PDF path for extraction")
-    parser.add_argument("--chunk-size", type=int, default=1500)
-    parser.add_argument("--chunk-overlap", type=int, default=200)
+    parser.add_argument("--input-path", default="data/papers/The Incubator Case Study for Digital Twin Engineering.pdf", help="PDF path for extraction")
+    parser.add_argument("--output-dir", default="experiments", help="Directory to save experiment results")
+    parser.add_argument("--chunk-size", type=int, default=3000)
+    parser.add_argument("--chunk-overlap", type=int, default=500)
     parser.add_argument("--temperature", type=float, default=0.1)
     parser.add_argument("--model-name", default="qwen3:8b")
+    parser.add_argument("--judge-model-name", default="deepseek-v3.2:cloud", help="Optional LLM model name used only for the judge. Defaults to --model-name.")
     parser.add_argument("--embedding-model", default="embeddinggemma")
     parser.add_argument("--exp-id", help="Existing experiment id (hash_timestamp or just hash for latest) containing characteristics for standalone OML generation")
     parser.add_argument("--no-save", action="store_true", help="Do not persist results")
-    parser.add_argument("--no-regenerate-db", action="store_true", help="Do not regenerate the vector database even if it exists")
-    parser.add_argument("--no-oml-validation", action="store_true", help="Skip OML validation step")
-    parser.add_argument("--no-llm-judge", action="store_true", help="Skip LLM judge step")
-    parser.add_argument("--max-judge-retries", type=int, default=2, help="Maximum retries for low-confidence judge evaluations")
+    parser.add_argument("--max-judge-retries", type=int, default=2, help="Maximum retries for low-confidence judge evaluations. Set to 0 to disable judging.")
+    parser.add_argument("--max-oml-retries", type=int, default=3, help="Maximum retries for OML generation validation. Set to 0 to skip validation.")
+    parser.add_argument("--baseline-full-doc", action="store_true", help="Use baseline mode: no chunking/RAG. Feed the full document to the LLM and extract the 21 DT characteristics at once (DTCharacteristics).")
+    parser.add_argument("--baseline-max-chars", type=int, default=24000, help="Maximum number of characters to read from the document in baseline full-doc mode.")
     args = parser.parse_args()
 
-    orchestrator = ExtractionPipelineFactory.create_orchestrator(with_experiment_tracking=True)
 
-    extraction_results: Dict[str, Any] = {}
+    config = ExtractionPipelineFactory.create_config(
+        model_name=args.model_name,
+        embedding_model=args.embedding_model,
+        chunk_size=args.chunk_size,
+        chunk_overlap=args.chunk_overlap,
+        temperature=args.temperature,
+        max_judge_retries=args.max_judge_retries,
+        max_oml_retries=args.max_oml_retries,
+        judge_model_name=args.judge_model_name,
+        baseline_full_doc=args.baseline_full_doc,
+        baseline_max_chars=args.baseline_max_chars,
+        custom_params={"cli": True}
+    )
+    print("Using configuration:", config)
+
+    orchestrator = ExtractionPipelineFactory.create_orchestrator(
+        with_experiment_tracking=True,
+        output_dir=args.output_dir
+    )
+    
+    orchestrator.initialize_pipeline(args.input_path, config=config)
+
+    extraction_results = {}
     experiment_id = None
-
     if args.mode in ("extraction", "both"):
-        config = ExtractionPipelineFactory.create_config(
-            model_name=args.model_name,
-            embedding_model=args.embedding_model,
-            chunk_size=args.chunk_size,
-            chunk_overlap=args.chunk_overlap,
-            temperature=args.temperature,
-            custom_params={"cli": True}
-        )
-        extraction_results = orchestrator.run_extraction(args.pdf, experiment_id=None, config=config, save_results=not args.no_save, no_regenerate_db=args.no_regenerate_db, no_llm_judge=args.no_llm_judge, max_judge_retries=args.max_judge_retries)
+        extraction_results = orchestrator.run_extraction(args.input_path, experiment_id=None, config=config, save_results=not args.no_save)
         experiment_id = orchestrator.last_experiment_id
 
     if args.mode in ("oml", "both"):
-        oml_results = orchestrator.run_oml_generation(experiment_id=experiment_id, save_results=not args.no_save, source_experiment_id=args.exp_id, no_validation=args.no_oml_validation)
+        oml_results = orchestrator.run_oml_generation(experiment_id=experiment_id, save_results=not args.no_save, source_experiment_id=args.exp_id, config=config)
         oml_output = oml_results.get("oml_output")
         if not oml_output:
             print("No OML generated.")
 
-    if extraction_results.get("extracted_characteristics"):
+    if extraction_results and extraction_results.get("extracted_characteristics"):
         quality_metrics = orchestrator.analyze_characteristic_extraction(extraction_results)
         print("\n📈 Extraction Quality:")
         print(f" - Extraction Rate: {quality_metrics['extraction_rate']:.2f}%")

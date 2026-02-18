@@ -1,0 +1,151 @@
+import DTDFVocab
+
+// -------------------------------------------------
+// 1. Physical Sensing Components
+// -------------------------------------------------
+instance SwingAngleEncoder : DTDFVocab:SensingComponent [
+    base:desc "Swing Angle Encoder mounted on the hoist measuring pendulum angle of the lifted payload",
+    DTDFVocab:producedData SwingAngleDataTransmitted
+]
+
+instance AnemometerSensor : DTDFVocab:SensingComponent [
+    base:desc "Anemometer mounted on the crane frame measuring ambient wind speed",
+    DTDFVocab:producedData WindSpeedDataTransmitted
+]
+
+// -------------------------------------------------
+// 2. Data Transmitted from Sensors
+// -------------------------------------------------
+instance SwingAngleDataTransmitted : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom SwingAngleEncoder
+]
+
+instance WindSpeedDataTransmitted : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom AnemometerSensor
+]
+
+// -------------------------------------------------
+// 3. Data Instances (raw measurements and aggregated logs)
+// -------------------------------------------------
+instance SwingAngleData : DTDFVocab:Data [
+    base:desc "Angular position data (degrees) received from the Swing Angle Encoder",
+    DTDFVocab:fromData SwingAngleDataTransmitted,
+    DTDFVocab:inputTo TimescaleDBEnabler, ContinuousValidationEngine
+]
+
+instance WindSpeedData : DTDFVocab:Data [
+    base:desc "Wind velocity data (m/s) received from the Anemometer",
+    DTDFVocab:fromData WindSpeedDataTransmitted,
+    DTDFVocab:inputTo TimescaleDBEnabler, ContinuousValidationEngine
+]
+
+instance CraneSensorLogData : DTDFVocab:Data [
+    base:desc "Time‑stamped raw sensor measurements stored in TimescaleDB",
+    DTDFVocab:fromData SwingAngleDataTransmitted, WindSpeedDataTransmitted,
+    DTDFVocab:inputTo TimescaleDBEnabler
+]
+
+// -------------------------------------------------
+// 4. Digital Models
+// -------------------------------------------------
+instance GantryCADModel : DTDFVocab:Model [
+    base:desc "CAD model of the gantry crane geometry used for visualisation and validation",
+    DTDFVocab:inputTo GrafanaDashboard
+]
+
+instance GantryKinematicModel : DTDFVocab:Model [
+    base:desc "Kinematic model capturing motion behaviour of the gantry crane, supporting control and validation",
+    DTDFVocab:inputTo OptimalControlEngine, ContinuousValidationEngine
+]
+
+// -------------------------------------------------
+// 5. Enablers (software/tools)
+// -------------------------------------------------
+instance TimescaleDBEnabler : DTDFVocab:Enabler [
+    base:desc "TimescaleDB instance (PostgreSQL) storing sensor measurements via native client protocol over TCP/IP",
+    DTDFVocab:enables HistoricalDataLoggingService
+]
+
+instance GrafanaDashboard : DTDFVocab:Enabler [
+    base:desc "Grafana dashboard rendering time‑series plots and system status for visualisation",
+    DTDFVocab:enables DataVisualizationService
+]
+
+instance OptimalControlEngine : DTDFVocab:Enabler [
+    base:desc "Control engine computing optimal motion commands for the crane based on the kinematic model",
+    DTDFVocab:enables OptimalControlService
+]
+
+instance ContinuousValidationEngine : DTDFVocab:Enabler [
+    base:desc "Engine continuously comparing live sensor data against CAD and kinematic model predictions",
+    DTDFVocab:enables ContinuousValidationService
+]
+
+// -------------------------------------------------
+// 6. Services
+// -------------------------------------------------
+instance OptimalControlService : DTDFVocab:Service [
+    base:desc "Optimal control service that computes the best motion commands for the crane",
+    DTDFVocab:provides OptimalControlInsight
+]
+
+instance HistoricalDataLoggingService : DTDFVocab:Service [
+    base:desc "Historical data logging service recording sensor and actuation data over time in TimescaleDB",
+    DTDFVocab:provides HistoricalTrendInsight
+]
+
+instance DataVisualizationService : DTDFVocab:Service [
+    base:desc "Data‑visualisation service that renders the crane’s state and trajectory on a Grafana dashboard",
+    DTDFVocab:provides VisualizationInsight
+]
+
+instance ContinuousValidationService : DTDFVocab:Service [
+    base:desc "Continuous validation service that detects deviations between live sensor data and model predictions",
+    DTDFVocab:provides DeviationAlertInsight
+]
+
+// -------------------------------------------------
+// 7. Insights / Actions
+// -------------------------------------------------
+instance OptimalControlInsight : DTDFVocab:Insight [
+    base:desc "Provides computed optimal motion commands for real‑time crane operation"
+]
+
+instance HistoricalTrendInsight : DTDFVocab:Insight [
+    base:desc "Enables analysis of historical sensor trends and performance over time"
+]
+
+instance VisualizationInsight : DTDFVocab:Insight [
+    base:desc "Shows current crane state, trajectory and key metrics on the dashboard"
+]
+
+instance DeviationAlertInsight : DTDFVocab:Insight [
+    base:desc "Raises alerts when live sensor values exceed model‑predicted thresholds"
+]
+
+// -------------------------------------------------
+// 8. Environment (optional – grouping)
+// -------------------------------------------------
+instance LaboratoryEnvironment : DTDFVocab:Environment [
+    base:contains SwingAngleEncoder, AnemometerSensor, GantryCADModel, GantryKinematicModel
+]
+
+instance virtual_to_physical_interaction : DTDFVocab:VirtualToPhysical [
+    base:desc "Control commands are generated by the Control Application (e.g., move‑to‑position or trajectory commands) and sent to the Physical Crane Interface, which translates them into the low‑level protocol required by the crane controllers. The interface forwards the commands over the same connection used for sensor reading (e.g., serial or Ethernet) to actuate the crane. The system provides no explicit authentication or validation steps in the documentation; the Control Application assumes direct control of the hardware."
+]
+
+instance dt_constellation : DTDFVocab:Constellation [
+    base:desc "The Gantry Crane digital twin uses an ad‑hoc architecture instead of a commercial digital‑twin framework. The design relies on containerization (Docker) to package and deploy its components, enabling easy installation on personal computers or virtual machines. No explicit orchestration layer or resource‑management framework is described; component integration is performed manually within this container‑based setup."
+]
+
+instance fidelity_and_validity_considerations : DTDFVocab:FidelityConsideration [
+    base:desc "The twin provides a continuous validation service that monitors the correspondence between real‑time operation and the kinematic model, and it has been employed in research on continuous validation, fault detection, and the DarTwin notation for system evolution. The documents do not detail quantitative fidelity requirements, uncertainty quantification methods, or formal verification procedures."
+]
+
+instance dt_technical_connection : DTDFVocab:TechnicalConnection [
+    base:desc "Inter‑service communication within the digital twin uses an MQTT broker for signaling between the Trajectory Generator Service, Simulation Service, Continuous Validation Service, and other components. Service‑to‑service messages follow the MQTT publish/subscribe model over TCP/IP. Data persistence and retrieval use TimescaleDB accessed via standard PostgreSQL client connections, and visualisation uses Grafana accessing the database via HTTP/HTTPS. The architecture is container‑based, implying that all components run on a common local network, but no explicit topology, bandwidth, latency, redundancy or security mechanisms are described."
+]
+
+instance dt_hosting_deployment : DTDFVocab:Deployment [
+    base:desc "The system is deployed on a personal computer. The Database (TimescaleDB), MQTT broker, and Dashboard are packaged as Docker containers. The remaining components (Physical Crane Interface, Control Application, Logging Application, Human Machine Interface, Simulation Service, Trajectory Generator Service, Continuous Validation Service) are Python applications installed via pip and executed on the host. No cloud, edge, or virtualization platform, nor explicit scalability or availability mechanisms, are mentioned."
+]

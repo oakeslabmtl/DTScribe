@@ -1,0 +1,147 @@
+// C3: Physical sensing components
+instance AirTempSensor1 : DTDFVocab:SensingComponent [
+    base:desc "DS18S20 1‑Wire digital thermometer measuring air temperature inside the incubator (first sensor)."
+    DTDFVocab:producedData IncubatorTempDataTransmitted
+]
+
+instance AirTempSensor2 : DTDFVocab:SensingComponent [
+    base:desc "DS18S20 1‑Wire digital thermometer measuring air temperature inside the incubator (second sensor)."
+    DTDFVocab:producedData IncubatorTempDataTransmitted
+]
+
+instance AmbientTempSensor : DTDFVocab:SensingComponent [
+    base:desc "DS18S20 1‑Wire digital thermometer measuring ambient room temperature outside the incubator."
+    DTDFVocab:producedData IncubatorTempDataTransmitted
+]
+
+// C4: Physical-to-virtual interaction
+instance IncubatorTempDataTransmitted : DTDFVocab:DataTransmitted [
+    base:desc "Temperature readings from the three DS18S20 sensors published to RabbitMQ."
+    DTDFVocab:producedFrom AirTempSensor1, AirTempSensor2, AmbientTempSensor
+]
+
+// C10: Data
+instance TemperatureMeasurementData : DTDFVocab:Data [
+    base:desc "Real‑time temperature values (°C) received via RabbitMQ from the incubator sensors."
+    DTDFVocab:fromData IncubatorTempDataTransmitted
+    DTDFVocab:inputTo MonitoringEnabler, SafetyEnabler, CalibrationEnabler
+]
+
+// C10: Models/Data
+instance ThermalModelA : DTDFVocab:Model [
+    base:desc "Physics‑based dynamic Model A: single thermal capacitance C_air with heat loss to the environment via conductance G_box."
+    DTDFVocab:inputTo CalibrationEnabler
+]
+
+instance ThermalModelB : DTDFVocab:Model [
+    base:desc "Physics‑based dynamic Model B: adds heater thermal capacitance C_heater and conductance G_heater to Model A."
+    DTDFVocab:inputTo CalibrationEnabler
+]
+
+// C11: Enablers
+instance CalibrationEnabler : DTDFVocab:Enabler [
+    base:desc "Python SciPy least‑squares optimizer that calibrates thermal model parameters using temperature and power‑supply data."
+    DTDFVocab:enables ModelCalibrationService
+]
+
+instance MonitoringEnabler : DTDFVocab:Enabler [
+    base:desc "RabbitMQ‑based ingestion and Python monitoring script that consumes temperature data in real time."
+    DTDFVocab:enables TemperatureMonitoringService
+]
+
+instance SafetyEnabler : DTDFVocab:Enabler [
+    base:desc "Safety logic that evaluates temperature measurements against configured limits and raises alerts."
+    DTDFVocab:enables SafetyMonitoringService
+]
+
+instance OptimizationEnabler : DTDFVocab:Enabler [
+    base:desc "Optimization algorithm that uses calibrated thermal models to compute heating duration and waiting periods."
+    DTDFVocab:enables HeatingOptimizationService
+]
+
+// C6: Services
+instance ModelCalibrationService : DTDFVocab:Service [
+    base:desc "Calibrates Model A/B parameters (C_air, G_box, C_heater, G_heater) from experimental data."
+    DTDFVocab:provides CalibrationInsight
+]
+
+instance TemperatureMonitoringService : DTDFVocab:Service [
+    base:desc "Provides continuous real‑time temperature monitoring of the incubator."
+    DTDFVocab:provides TemperatureAlertInsight
+]
+
+instance SafetyMonitoringService : DTDFVocab:Service [
+    base:desc "Detects out‑of‑range temperature conditions and triggers safety actions."
+    DTDFVocab:provides SafetyAlertInsight, ReconfigurationAction
+]
+
+instance HeatingOptimizationService : DTDFVocab:Service [
+    base:desc "Optimises heating and cooling actions based on calibrated thermal models."
+    DTDFVocab:provides HeatingAdjustmentAction
+]
+
+// C17: Insights
+instance CalibrationInsight : DTDFVocab:Insight [
+    base:desc "Updated thermal parameters (C_air, G_box, C_heater, G_heater) after calibration."
+]
+
+instance TemperatureAlertInsight : DTDFVocab:Insight [
+    base:desc "Alert indicating temperature deviation from the set limits."
+]
+
+instance SafetyAlertInsight : DTDFVocab:Insight [
+    base:desc "Safety alert for out‑of‑range temperature detected."
+]
+
+// C17: Actions
+instance ReconfigurationAction : DTDFVocab:Action [
+    base:desc "Triggers controller re‑configuration when a safety alert occurs."
+    DTDFVocab:IsAutomatic true
+]
+
+instance HeatingAdjustmentAction : DTDFVocab:Action [
+    base:desc "Adjusts heating duration and waiting periods according to model predictions."
+    DTDFVocab:IsAutomatic true
+]
+
+// C2: Acting Components
+instance HeatBedActuator : DTDFVocab:ActingComponent [
+    base:desc "Resistive heat‑bed switched on/off via MOSFETs on the PCB, commanded by the Raspberry Pi."
+]
+
+instance FanActuator : DTDFVocab:ActingComponent [
+    base:desc "Internal fan with on/off voltage‑controlled operation, driven by the Raspberry Pi through the PCB."
+]
+
+// Environment and controller
+instance RaspberryPiController : DTDFVocab:Component [
+    base:desc "Raspberry Pi 4 Model B acting as DT controller; runs RabbitMQ broker and Python calibration/monitoring scripts."
+]
+
+instance IncubatorEnvironment : DTDFVocab:Environment [
+    base:contains AirTempSensor1, AirTempSensor2, AmbientTempSensor, HeatBedActuator, FanActuator, RaspberryPiController
+]
+
+instance virtual_to_physical_interaction : DTDFVocab:VirtualToPhysical [
+    base:desc "DT components (e.g., a controller module) subscribe to the RabbitMQ broker and send command messages that the low‑level driver receives and forwards to the Raspberry Pi GPIO to turn the heat‑bed and fan on or off, thus closing the DT‑to‑PT loop."
+]
+
+instance dt_constellation : DTDFVocab:Constellation [
+    base:desc "The DT architecture consists of a communication server (RabbitMQ on the Pi), a low‑level driver that interfaces with sensors and actuators, a controller module implementing a bang‑bang (with hysteresis) logic, and optional model‑calibration/monitoring services that subscribe to the same message bus, forming a centralized, single‑node constellation."
+]
+
+instance fidelity_and_validity_considerations : DTDFVocab:FidelityConsideration [
+    base:desc "Model fidelity is evaluated by uniform‑temperature experiments (max 7 °C variation) and by comparing model predictions against measured temperature trajectories; calibration minimizes the residual error using a least‑squares cost function; assumptions such as uniform air temperature, negligible wall heat storage, and constant air specific heat are explicitly stated and experimentally verified where possible."
+]
+
+instance dt_technical_connection : DTDFVocab:TechnicalConnection [
+    base:desc "Data exchange uses the AMQP protocol over TCP/IP via RabbitMQ; the Raspberry Pi communicates with the low‑level driver through its GPIO pins and with the network through its on‑board Wi‑Fi/Bluetooth interface."
+]
+
+instance dt_hosting_deployment : DTDFVocab:Deployment [
+    base:desc "The RabbitMQ server, controller code, and low‑level driver are all deployed on the Raspberry Pi 4 Model B itself, making the DT hosted locally on the same hardware that controls the physical incubator."
+]
+
+instance security_and_safety_considerations : DTDFVocab:SecuritySafety [
+    base:desc "The low‑level driver includes a safe‑state protocol that ensures the incubator remains in a known safe configuration before executing commands; safety monitoring is performed by the controller which checks temperature limits (LL, UL) and can halt actuation if thresholds are exceeded."
+]

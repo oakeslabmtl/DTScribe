@@ -1,0 +1,289 @@
+// C2: Acting Components
+instance Heatbed : DTDFVocab:ActingComponent [
+    base:desc "Primary heat source that warms the air inside the insulated incubator box to maintain target temperature. Operates under control signals from the RaspberryPiController via MOSFETs and optocouplers for high-current isolation."
+]
+
+instance Fan : DTDFVocab:ActingComponent [
+    base:desc "Circulates air within the incubator box to ensure uniform temperature distribution. Operates under control signals from the RaspberryPiController."
+]
+
+instance RaspberryPiController : DTDFVocab:ActingComponent [
+    base:desc "Executes control logic using bang-bang control algorithm, communicates with sensors/actuators via low-level drivers, and interfaces with the DigitalTwin through the RabbitMQCommunicationServer. Hosts the entire control and twinning software stack."
+]
+
+instance MOSFETAndOptocouplerModule : DTDFVocab:ActingComponent [
+    base:desc "Electrical isolation interface between RaspberryPiController's low-voltage control signals and high-current actuators (e.g., Heatbed). Provides galvanic isolation and current amplification for safe operation."
+]
+
+// C3: Physical Sensing Components
+instance InternalTemperatureSensor1 : DTDFVocab:SensingComponent [
+    base:desc "DS18S20 temperature sensor measuring internal air temperature at primary location within the incubator box. Provides real-time feedback for control and monitoring."
+    DTDFVocab:producedData InternalTemperatureData
+]
+
+instance InternalTemperatureSensor2 : DTDFVocab:SensingComponent [
+    base:desc "DS18S20 temperature sensor measuring internal air temperature at secondary location within the incubator box. Provides real-time feedback for control and monitoring."
+    DTDFVocab:producedData InternalTemperatureData
+]
+
+instance ExternalTemperatureSensor : DTDFVocab:SensingComponent [
+    base:desc "DS18S20 temperature sensor measuring room temperature outside the incubator box. Provides environmental context data for model calibration and control adjustments."
+    DTDFVocab:producedData ExternalTemperatureData
+]
+
+// C4: Physical-to-Virtual Interaction
+instance InternalTemperatureData : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom InternalTemperatureSensor1, InternalTemperatureSensor2
+]
+
+instance ExternalTemperatureData : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom ExternalTemperatureSensor
+]
+
+instance ControlCommandData : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom RaspberryPiController
+]
+
+// C10: Models/Data
+instance ThermalModelA : DTDFVocab:Model [
+    base:desc "Simplified dynamic thermal model with 2 free parameters (C_air and G_box) assuming all heat transfer occurs to the air mass. Used for initial control and quick predictions."
+    DTDFVocab:inputTo RabbitMQCommunicationServer
+]
+
+instance ThermalModelB : DTDFVocab:Model [
+    base:desc "Detailed dynamic thermal model with 4 free parameters (C_air, C_heater, G_box, G_heater) accounting for heatbed thermal inertia and more accurate heat transfer dynamics. Used for refined control and diagnostics."
+    DTDFVocab:inputTo RabbitMQCommunicationServer
+]
+
+instance SensorData : DTDFVocab:Data [
+    base:desc "Aggregated sensor data including internal and external temperature readings with timestamps. Used for model calibration, fault detection, and performance validation."
+    DTDFVocab:fromData InternalTemperatureData, ExternalTemperatureData
+    DTDFVocab:inputTo ModelCalibrationEnabler
+]
+
+instance ControlCommandDataProcessed : DTDFVocab:Data [
+    base:desc "Processed historical control commands used for analyzing control performance and informing model parameter tuning."
+    DTDFVocab:fromData ControlCommandData
+    DTDFVocab:inputTo ModelCalibrationEnabler, OptimizationEnabler
+]
+
+instance EnvironmentalData : DTDFVocab:Data [
+    base:desc "Room temperature and external environmental conditions data used as boundary conditions for model simulations."
+    DTDFVocab:fromData ExternalTemperatureData
+    DTDFVocab:inputTo ThermalModelA, ThermalModelB
+]
+
+// C11: Enablers
+instance RabbitMQCommunicationServer : DTDFVocab:Enabler [
+    base:desc "Message broker facilitating real-time communication between Physical Twin components (sensors/actuators) and Digital Twin. Handles data transmission protocols and message queuing."
+    DTDFVocab:enables TemperaturePredictionService, FaultDetectionService, ParameterCalibrationService, VisualizationService
+]
+
+instance ModelCalibrationEnabler : DTDFVocab:Enabler [
+    base:desc "Software enabler implementing non-linear least squares optimization using Python/Scipy to calibrate model parameters against experimental data."
+    DTDFVocab:enables ParameterCalibrationService
+]
+
+instance OptimizationEnabler : DTDFVocab:Enabler [
+    base:desc "Control parameter optimization tool that adjusts heating duration (H) and waiting duration (C) to balance speed and energy efficiency using model predictions."
+    DTDFVocab:enables OperationalOptimizationService
+]
+
+instance PythonScipyLibrary : DTDFVocab:Enabler [
+    base:desc "Numerical and scientific computing library providing optimization algorithms and mathematical functions for model calibration and analysis."
+    DTDFVocab:enables ModelCalibrationEnabler, OptimizationEnabler
+]
+
+// C6: Services
+instance TemperaturePredictionService : DTDFVocab:Service [
+    base:desc "Uses calibrated ThermalModelA/B to forecast temperature behavior under different control inputs and simulate scenarios for predictive analysis."
+    DTDFVocab:provides TemperaturePredictionInsight, ControlScenarioSimulationAction
+]
+
+instance FaultDetectionService : DTDFVocab:Service [
+    base:desc "Monitors sensor data for anomalies (e.g., temperature deviations, sensor drift) and actuator failures by comparing model predictions with actual behavior."
+    DTDFVocab:provides FaultDetectionInsight, MaintenanceAlertAction
+]
+
+instance ParameterCalibrationService : DTDFVocab:Service [
+    base:desc "Continuously refines model parameters (C_air, C_heater, G_box, G_heater) using least-squares optimization against real-time and historical data."
+    DTDFVocab:provides ParameterOptimizationInsight, ModelUpdateAction
+]
+
+instance OperationalOptimizationService : DTDFVocab:Service [
+    base:desc "Adjusts control parameters (heating duration H, waiting duration C) to improve energy efficiency or response time based on model predictions."
+    DTDFVocab:provides EfficiencyOptimizationInsight, ControlParameterAdjustmentAction
+]
+
+instance VisualizationService : DTDFVocab:Service [
+    base:desc "Displays real-time temperature trends, sensor placements, control actions (heatbed/fan status), and model predictions for operator diagnostics."
+    DTDFVocab:provides VisualAnalyticsInsight
+]
+
+// C17: Insights/Actions
+instance TemperaturePredictionInsight : DTDFVocab:Insight [
+    base:desc "Forecasted temperature dynamics under current or proposed control inputs, helping operators anticipate system behavior."
+]
+
+instance ControlScenarioSimulationAction : DTDFVocab:Action [
+    base:desc "Simulates different control scenarios using calibrated models to evaluate potential temperature profiles before physical implementation."
+    DTDFVocab:IsAutomatic false
+]
+
+instance FaultDetectionInsight : DTDFVocab:Insight [
+    base:desc "Identified discrepancies between predicted and actual behavior indicating potential sensor drift, actuator failures, or environmental disturbances."
+]
+
+instance MaintenanceAlertAction : DTDFVocab:Action [
+    base:desc "Triggers automated alerts when fault detection service identifies critical failures requiring immediate maintenance intervention."
+    DTDFVocab:IsAutomatic true
+]
+
+instance ParameterOptimizationInsight : DTDFVocab:Insight [
+    base:desc "Optimized model parameters that improve control accuracy, energy efficiency, and response time of the incubator system."
+]
+
+instance ModelUpdateAction : DTDFVocab:Action [
+    base:desc "Automatically updates Digital Twin models with newly calibrated parameters based on continuous data streams."
+    DTDFVocab:IsAutomatic true
+]
+
+instance EfficiencyOptimizationInsight : DTDFVocab:Insight [
+    base:desc "Recommended adjustments to control parameters that balance heating speed and energy consumption for optimal operational performance."
+]
+
+instance ControlParameterAdjustmentAction : DTDFVocab:Action [
+    base:desc "Adjusts heating duration (H) and waiting duration (C) parameters in the control algorithm to implement optimized performance settings."
+    DTDFVocab:IsAutomatic true
+]
+
+instance VisualAnalyticsInsight : DTDFVocab:Insight [
+    base:desc "Visual representations of temperature trends, sensor locations, control actions, and model predictions enabling operators to diagnose system issues."
+]
+
+// C12: Environment
+instance IncubatorEnvironment : DTDFVocab:Environment [
+    base:contains PhysicalTwin, DigitalTwin
+]
+
+instance PhysicalTwin : DTDFVocab:Environment [
+    base:desc "Physical implementation of the thermal incubator system including all hardware components and sensors."
+    base:contains Heatbed, Fan, RaspberryPiController, MOSFETAndOptocouplerModule,
+                InternalTemperatureSensor1, InternalTemperatureSensor2, ExternalTemperatureSensor
+]
+
+instance DigitalTwin : DTDFVocab:Environment [
+    base:desc "Virtual representation of the incubator system including all models, data processing, and decision-making capabilities."
+    base:contains ThermalModelA, ThermalModelB, SensorData, ControlCommandDataProcessed,
+                EnvironmentalData, RabbitMQCommunicationServer, ModelCalibrationEnabler,
+                OptimizationEnabler, TemperaturePredictionService, FaultDetectionService,
+                ParameterCalibrationService, OperationalOptimizationService, VisualizationService
+]
+
+instance virtual_to_physical_interaction : DTDFVocab:VirtualToPhysical [
+    base:desc "The DT-to-PT interaction involves:
+  - **Control commands**: Sent from the DT (via the RabbitMQ server) to the Raspberry Pi controller to actuate the **heatbed** and **fan** based on control logic (e.g., bang-bang control with hysteresis).
+  - **State updates**: The DT sends commands to turn the heatbed on/off and adjust fan speed (via voltage control) to regulate temperature.
+  - **Safety protocols**: The low-level driver enforces safe operational states (e.g., preventing overheating) by validating commands before execution."
+]
+
+instance twinning_time_scale : DTDFVocab:TimeScale [
+    base:desc "The DT operates on **real-time and near-real-time scales**:
+  - **Sensor data acquisition**: Every few seconds (e.g., 1-5 seconds) to capture temperature dynamics.
+  - **Control loop**: The Raspberry Pi executes control actions every few seconds (e.g., 2-5 seconds) based on temperature feedback.
+  - **Model calibration**: Performed offline or periodically (e.g., during maintenance windows) using historical data.
+  - **Simulation updates**: Models are recalibrated or updated when new data is available (e.g., weekly or monthly for long-term drift correction)."
+]
+
+instance dt_constellation : DTDFVocab:Constellation [
+    base:desc "The DT constellation is organized as follows:
+  - **Centralized architecture**: A single DT instance runs on the Raspberry Pi, integrating all components (communication server, controller, and models).
+  - **Component interactions**:
+    1. **Sensors → RabbitMQ**: Data flows from PT sensors to the RabbitMQ server.
+    2. **RabbitMQ → Controller**: The controller subscribes to sensor data and publishes control commands.
+    3. **Controller → Actuators**: Commands are sent to the heatbed/fan via the low-level driver.
+    4. **DT models**: Run on the Raspberry Pi to process sensor data, predict behavior, and optimize control parameters.
+  - **Decoupling**: Optocouplers and MOSFETs isolate the Raspberry Pi from high-current actuators to ensure safety."
+]
+
+instance life_cycle_stages : DTDFVocab:EvolutionStage [
+    base:desc "The DT covers the **as-operated phase** of the PT's life cycle:
+  - **Representation phase**: The DT represents the PT in its operational state, not its design or manufacturing phases.
+  - **Lifecycle focus**: Primarily supports **monitoring, control, and optimization** during normal operation, with potential for predictive maintenance or fault diagnosis.
+  - **Future work**: The paper suggests extending the DT to include **as-designed** or **as-manufactured** phases for comprehensive lifecycle support."
+]
+
+instance fidelity_and_validity_considerations : DTDFVocab:FidelityConsideration [
+    base:desc "The DT models and data have the following fidelity and validity considerations:
+  - **Model assumptions**:
+    - **Assumption 1**: Uniform temperature distribution (validated experimentally with fan assistance).
+    - **Assumption 2**: Negligible heat accumulation in box walls (simplification; may introduce error).
+    - **Assumption 3**: Constant specific heat capacity of air (simplification; real-world variations exist).
+    - **Assumption 4**: All electrical power converted to heat (relaxed in Model B to account for heatbed inertia).
+  - **Verification and validation**:
+    - **Experimental validation**: Temperature uniformity experiments confirm Assumption 1 (max discrepancy reduced from 7°C to 6°C with stronger fan).
+    - **Parameter calibration**: Least-squares optimization minimizes residual error between model predictions and experimental data.
+    - **Uncertainty sources**:
+      - Sensor noise and drift.
+      - Environmental factors (e.g., room temperature fluctuations).
+      - Actuator nonlinearities (e.g., heatbed power variability).
+  - **Error handling**: The DT includes **safety protocols** in the low-level driver to prevent unsafe states (e.g., overheating)."
+]
+
+instance dt_technical_connection : DTDFVocab:TechnicalConnection [
+    base:desc "The DT uses the following technical connections:
+  - **Network protocols**:
+    - **RabbitMQ**: Message broker for asynchronous communication between PT and DT components.
+    - **1-Wire bus**: Connects multiple DS18S20 sensors to the Raspberry Pi GPIO with a single data line.
+    - **GPIO**: Used for direct control of actuators (heatbed/fan) via MOSFETs.
+  - **Architecture**:
+    - **Client-server model**: RabbitMQ acts as the central message broker, with the Raspberry Pi as both client (subscriber) and server (publisher).
+    - **Decoupled control**: Optocouplers and MOSFETs isolate the Raspberry Pi from high-voltage/high-current actuators.
+  - **Data formats**: Structured JSON or binary messages (RabbitMQ supports both) for sensor data and control commands."
+]
+
+instance dt_hosting_deployment : DTDFVocab:Deployment [
+    base:desc "The DT is hosted and deployed on:
+  - **Hardware**: Raspberry Pi 4 (onboard) with built-in Wi-Fi/Bluetooth for cloud or local network connectivity.
+  - **Software stack**:
+    - RabbitMQ server: Runs on the Raspberry Pi for low-latency communication.
+    - Python scripts: Execute control logic, model calibration, and data processing.
+  - **Deployment options**:
+    - **On-premises**: The entire system runs locally on the Raspberry Pi.
+    - **Cloud-ready**: Wi-Fi enables remote monitoring or cloud integration (not explicitly used in this case study but feasible).
+  - **Scalability**: The design allows for future cloud deployment or distributed control if needed."
+]
+
+instance horizontal_integration : DTDFVocab:HoriIntegration [
+    base:desc "The DT has **limited horizontal integration** in this case study:
+  - **No external DTs**: The system focuses on a single incubator; no integration with other DTs or external systems is mentioned.
+  - **Potential future integration**:
+    - Cloud platforms for remote monitoring or analytics.
+    - IoT gateways for connecting to enterprise systems (e.g., ERP or MES).
+    - Standardized APIs (not implemented here but feasible with RabbitMQ)."
+]
+
+instance data_ownership_and_privacy : DTDFVocab:DataOwnershipPrivacy [
+    base:desc "Data ownership and privacy considerations:
+  - **Data ownership**: The PT owner (e.g., lab or facility manager) likely owns the sensor data and operational logs, as they are generated by the PT itself.
+  - **Privacy**:
+    - No explicit mention of sensitive data (e.g., patient health in medical incubators), but the system could be extended with encryption (e.g., TLS for RabbitMQ).
+    - **Access control**: RabbitMQ supports user authentication and permissions, which could restrict access to authorized personnel.
+  - **Ethical aspects**: The paper does not address ethical concerns (e.g., data sharing for research), but the open-source nature allows transparency."
+]
+
+instance standardization : DTDFVocab:Standardization [
+    base:desc "The DT follows these standards and practices:
+  - **Hardware**:
+    - DS18S20 sensors comply with **1-Wire protocol** standards.
+    - Raspberry Pi uses **GPIO standards** for peripheral communication.
+  - **Software**:
+    - RabbitMQ adheres to **AMQP (Advanced Message Queuing Protocol)** standards.
+    - Python/Scipy uses **open-source, non-proprietary** tools for model calibration.
+  - **Control logic**: Bang-bang control is a well-established method in **classical control theory**.
+  - **No proprietary lock-in**: The entire system is open-source, promoting interoperability and extensibility."
+]
+
+instance security_and_safety_considerations : DTDFVocab:SecuritySafety [
+    base:desc "The DT does not explicitly address **remote human safety risks** (e.g., autonomous shutdowns in hazardous environments), as the focus is on temperature regulation in a controlled lab setting. However, the design principles (e.g., safe protocols, hardware isolation) could be extended for such applications."
+]

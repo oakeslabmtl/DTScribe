@@ -1,0 +1,232 @@
+// ======================
+// 1. Physical Sensing Components
+// ======================
+
+// Hokuyo UST-10LX LiDAR (2‑D point clouds)
+instance HokuyoLiDAR_LiDAR : DTDFVocab:SensingComponent [
+    base:desc "Hokuyo UST-10LX LiDAR providing 2‑D point‑cloud scans, accessed via a ROS2 node on the Jetson Orin."
+    DTDFVocab:producedData LiDARRawDataTransmitted
+]
+
+// Intel RealSense D435i depth camera (3‑D perception)
+instance IntelRealSenseDepthCamera : DTDFVocab:SensingComponent [
+    base:desc "Intel RealSense D435i depth camera delivering 3‑D point clouds, interfaced through a ROS2 driver on the Jetson."
+    DTDFVocab:producedData DepthCameraPointCloudTransmitted
+]
+
+// Vehicle speed sensor (wheel encoder / IMU)
+instance VehicleSpeedSensor : DTDFVocab:SensingComponent [
+    base:desc "On‑board speed measurement from wheel encoder (or IMU), published by a ROS2 node on the Jetson."
+    DTDFVocab:producedData SpeedStateDataTransmitted
+]
+
+// Steering angle sensor (servo position encoder)
+instance SteeringAngleSensor : DTDFVocab:SensingComponent [
+    base:desc "Steering angle measurement from servo position encoder, exposed through a ROS2 node on the Jetson."
+    DTDFVocab:producedData SteeringAngleDataTransmitted
+]
+
+// ======================
+// 2. Data Transmitted (Physical → Virtual)
+// ======================
+
+instance LiDARRawDataTransmitted : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom HokuyoLiDAR_LiDAR
+]
+
+instance DepthCameraPointCloudTransmitted : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom IntelRealSenseDepthCamera
+]
+
+instance SpeedStateDataTransmitted : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom VehicleSpeedSensor
+]
+
+instance SteeringAngleDataTransmitted : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom SteeringAngleSensor
+]
+
+// ======================
+// 3. Data Objects (Virtual)
+// ======================
+
+instance LiDARRawPointCloudData : DTDFVocab:Data [
+    base:desc "Raw 2‑D point‑cloud scans from the Hokuyo LiDAR."
+    DTDFVocab:fromData LiDARRawDataTransmitted
+    DTDFVocab:inputTo ROS2MiddlewareEnabler
+]
+
+instance DepthCameraDepthData : DTDFVocab:Data [
+    base:desc "Raw 3‑D point‑cloud frames from the Intel RealSense D435i."
+    DTDFVocab:fromData DepthCameraPointCloudTransmitted
+    DTDFVocab:inputTo ROS2MiddlewareEnabler
+]
+
+instance VehicleSpeedStateData : DTDFVocab:Data [
+    base:desc "Timestamped vehicle speed values."
+    DTDFVocab:fromData SpeedStateDataTransmitted
+    DTDFVocab:inputTo ROS2MiddlewareEnabler
+]
+
+instance VehicleSteeringAngleData : DTDFVocab:Data [
+    base:desc "Timestamped steering‑angle measurements."
+    DTDFVocab:fromData SteeringAngleDataTransmitted
+    DTDFVocab:inputTo ROS2MiddlewareEnabler
+]
+
+// ======================
+// 4. Models / Algorithms
+// ======================
+
+instance DBSCANClusteringModel : DTDFVocab:Model [
+    base:desc "DBSCAN clustering algorithm applied to LiDAR point clouds for object segmentation."
+    DTDFVocab:inputTo ROS2MiddlewareEnabler
+]
+
+instance KalmanFilterTrackingModel : DTDFVocab:Model [
+    base:desc "Kalman filter tracking model that fuses DBSCAN clusters into temporal object tracks."
+    DTDFVocab:inputTo ROS2MiddlewareEnabler
+]
+
+instance ACCControllerModel : DTDFVocab:Model [
+    base:desc "Adaptive Cruise Control controller derived from ISO 15622 (lead‑vehicle detection, distance‑based speed set‑point)."
+    DTDFVocab:inputTo MatlabSimulinkEnabler
+]
+
+// ======================
+// 5. Enablers (Tools / Functional Entities)
+// ======================
+
+instance ROS2MiddlewareEnabler : DTDFVocab:Enabler [
+    base:desc "ROS2 middleware for inter‑process communication, message serialization (ISO 23247 Data Translation), and lifecycle management."
+    DTDFVocab:enables DataMonitoringService, RemoteManagementService, Visualization3DService
+]
+
+instance MatlabSimulinkEnabler : DTDFVocab:Enabler [
+    base:desc "MATLAB/Simulink environment used to implement the ACC controller and related signal‑processing blocks."
+    DTDFVocab:enables ComputationOffloadingService
+]
+
+instance SQLDatabaseEnabler : DTDFVocab:Enabler [
+    base:desc "SQL database storing raw and processed data, and generating human‑readable timeseries reports."
+    DTDFVocab:enables ReportGenerationService
+]
+
+instance DataTranslationFEEnabler : DTDFVocab:Enabler [
+    base:desc "ISO 23247 Data Translation functional entity responsible for unit conversion and message serialization over Wi‑Fi."
+    DTDFVocab:enables DataMonitoringService
+]
+
+// ======================
+// 6. Services (Digital Twin Capabilities)
+// ======================
+
+instance DataMonitoringService : DTDFVocab:Service [
+    base:desc "UI displays real‑time vehicle speed, steering angle, object tracks and projected path."
+    DTDFVocab:provides RealTimeVehicleStateInsight, ObjectTrackingInsight
+]
+
+instance ComputationOffloadingService : DTDFVocab:Service [
+    base:desc "ACC algorithm runs on the cloud digital twin via off‑loaded computation."
+    DTDFVocab:provides ACCControlInsight
+]
+
+instance RemoteManagementService : DTDFVocab:Service [
+    base:desc "Operator UI to enable/disable ACC, set desired speed, and trigger emergency braking."
+    DTDFVocab:provides EnableACCAction, DisableACCAction, SetDesiredSpeedAction, EmergencyBrakingAction
+]
+
+instance ReportGenerationService : DTDFVocab:Service [
+    base:desc "Automatic creation of human‑readable timeseries reports stored in the SQL database."
+    DTDFVocab:provides GenerateReportAction, ReportInsight
+]
+
+instance Visualization3DService : DTDFVocab:Service [
+    base:desc "3‑D rendering of the vehicle and environment in a virtual cockpit."
+    DTDFVocab:provides VisualizationInsight
+]
+
+// ======================
+// 7. Insights
+// ======================
+
+instance RealTimeVehicleStateInsight : DTDFVocab:Insight [
+    base:desc "Real‑time insight into vehicle speed and steering angle."
+]
+
+instance ObjectTrackingInsight : DTDFVocab:Insight [
+    base:desc "Insight showing detected object tracks and projected future path."
+]
+
+instance ACCControlInsight : DTDFVocab:Insight [
+    base:desc "Insight into ACC controller status and lead‑vehicle distance calculations."
+]
+
+instance ReportInsight : DTDFVocab:Insight [
+    base:desc "Insight summarizing generated timeseries reports for offline analysis."
+]
+
+instance VisualizationInsight : DTDFVocab:Insight [
+    base:desc "Insight visualizing the vehicle and surrounding environment in 3‑D."
+]
+
+// ======================
+// 8. Actions
+// ======================
+
+instance EnableACCAction : DTDFVocab:Action [
+    base:desc "Operator command to enable Adaptive Cruise Control."
+    DTDFVocab:IsAutomatic false
+]
+
+instance DisableACCAction : DTDFVocab:Action [
+    base:desc "Operator command to disable Adaptive Cruise Control."
+    DTDFVocab:IsAutomatic false
+]
+
+instance SetDesiredSpeedAction : DTDFVocab:Action [
+    base:desc "Operator sets the desired cruise speed for ACC."
+    DTDFVocab:IsAutomatic false
+]
+
+instance EmergencyBrakingAction : DTDFVocab:Action [
+    base:desc "Operator triggers emergency braking via the digital twin."
+    DTDFVocab:IsAutomatic false
+]
+
+instance GenerateReportAction : DTDFVocab:Action [
+    base:desc "Automatic generation of a timeseries report stored in the SQL database."
+    DTDFVocab:IsAutomatic true
+]
+
+instance virtual_to_physical_interaction : DTDFVocab:VirtualToPhysical [
+    base:desc "Bidirectional command channel from the digital twin to the vehicle over the same Wi‑Fi/ROS2 link delivering desired speed, ACC enable/disable, emergency brake, and other remote‑management commands; the Actuation FE on the physical twin receives these commands and drives the ESC and steering servo."
+]
+
+instance twinning_time_scale : DTDFVocab:TimeScale [
+    base:desc "Sub‑second real‑time operation with a hard end‑to‑end latency bound of 100 ms between vehicle and digital twin (R7) and clock synchronization accuracy of 100 ms (R8); data collection and ACC computation occur at each perception cycle (typically tens of Hz)."
+]
+
+instance dt_constellation : DTDFVocab:Constellation [
+    base:desc "A layered architecture mapping ISO 23247 entities to concrete components: Physical Twin Entity hosting sensors, actuation and point‑cloud processing; Digital Twin Entity hosting data collection, ACC control, reporting and visualization; User Entity providing 3D UI and control panel; Cross‑System Entity handling data translation. Components are packaged as independent ROS2 packages deployed across vehicle, cloud, and operator workstation."
+]
+
+instance life_cycle_stages : DTDFVocab:EvolutionStage [
+    base:desc "The digital twin is employed in the operational stage for real‑time monitoring, remote control and off‑loading, and also supports design‑time activities such as cyber‑physical experimentation and validation of ADAS functions."
+]
+
+instance fidelity_and_validity_considerations : DTDFVocab:FidelityConsideration [
+    base:desc "Real‑time fidelity ensured by meeting the 100 ms latency and clock sync requirements; ACC behavior complies with ISO 15622 specifications; perception fidelity derived from DBSCAN clustering and Kalman filtering of LiDAR data; validation includes external SQL logging for post‑run analysis and adherence to safety‑critical constraints."
+]
+
+instance dt_technical_connection : DTDFVocab:TechnicalConnection [
+    base:desc "Wi‑Fi network linking the vehicle’s Jetson to the cloud‑hosted DT and operator workstation; ROS2 as the communication middleware; standardized interfaces for all components (R1) realized through ROS2 topics/services; data payloads serialized by the Data Translation functional entity."
+]
+
+instance dt_hosting_deployment : DTDFVocab:Deployment [
+    base:desc "Physical Twin Entity runs on the Jetson Orin Nano inside the vehicle; Digital Twin Entity components (ACC computation, data collection, visualization) run on a cloud or edge server; User Entity UI runs on an operator PC; the SQL database and reporting services are hosted on an external server accessible via the network."
+]
+
+instance standardization : DTDFVocab:Standardization [
+    base:desc "The architecture follows ISO 23247 reference architecture, uses ISO 15622 for ACC functionality, and adheres to ISO/IEC 30173:2023 concepts for digital twins; ROS2 provides a standards‑based middleware layer."
+]

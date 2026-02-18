@@ -1,0 +1,147 @@
+// C3: Physical sensing components
+instance SwingAngleEncoder : DTDFVocab:SensingComponent [
+    base:desc "Swing angle sensor (encoder) mounted on the gantry crane, provides angular position of the trolley"
+    DTDFVocab:producedData SwingAngleDataTransmitted
+]
+
+instance Anemometer : DTDFVocab:SensingComponent [
+    base:desc "Anemometer measures wind speed affecting crane operation"
+    DTDFVocab:producedData WindSpeedDataTransmitted
+]
+
+instance ElectromagnetStatusSensor : DTDFVocab:SensingComponent [
+    base:desc "Sensor reading the on/off status of the electromagnet used for payload handling"
+    DTDFVocab:producedData ElectromagnetStatusDataTransmitted
+]
+
+// C4: Physical-to-virtual interaction
+instance SwingAngleDataTransmitted : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom SwingAngleEncoder
+]
+
+instance WindSpeedDataTransmitted : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom Anemometer
+]
+
+instance ElectromagnetStatusDataTransmitted : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom ElectromagnetStatusSensor
+]
+
+// C10: Data instances
+instance SwingAngleData : DTDFVocab:Data [
+    base:desc "Time‑stamped swing angle values streamed from the encoder"
+    DTDFVocab:fromData SwingAngleDataTransmitted
+    DTDFVocab:inputTo PythonPhysicalInterface
+]
+
+instance WindSpeedData : DTDFVocab:Data [
+    base:desc "Time‑stamped wind speed measurements from the anemometer"
+    DTDFVocab:fromData WindSpeedDataTransmitted
+    DTDFVocab:inputTo PythonPhysicalInterface
+]
+
+instance ElectromagnetStatusData : DTDFVocab:Data [
+    base:desc "Time‑stamped electromagnet on/off status"
+    DTDFVocab:fromData ElectromagnetStatusDataTransmitted
+    DTDFVocab:inputTo PythonPhysicalInterface
+]
+
+instance HistoricalSensorData : DTDFVocab:Data [
+    base:desc "Historical records of all sensor readings stored in TimescaleDB"
+    DTDFVocab:inputTo TimescaleDBStorage
+]
+
+// C10: Models
+instance CADModelGantryCrane : DTDFVocab:Model [
+    base:desc "CAD 3‑D model of the laboratory‑scale gantry crane used for simulation and visualization"
+    DTDFVocab:inputTo PythonPhysicalInterface, DataVisualizationService
+]
+
+instance KinematicModelGantryCrane : DTDFVocab:Model [
+    base:desc "Kinematic model capturing geometry and motion equations of the crane"
+    DTDFVocab:inputTo PythonPhysicalInterface, OptimalControlService, ContinuousValidationService
+]
+
+// C11: Enablers
+instance PythonPhysicalInterface : DTDFVocab:Enabler [
+    base:desc "Python‑based Physical Crane Interface that streams sensor data from Arduino to services and writes to TimescaleDB"
+    DTDFVocab:enables OptimalControlService, HistoricalLoggingService, DataVisualizationService, ContinuousValidationService
+]
+
+instance TimescaleDBStorage : DTDFVocab:Enabler [
+    base:desc "TimescaleDB database used for persistent logging of time‑stamped sensor and actuator records"
+    DTDFVocab:enables HistoricalLoggingService
+]
+
+instance MQTTBrokerEnabler : DTDFVocab:Enabler [
+    base:desc "MQTT broker providing service‑level signaling between digital‑twin services"
+    DTDFVocab:enables OptimalControlService, DataVisualizationService, ContinuousValidationService
+]
+
+instance OpenSourceToolingEnabler : DTDFVocab:Enabler [
+    base:desc "Open‑source toolchain (GitHub hosted) that includes CAD viewer, simulation libraries and visualization frameworks"
+    DTDFVocab:enables DataVisualizationService, OptimalControlService
+]
+
+// C6: Services
+instance OptimalControlService : DTDFVocab:Service [
+    base:desc "Provides optimal control of crane motion based on kinematic model and real‑time sensor data"
+    DTDFVocab:provides InsightOptimalTrajectory, ActionCraneMotionControl
+]
+
+instance HistoricalLoggingService : DTDFVocab:Service [
+    base:desc "Continuously logs sensor and actuator values into TimescaleDB for later analysis"
+    DTDFVocab:provides InsightHistoricalDataAnalysis
+]
+
+instance DataVisualizationService : DTDFVocab:Service [
+    base:desc "Interactive visualization of crane state, trajectories and logged data"
+    DTDFVocab:provides InsightVisualizationReady
+]
+
+instance ContinuousValidationService : DTDFVocab:Service [
+    base:desc "Continuously validates the kinematic model against physical observations"
+    DTDFVocab:provides InsightModelValidationResult
+]
+
+// C17: Insights & Actions
+instance InsightOptimalTrajectory : DTDFVocab:Insight [
+    base:desc "Derives the optimal trajectory for trolley and hoist motion"
+]
+
+instance ActionCraneMotionControl : DTDFVocab:Action [
+    base:desc "Automatically commands motor drives to follow the optimal trajectory"
+    DTDFVocab:IsAutomatic true
+]
+
+instance InsightHistoricalDataAnalysis : DTDFVocab:Insight [
+    base:desc "Enables analysis of historical sensor trends and fault detection"
+]
+
+instance InsightVisualizationReady : DTDFVocab:Insight [
+    base:desc "Provides data ready for interactive 3‑D visualization of crane operation"
+]
+
+instance InsightModelValidationResult : DTDFVocab:Insight [
+    base:desc "Reports validation metrics comparing the kinematic model predictions with measured data"
+]
+
+instance virtual_to_physical_interaction : DTDFVocab:VirtualToPhysical [
+    base:desc "The Control Application (a Python program) consumes trajectory or command data generated by services such as the Trajectory Generator Service and sends control commands to the Physical Crane Interface. The Interface translates these commands into controller‑level commands for the crane’s motor controllers, thereby effecting actuation on the physical crane. Execution feedback is captured by the Logging Application, which records the resulting crane state."
+]
+
+instance dt_constellation : DTDFVocab:Constellation [
+    base:desc "The gantry crane digital twin follows a service‑oriented architecture orchestrated via an MQTT broker that provides signaling between the six twin containers. Core persistence is handled by a TimescaleDB database, while a Grafana dashboard visualises the stored data. Functional services include a Trajectory Generator (kinematics model), a Simulation Service that emulates crane dynamics, and a Continuous Validation Service that continuously compares measured trajectories against simulated ones, computes distance metrics, checks against a threshold and raises alerts through the dashboard. Additional Python components—Physical Crane Interface, Control Application, Logging Application, and Human‑Machine Interface—interact with the physical hardware and consume or produce data for the twin services. The overall constellation is a loosely coupled set of containers communicating over MQTT, with centralized data storage in TimescaleDB and visualization via Grafana."
+]
+
+instance fidelity_and_validity_considerations : DTDFVocab:FidelityConsideration [
+    base:desc "The exemplar employs continuous validation methods that compare the kinematic model’s predictions with logged operational data to assess model fidelity. It has been used in research on continuous validation, fault detection, and the DarTwin notation for digital twin evolution. Specific validation procedures, uncertainty quantification, or error correction mechanisms are not detailed in the documents."
+]
+
+instance dt_technical_connection : DTDFVocab:TechnicalConnection [
+    base:desc "All digital‑twin components are deployed as Docker containers (TimescaleDB, Grafana dashboard, and an Eclipse Mosquitto MQTT broker) orchestrated with Docker‑Compose. Inter‑service communication uses the MQTT broker for signaling over TCP, while the Python containers communicate locally via the Docker network. No explicit bandwidth, latency, or redundancy specifications are provided in the documents."
+]
+
+instance dt_hosting_deployment : DTDFVocab:Deployment [
+    base:desc "The system runs on a single personal computer (on‑premise edge host). The Python C4 containers are packaged as a pip‑installable module (gantrylib). The database, MQTT broker, and dashboard are containerized with Docker and managed via a Docker‑Compose file, which also handles first‑time initialization. Hence the deployment is on‑premise, using Docker for isolation and requiring only a PC with Python and Docker installed."
+]

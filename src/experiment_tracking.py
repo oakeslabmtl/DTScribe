@@ -12,10 +12,7 @@ from dataclasses import dataclass, asdict, field
 import pandas as pd
 import hashlib
 
-# New experiment id format: <12-char config hash>_<YYYYMMDDHHMMSS>
-# This keeps a stable portion for grouping while ensuring each run
-# (even with identical config) has a unique readable suffix.
-
+# Experiment id format: <12-char config hash>_<YYYYMMDDHHMMSS>
 
 @dataclass
 class ExperimentConfig:
@@ -27,9 +24,11 @@ class ExperimentConfig:
     temperature: float
     top_p: float
     top_k: int
-    max_pages: Optional[int] = None
-    llm_judge: bool = False
-    oml_feedback_loop: bool = False
+    max_judge_retries: int
+    max_oml_retries: int
+    judge_model_name: str
+    baseline_full_doc: bool = False
+    baseline_max_chars: int = 24000
     custom_params: Optional[Dict[str, Any]] = None
 
 
@@ -38,7 +37,7 @@ class CharacteristicsExtractionResult:
     """Results specifically for characteristics extraction task."""
     experiment_id: str
     timestamp: datetime
-    pdf_path: str
+    input_path: str
     config: ExperimentConfig
     
     # Extraction results
@@ -58,12 +57,11 @@ class CharacteristicsExtractionResult:
     
     # Block-specific metrics
     block_processing_times: Dict[str, float]
-    block_docs_retrieved: Dict[str, int]
     block_success_rates: Dict[str, bool]
 
     # token usage
     total_input_tokens: int
-    total_output_tokens: int #Optional[Dict[str, int]] = None
+    total_output_tokens: int
 
     # llm judge usage
     # judged_characteristics: Dict[str, Any] = field(default_factory=dict)
@@ -72,8 +70,6 @@ class CharacteristicsExtractionResult:
     # Error information
     errors: List[str] = field(default_factory=list)
     warnings: List[str] = field(default_factory=list)
-    
-
 
 
 @dataclass
@@ -81,6 +77,8 @@ class OMLGenerationResult:
     """Results specifically for OML generation task."""
     experiment_id: str
     timestamp: datetime
+    input_path: str
+    config: ExperimentConfig
     characteristics_experiment_id: str  # Link to source characteristics
     
     # OML generation results
@@ -88,13 +86,18 @@ class OMLGenerationResult:
     oml_metadata: Dict[str, Any]
     
     # Quality metrics
-    oml_syntax_valid: bool
-    oml_completeness_score: float
+    oml_valid: bool
     oml_line_count: int
     oml_instance_count: int
     
     # Performance metrics
     generation_time_seconds: float
+    oml_max_retries: int
+    oml_repetition_count: int
+
+    # token usage
+    total_input_tokens: int
+    total_output_tokens: int
     
     # Error information
     errors: List[str] = field(default_factory=list)
@@ -117,15 +120,15 @@ class ResultsSaver:
         for dir_path in [self.characteristics_dir, self.oml_dir, self.logs_dir, self.analysis_dir]:
             dir_path.mkdir(exist_ok=True)
     
-    def generate_experiment_id(self, config: ExperimentConfig, pdf_path: str) -> str:
+    def generate_experiment_id(self, config: ExperimentConfig, input_path: str) -> str:
         """Generate a readable, unique experiment ID.
 
         Format: <12hexhash>_<YYYYMMDDHHMMSS>
-        - 12hexhash: stable hash of (pdf_path + config) enabling grouping
+        - 12hexhash: stable hash of (input_path + config) enabling grouping
         - timestamp: ensures uniqueness per run even if config unchanged
         """
         config_str = json.dumps(asdict(config), sort_keys=True)
-        input_str = f"{pdf_path}_{config_str}"
+        input_str = f"{input_path}_{config_str}"
         base_hash = hashlib.md5(input_str.encode()).hexdigest()[:12]
         ts = datetime.utcnow().strftime("%Y%m%d%H%M%S")
         return f"{base_hash}_{ts}"
@@ -144,7 +147,7 @@ class ResultsSaver:
             json.dump(result_dict, f, indent=2, ensure_ascii=False)
         
         # Also save a CSV summary for easy analysis
-        self._update_characteristics_summary(result)
+        # self._update_characteristics_summary(result)
         
         return filepath
     
@@ -168,7 +171,7 @@ class ResultsSaver:
             f.write(result.generated_oml)
         
         # Also save a CSV summary for easy analysis
-        self._update_oml_summary(result)
+        # self._update_oml_summary(result)
         
         return filepath
     
@@ -179,9 +182,11 @@ class ResultsSaver:
         summary_data = {
             'experiment_id': result.experiment_id,
             'timestamp': result.timestamp.isoformat(),
-            'pdf_path': result.pdf_path,
+            'input_path': result.input_path,
             'model_name': result.config.model_name,
             'embedding_model': result.config.embedding_model,
+            'judge_model_name': result.config.judge_model_name,
+            'max_judge_retries': result.config.max_judge_retries,
             'chunk_size': result.config.chunk_size,
             'chunk_overlap': result.config.chunk_overlap,
             'temperature': result.config.temperature,
@@ -210,12 +215,18 @@ class ResultsSaver:
         summary_data = {
             'experiment_id': result.experiment_id,
             'timestamp': result.timestamp.isoformat(),
+            'input_path': result.input_path,
+            'model_name': result.config.model_name,
+            'embedding_model': result.config.embedding_model,
             'characteristics_experiment_id': result.characteristics_experiment_id,
-            'oml_syntax_valid': result.oml_syntax_valid,
-            'oml_completeness_score': result.oml_completeness_score,
+            'oml_valid': result.oml_valid,
             'oml_line_count': result.oml_line_count,
             'oml_instance_count': result.oml_instance_count,
+            'oml_repetition_count': result.oml_repetition_count,
+            'oml_max_retries': result.oml_max_retries,
             'generation_time_seconds': result.generation_time_seconds,
+            'total_input_tokens': result.total_input_tokens,
+            'total_output_tokens': result.total_output_tokens,
             'error_count': len(result.errors),
             'warning_count': len(result.warnings)
         }

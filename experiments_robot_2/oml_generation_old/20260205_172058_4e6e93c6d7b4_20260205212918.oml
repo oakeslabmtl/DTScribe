@@ -1,0 +1,294 @@
+// C2: Acting Components
+instance RobotActuatorSystem : DTDFVocab:ActingComponent [
+    base:desc "Comprises Permanent Magnet Synchronous Motors (PMSMs) with integrated gear mechanisms for precise joint control in robotic arms, interfaced with Siemens SINUMERIK controllers for real-time actuation and friction compensation"
+]
+
+// C3: Physical Sensing Components
+instance AngularVelocitySensor : DTDFVocab:SensingComponent [
+    base:desc "Monitors angular velocity of the robot's motor for real-time control adjustments"
+    DTDFVocab:producedData MotorAngularVelocityData
+]
+
+instance PositionSensor : DTDFVocab:SensingComponent [
+    base:desc "Tracks position data of the first axis in the robot's control system"
+    DTDFVocab:producedData Axis1PositionData
+]
+
+instance InputCurrentSensor : DTDFVocab:SensingComponent [
+    base:desc "Measures input current from the robot's power supply, processed via low-pass filtering to remove noise"
+    DTDFVocab:producedData ProcessedInputCurrentData
+]
+
+instance FrictionCharacteristicsSensor : DTDFVocab:SensingComponent [
+    base:desc "Detects internal joint friction and external forces during machining operations"
+    DTDFVocab:producedData FrictionTraceData
+]
+
+instance EnvironmentalConditionsSensor : DTDFVocab:SensingComponent [
+    base:desc "Records operating conditions including loads and environmental factors (temperature) for adaptive modeling"
+    DTDFVocab:producedData OperationalParametersData
+]
+
+// C4: Data Transmission
+instance MotorAngularVelocityData : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom AngularVelocitySensor
+    DTDFVocab:format JSON
+    DTDFVocab:topic "robot/axis1/motor/angularVelocity"
+]
+
+instance Axis1PositionData : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom PositionSensor
+    DTDFVocab:format JSON
+    DTDFVocab:topic "robot/axis1/position"
+]
+
+instance ProcessedInputCurrentData : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom InputCurrentSensor
+    DTDFVocab:format JSON
+    DTDFVocab:topic "robot/axis1/motor/currentFiltered"
+]
+
+instance FrictionTraceData : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom FrictionCharacteristicsSensor
+    DTDFVocab:format JSON
+    DTDFVocab:topic "robot/axis1/friction/trace"
+]
+
+instance OperationalParametersData : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom EnvironmentalConditionsSensor
+    DTDFVocab:format JSON
+    DTDFVocab:topic "robot/axis1/operationalParameters"
+]
+
+// C5: Data Storage and Processing
+instance RawSensorDataStore : DTDFVocab:Data [
+    base:desc "Central repository for storing raw sensor measurements (angular velocity, position, current) before processing"
+    DTDFVocab:fromData MotorAngularVelocityData, Axis1PositionData, ProcessedInputCurrentData, FrictionTraceData, OperationalParametersData
+    DTDFVocab:inputTo ThingsBoardEnabler
+]
+
+instance FilteredDataProcessor : DTDFVocab:Data [
+    base:desc "Processes raw sensor data through low-pass filtering to remove noise from input current measurements"
+    DTDFVocab:fromData ProcessedInputCurrentData
+    DTDFVocab:inputTo SimulinkProcessingModel
+]
+
+instance FrictionModelAggregator : DTDFVocab:Data [
+    base:desc "Aggregates friction trace data with operational parameters for dynamic friction modeling"
+    DTDFVocab:fromData FrictionTraceData, OperationalParametersData
+    DTDFVocab:inputTo FrictionCompensationModel
+]
+
+instance ControlParameterData : DTDFVocab:Data [
+    base:desc "Computes derived control parameters from processed sensor data for real-time adjustments"
+    DTDFVocab:fromData FilteredDataProcessor, FrictionModelAggregator
+    DTDFVocab:inputTo SINUMERIKControllerEnabler
+]
+
+// C6: Models
+instance SimulinkProcessingModel : DTDFVocab:Model [
+    base:desc "MathWorks Simulink model implementing low-pass filtering and higher-level data processing for sensor traces"
+    DTDFVocab:inputTo ThingsBoardEnabler, FrictionCompensationModel
+]
+
+instance FrictionCompensationModel : DTDFVocab:Model [
+    base:desc "Physics-based model for dynamic friction compensation using both white-box (physics-based) and black-box (data-driven) approaches"
+    DTDFVocab:inputTo SINUMERIKControllerEnabler, PredictiveMaintenanceModel
+]
+
+instance PredictiveMaintenanceModel : DTDFVocab:Model [
+    base:desc "Machine learning model for predictive maintenance and fault detection based on friction behavior analysis"
+    DTDFVocab:inputTo ThingsBoardEnabler
+]
+
+instance MachiningParameterOptimizationModel : DTDFVocab:Model [
+    base:desc "Simulation-based model for optimizing machining parameters through friction compensation experiments"
+    DTDFVocab:inputTo SimulationDashboardEnabler
+]
+
+instance ControlSystemSimulationModel : DTDFVocab:Model [
+    base:desc "Discrete-event simulation model for validating control system behavior under varying operational conditions"
+    DTDFVocab:inputTo ThingsBoardEnabler
+]
+
+// C7: Enablers
+instance MQTTSensorBroker : DTDFVocab:Enabler [
+    base:desc "MQTT protocol implementation for real-time data streaming from physical sensors to digital shadow with hierarchical topic organization"
+    DTDFVocab:enables ThingsBoardEnabler, SimulinkProcessingModel
+]
+
+instance ThingsBoardEnabler : DTDFVocab:Enabler [
+    base:desc "AAS Executor implementation for ThingsBoard platform that stores, visualizes, and manages real-time sensor data traces"
+    DTDFVocab:enables DashboardCockpit, PredictiveMaintenanceModel
+]
+
+instance SimulinkProcessingEnabler : DTDFVocab:Enabler [
+    base:desc "MathWorks Simulink environment for model-based processing of sensor data traces with fine-grained traceability"
+    DTDFVocab:enables FrictionCompensationModel, ControlParameterData
+]
+
+instance SINUMERIKControllerEnabler : DTDFVocab:Enabler [
+    base:desc "Siemens SINUMERIK controller integration for real-time actuation and friction compensation in robotic systems"
+    DTDFVocab:enables RobotActuatorSystem, ControlParameterData
+]
+
+instance SimulationDashboardEnabler : DTDFVocab:Enabler [
+    base:desc "Model-Driven Architecture for interactive digital twin cockpits with simulation-based visualization"
+    DTDFVocab:enables MachiningParameterOptimizationModel
+]
+
+// C8: Services
+instance FrictionModelAdaptationService : DTDFVocab:Service [
+    base:desc "Dynamic updating of friction models in real-time to compensate for wear, temperature variations, and payload changes"
+    DTDFVocab:provides FrictionCompensationInsight, AdaptiveFrictionAction
+]
+
+instance ControlAccuracyEnhancementService : DTDFVocab:Service [
+    base:desc "Integration of friction models into robot's control architecture to mitigate trajectory errors"
+    DTDFVocab:provides PositionAccuracyInsight, ControlOptimizationAction
+]
+
+instance PredictiveMaintenanceService : DTDFVocab:Service [
+    base:desc "Proactive identification of anomalies in friction behavior for early fault detection"
+    DTDFVocab:provides AnomalyDetectionInsight, MaintenanceRecommendationAction
+]
+
+instance SimulationBasedOptimizationService : DTDFVocab:Service [
+    base:desc "Simulative experiments for optimizing machining parameters through friction compensation"
+    DTDFVocab:provides ParameterOptimizationInsight, SimulationValidationAction
+]
+
+instance VisualizationService : DTDFVocab:Service [
+    base:desc "Real-time visualization of system states and performance metrics in digital cockpits"
+    DTDFVocab:provides PerformanceDashboardInsight
+]
+
+// C17: Insights/Actions
+instance FrictionCompensationInsight : DTDFVocab:Insight [
+    base:desc "Real-time analysis of friction behavior to generate actionable compensation recommendations"
+]
+
+instance AdaptiveFrictionAction : DTDFVocab:Action [
+    base:desc "Automatic adjustment of friction compensation parameters based on current operational conditions"
+    DTDFVocab:IsAutomatic true
+]
+
+instance PositionAccuracyInsight : DTDFVocab:Insight [
+    base:desc "Analysis of positioning errors and their correlation with friction characteristics"
+]
+
+instance ControlOptimizationAction : DTDFVocab:Action [
+    base:desc "Dynamic adjustment of control parameters to improve trajectory accuracy"
+    DTDFVocab:IsAutomatic true
+]
+
+instance AnomalyDetectionInsight : DTDFVocab:Insight [
+    base:desc "Identification of abnormal friction patterns indicating potential faults or wear"
+]
+
+instance MaintenanceRecommendationAction : DTDFVocab:Action [
+    base:desc "Proactive maintenance scheduling based on detected anomalies"
+    DTDFVocab:IsAutomatic false
+]
+
+instance ParameterOptimizationInsight : DTDFVocab:Insight [
+    base:desc "Simulation-based recommendations for optimal machining parameters"
+]
+
+instance SimulationValidationAction : DTDFVocab:Action [
+    base:desc "Execution of simulation experiments to validate parameter recommendations"
+    DTDFVocab:IsAutomatic true
+]
+
+instance PerformanceDashboardInsight : DTDFVocab:Insight [
+    base:desc "Real-time visualization of system performance metrics in the digital cockpit"
+]
+
+// C18: Environment
+instance RoboticsMachiningEnvironment : DTDFVocab:Environment [
+    base:contains RobotActuatorSystem, AngularVelocitySensor, PositionSensor, InputCurrentSensor,
+                 FrictionCharacteristicsSensor, EnvironmentalConditionsSensor,
+                 MQTTSensorBroker, ThingsBoardEnabler, SimulinkProcessingModel,
+                 FrictionCompensationModel, PredictiveMaintenanceModel,
+                 MachiningParameterOptimizationModel, ControlSystemSimulationModel,
+                 SINUMERIKControllerEnabler, SimulationDashboardEnabler,
+                 FrictionModelAdaptationService, ControlAccuracyEnhancementService,
+                 PredictiveMaintenanceService, SimulationBasedOptimizationService, VisualizationService
+]
+
+instance twinning_time_scale : DTDFVocab:TimeScale [
+    base:desc "The Digital Twin system in the provided context operates with **real-time synchronization** between physical and digital components, focusing on **live-data linking** for dynamic adaptation. The system emphasizes **high-precision applications** where friction modeling and control require **real-time data streams** for continuous refinement of physics-based and data-driven models. The temporal granularity is tied to the robot’s operational requirements, ensuring minimal latency for model updates and predictive maintenance. The documents do not specify exact latency requirements (e.g., sub-second or millisecond intervals), but the emphasis lies on **autonomous, real-time model updates** and **continuous friction identification** during runtime, with traceability maintained via SysML structural models and executable simulation models (e.g., Simulink) integrated into the Asset Administration Shell (AAS)."
+]
+
+instance dt_constellation : DTDFVocab:Constellation [
+    base:desc "The Digital Twin system follows a **Digital Shadow Reference Model** concretized into a **SysML-based structural model** and integrated with **Simulink simulation models** for friction behavior. The architecture adheres to the **Asset Administration Shell (AAS)** standard for interoperability, enabling seamless data exchange and visualization via ThingsBoard. The system’s **orchestration** involves a **pipeline** that automatically populates the digital shadow with live data (measured, simulated, and reference values) from the robot’s control system (SINUMERIK 840D sl). This pipeline ensures **end-to-end traceability**, linking data to its computational origin (e.g., friction models) and enabling real-time adjustments. The coordination mechanism relies on **FMI (Functional Mock-up Interface)** for cross-domain simulation integration, though the specific instantiation in this context is limited to SysML and Simulink models."
+]
+
+instance life_cycle_stages : DTDFVocab:EvolutionStage [
+    base:desc "
+A Digital Twin system in the context of Model-Based Systems Engineering (MBSE) follows structured lifecycle phases aligned with system development abstraction layers. The lifecycle is segmented into:
+1. **Requirements Phase**: Defines functional and non-functional requirements for the system, establishing the foundational context for the Digital Twin.
+2. **Functional Architecture Phase**: Models the system’s functional decomposition using Architecture Description Languages (ADLs) such as **SysML IBDs**, **ACME**, **AADL**, or **MontiArc**, describing components, interfaces, and interconnections.
+3. **Logical Architecture Phase**: Refines the system’s logical behavior through state machines (e.g., in **SysML v1.7**) or automaton-based models (e.g., **MontiArc Automaton**), enabling detailed behavioral modeling.
+4. **Product/Technical Layer Phase**: Integrates simulation models (e.g., **MathWorks Simulink**, discrete-event simulation tools like **DEVS**) or code (e.g., C++, Java) to simulate system dynamics and validate behavior against physical constraints.
+
+For **Digital Shadows**, the lifecycle is purpose-driven:
+- **Problem Identification**: Defines the specific data traces and contextual information needed for the shadow’s purpose.
+- **Asset and Model Analysis**: Aggregates and abstracts data traces from cyber-physical systems (CPS) to construct the shadow’s structure.
+- **Data Identification**: Collects raw data from sensors and systems, with processing components (e.g., data calculation/simulation models) ensuring traceability via associations linking data traces to their origins (e.g., processing components, input traces, or models).
+
+Lifecycle governance is implicit in the **concretization** of the Digital Shadow Reference Model (DSRM), where a conformance relation ensures the shadow adheres to the reference model’s structure and semantics. This involves mapping reference concepts to concrete elements (e.g., class names, associations) to maintain consistency across abstraction levels.
+"
+]
+
+instance fidelity_and_validity_considerations : DTDFVocab:FidelityConsideration [
+    base:desc "
+  **Model fidelity requirements** are driven by real-time adaptation needs, ensuring accuracy under dynamic conditions (e.g., friction compensation for wear or payload changes). The system employs:
+  - **Physics-based models** (e.g., Simulink) for interpretable, predictable behavior, validated against real-world data.
+  - **Data-driven models** (e.g., neural networks) for capturing non-linear friction phenomena, iteratively retrained with new operational data.
+  - **Validation/verification methods**:
+    - **Traceability via conformance relations**: Ensures model correctness by linking data traces to their generating components (e.g., Simulink blocks or ML layers).
+    - **Real-time adaptation**: Models are dynamically updated via continuous data streams (e.g., friction compensation parameters adjusted online).
+  - **Uncertainty quantification**: Implicit in the hybrid modeling approach—physics-based models provide bounds, while data-driven models capture nuanced variations.
+  - **Error detection**: Anomalies in friction behavior (e.g., unexpected wear patterns) trigger **predictive maintenance alerts** and proactive control adjustments.
+  "
+]
+
+instance dt_technical_connection : DTDFVocab:TechnicalConnection [
+    base:desc "
+    The **Digital Twin technical connection** employs an **MQTT-based publish-subscribe architecture** for bidirectional data exchange between physical sensors and the digital shadow. Key technical details include:
+    - **MQTT Broker** (implemented via ThingsBoard) for message routing.
+    - **Hierarchical topic structure** for data organization (e.g., `robot/axis1/motor/`).
+    - **JSON payloads** for untyped but structured data transmission.
+    The system ensures **real-time data synchronization** with minimal latency, leveraging ThingsBoard’s dashboard for visualization.
+    No explicit mention of Mosquitto broker or specific network topology is provided, but the architecture supports **scalable, low-latency communication** for IoT devices.
+  "
+]
+
+instance horizontal_integration : DTDFVocab:HoriIntegration [
+    base:desc "The Digital Twin system integrates with **external systems via standardized protocols**, including **MQTT** for real-time data streaming and **ThingsBoard** for visualization and IoT data management. The integration adheres to **Industry 4.0 interoperability standards**, particularly through the **Asset Administration Shell (AAS)**, which facilitates seamless data exchange with enterprise systems. Dependencies are explicitly tied to the robot’s control architecture (Siemens SINUMERIK 840D sl) and the **SysML structural models** combined with Simulink behavioral models. The system’s scope is confined to friction modeling and compensation, with no mention of broader predictive maintenance dependencies or unsupported use cases."
+]
+
+instance data_ownership_and_privacy : DTDFVocab:DataOwnershipPrivacy [
+    base:desc "
+The provided documents do not explicitly detail **data governance policies**, **consent management systems**, or **compliance frameworks** (e.g., GDPR, CCPA) for Digital Twin systems. However, the **Digital Shadow Reference Model (DSRM)** in Document 5 implicitly supports privacy considerations through:
+- **Metadata management** for contextualizing data traces (e.g., origin, time interval) to enable traceability without exposing raw data.
+- **Separate System Properties component** that records system configuration metadata, which could be anonymized or pseudonymized to protect sensitive operational details.
+- **Data trace provenance tracking** via associations between data points, processing components, and assets, ensuring transparency in data lineage (though no explicit privacy-by-design mechanisms are described).
+
+No direct references to **data anonymization techniques**, **sharing agreements**, or **access control policies** are found in the documents.
+"
+]
+
+instance standardization : DTDFVocab:Standardization [
+    base:desc "
+Standardization in the Digital Twin system is anchored in:
+1. **Modeling Languages**:
+   - **SysML** (for requirements, functional/logical architecture), **ACME**, **AADL**, and **MontiArc** (for component/connector-based modeling and behavior).
+   - **Digital Shadow Reference Model (DSRM)**: A reference model defining domain concepts and their relationships, with a **conformance relation** ensuring conforming Digital Shadow models adhere to the reference structure (e.g., via Class Diagram mappings).
+
+2. **Interoperability and Conformance**:
+   - The DSRM’s concretization process ensures interoperability by maintaining traceability between abstract and concrete models, enabling seamless integration of heterogeneous stakeholders’ perspectives.
+   - No explicit industry standards (e.g., INCOSE, CIRP CMS) or certification frameworks are referenced; compliance is implied through adherence to MBSE methodologies and ADLs.
+"
+]

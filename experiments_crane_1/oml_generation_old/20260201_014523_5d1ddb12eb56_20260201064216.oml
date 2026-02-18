@@ -1,0 +1,147 @@
+// C3: Physical sensing components
+instance SwingAngleEncoder : DTDFVocab:SensingComponent [
+    base:desc "Encoder measuring the swing angle of the crane trolley"
+    DTDFVocab:producedData SwingAngleDataTransmitted
+]
+
+instance AnemometerSensor : DTDFVocab:SensingComponent [
+    base:desc "Anemometer measuring ambient wind speed affecting crane sway"
+    DTDFVocab:producedData AnemometerDataTransmitted
+]
+
+instance MotorControllerEncoder : DTDFVocab:SensingComponent [
+    base:desc "Encoder on the motor controller providing velocity and position feedback"
+    DTDFVocab:producedData MotorControllerDataTransmitted
+]
+
+// C4: Physical‑to‑virtual interaction (DataTransmitted)
+instance SwingAngleDataTransmitted : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom SwingAngleEncoder
+]
+
+instance AnemometerDataTransmitted : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom AnemometerSensor
+]
+
+instance MotorControllerDataTransmitted : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom MotorControllerEncoder
+]
+
+// C10: Data
+instance SwingAngleData : DTDFVocab:Data [
+    base:desc "Time‑stamped swing‑angle measurements from the encoder"
+    DTDFVocab:fromData SwingAngleDataTransmitted
+    DTDFVocab:inputTo TimescaleDBEnabler, ValidationEngineEnabler
+]
+
+instance AnemometerData : DTDFVocab:Data [
+    base:desc "Wind‑speed readings used for disturbance estimation"
+    DTDFVocab:fromData AnemometerDataTransmitted
+    DTDFVocab:inputTo TimescaleDBEnabler, ValidationEngineEnabler
+]
+
+instance MotorControllerData : DTDFVocab:Data [
+    base:desc "Motor velocity and position feedback for control and validation"
+    DTDFVocab:fromData MotorControllerDataTransmitted
+    DTDFVocab:inputTo TimescaleDBEnabler, ValidationEngineEnabler
+]
+
+// C10: Models/Data (CAD & Kinematic)
+instance GantryCraneCADModel : DTDFVocab:Model [
+    base:desc "Geometric CAD representation of the gantry crane structure"
+    DTDFVocab:inputTo GrafanaEnabler
+]
+
+instance GantryCraneKinematicModel : DTDFVocab:Model [
+    base:desc "Kinematic model predicting crane motion and trajectory"
+    DTDFVocab:inputTo KinematicsEngineEnabler, ValidationEngineEnabler
+]
+
+// C11: Enablers
+instance TimescaleDBEnabler : DTDFVocab:Enabler [
+    base:desc "TimescaleDB time‑series database storing logged sensor and actuator traces"
+    DTDFVocab:enables HistoricalLoggingService
+]
+
+instance GrafanaEnabler : DTDFVocab:Enabler [
+    base:desc "Grafana dashboard for interactive visualisation of crane state and trajectory"
+    DTDFVocab:enables InteractiveVisualizationService
+]
+
+instance MQTTBrokerEnabler : DTDFVocab:Enabler [
+    base:desc "Eclipse Mosquitto MQTT broker for inter‑service signalling"
+    DTDFVocab:enables OptimalControlService, ContinuousValidationService
+]
+
+instance KinematicsEngineEnabler : DTDFVocab:Enabler [
+    base:desc "Engine executing the kinematic model to generate motion commands"
+    DTDFVocab:enables OptimalControlService
+]
+
+instance ValidationEngineEnabler : DTDFVocab:Enabler [
+    base:desc "Engine comparing real‑time measurements with the kinematic model to detect deviations"
+    DTDFVocab:enables ContinuousValidationService
+]
+
+// C6: Services
+instance OptimalControlService : DTDFVocab:Service [
+    base:desc "Computes optimal motion commands for the crane based on the kinematic model"
+    DTDFVocab:provides MotionCommandAction
+]
+
+instance HistoricalLoggingService : DTDFVocab:Service [
+    base:desc "Continuously writes time‑stamped sensor and actuator data into TimescaleDB"
+    DTDFVocab:provides HistoricalDataInsight
+]
+
+instance InteractiveVisualizationService : DTDFVocab:Service [
+    base:desc "Provides dashboards to visualise crane state, trajectory and logged data"
+    DTDFVocab:provides CraneStateVisualizationInsight
+]
+
+instance ContinuousValidationService : DTDFVocab:Service [
+    base:desc "Continuously validates real‑time measurements against the kinematic model to detect deviations"
+    DTDFVocab:provides DeviationAlertInsight
+]
+
+// C17: Insights / Actions
+instance MotionCommandAction : DTDFVocab:Action [
+    base:desc "Actuation command sent to the crane motor controllers to achieve the desired motion"
+    DTDFVocab:IsAutomatic true
+]
+
+instance HistoricalDataInsight : DTDFVocab:Insight [
+    base:desc "Access to archived sensor and actuator traces for analysis and algorithm testing"
+]
+
+instance CraneStateVisualizationInsight : DTDFVocab:Insight [
+    base:desc "Real‑time visual representation of crane position, swing angle and trajectory on a dashboard"
+]
+
+instance DeviationAlertInsight : DTDFVocab:Insight [
+    base:desc "Alert generated when measured states deviate from kinematic predictions"
+]
+
+instance virtual_to_physical_interaction : DTDFVocab:VirtualToPhysical [
+    base:desc "The Control Application (implemented in Python) generates motion commands—such as optimal trajectories produced by the Trajectory Generator Service—and sends them to the Physical Crane Interface, which forwards the commands to the crane’s motor controllers. Execution feedback is captured by the Logging Application and stored in the database. Service coordination and command notifications are mediated via the MQTT broker, but the command messages themselves travel over the Python interface to the physical controllers."
+]
+
+instance dt_constellation : DTDFVocab:Constellation [
+    base:desc "The system follows an ad‑hoc, container‑based architecture described with the C4 model. Physical and digital components run as separate Python applications or services packaged as containers. The Logging Application continuously writes crane state data to a TimescaleDB database; the Grafana dashboard visualizes this data. The Trajectory Generator Service creates optimal movement trajectories based on a kinematics model, which are consumed by the Simulation Service and the Control Application to drive the physical crane. The Continuous Validation Service continuously compares measured trajectories with simulated ones, calculates distance metrics, and triggers alerts through the dashboard when thresholds are exceeded. All services exchange messages via an MQTT broker using publish/subscribe semantics, providing the system‑wide coordination mechanism without employing a commercial digital‑twin framework."
+]
+
+instance fidelity_and_validity_considerations : DTDFVocab:FidelityConsideration [
+    base:desc "Model fidelity is ensured through continuous validation approaches, including fault‑detection methods based on time‑series classification and reuse of model validation techniques. The kinematic model’s predictions are continuously compared with logged operational data to detect and correct deviations, and validation outcomes are fed back to update the models, maintaining their accuracy over time."
+]
+
+instance dt_technical_connection : DTDFVocab:TechnicalConnection [
+    base:desc "The digital‑twin components (TimescaleDB, Grafana dashboard, MQTT broker) are containerised with Docker and orchestrated via Docker‑Compose on a single host PC, communicating over the host’s Docker network using TCP/IP. The MQTT broker provides publish/subscribe messaging for inter‑service signalling, while TimescaleDB uses the PostgreSQL protocol for database access. No explicit bandwidth, latency, redundancy, or security mechanisms (e.g., TLS) are described in the documents."
+]
+
+instance dt_hosting_deployment : DTDFVocab:Deployment [
+    base:desc "All software runs on‑premise on a personal computer. Docker containers host the database, MQTT broker and dashboard, launched together with Docker‑Compose. The Python services are distributed as a pip‑installable package named gantrylib. Deployment relies on open‑source tools (TimescaleDB, Grafana, Eclipse Mosquitto) and does not involve cloud or edge platforms. The documents do not detail scalability mechanisms, storage sizing, or high‑availability provisions."
+]
+
+instance standardization : DTDFVocab:Standardization [
+    base:desc "The twin model is expressed in AutomationML, complying with the AutomationML standard for model‑driven engineering and ensuring interoperability with other tools that support this specification. No additional industry standards or certification frameworks are referenced in the documents."
+]

@@ -1,0 +1,152 @@
+// C3: Physical sensing components
+instance PositionSensor : DTDFVocab:SensingComponent [
+    base:desc "Measures the horizontal position of the crane hoist"
+    DTDFVocab:producedData TelemetryStream
+]
+
+instance VelocitySensor : DTDFVocab:SensingComponent [
+    base:desc "Measures velocity of the crane hoist"
+    DTDFVocab:producedData TelemetryStream
+]
+
+instance AccelerationSensor : DTDFVocab:SensingComponent [
+    base:desc "Measures acceleration of the crane hoist"
+    DTDFVocab:producedData TelemetryStream
+]
+
+instance LoadSensor : DTDFVocab:SensingComponent [
+    base:desc "Measures load weight on the crane hoist"
+    DTDFVocab:producedData TelemetryStream
+]
+
+instance StatusSensor : DTDFVocab:SensingComponent [
+    base:desc "Reports status of crane controllers and safety systems"
+    DTDFVocab:producedData TelemetryStream
+]
+
+// C4: Physical-to-virtual interaction
+instance TelemetryStream : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom PositionSensor, VelocitySensor, AccelerationSensor, LoadSensor, StatusSensor
+]
+
+// C10: Data
+instance TelemetryRecord : DTDFVocab:Data [
+    base:desc "Time‑stamped telemetry record containing position, velocity, acceleration, load, and status of the crane"
+    DTDFVocab:fromData TelemetryStream
+    DTDFVocab:inputTo TimescaleDBEnabler, MQTTBrokerEnabler
+]
+
+// C11: Enablers
+instance TimescaleDBEnabler : DTDFVocab:Enabler [
+    base:desc "TimescaleDB instance used for time‑series data storage"
+    DTDFVocab:enables LoggingService
+]
+
+instance MQTTBrokerEnabler : DTDFVocab:Enabler [
+    base:desc "MQTT broker that streams telemetry to downstream services"
+    DTDFVocab:enables SimulationService, ValidationService
+]
+
+instance SimulationEngineEnabler : DTDFVocab:Enabler [
+    base:desc "Simulation engine that uses the kinematic model to generate trajectories"
+    DTDFVocab:enables SimulationService
+]
+
+instance ControlAlgorithmEnabler : DTDFVocab:Enabler [
+    base:desc "Optimal control module that computes control actions based on telemetry and the kinematic model"
+    DTDFVocab:enables ControlService
+]
+
+// C6: Services
+instance MonitoringService : DTDFVocab:Service [
+    base:desc "Service that provides real‑time monitoring of crane state"
+    DTDFVocab:provides FaultDetectionInsight
+]
+
+instance ControlService : DTDFVocab:Service [
+    base:desc "Service that computes optimal control commands for the crane"
+    DTDFVocab:provides MotionStrategyRefinementAction
+]
+
+instance ValidationService : DTDFVocab:Service [
+    base:desc "Service that performs continuous validation overlays of physical and simulated data"
+    DTDFVocab:provides ValidationMetricInsight
+]
+
+instance LoggingService : DTDFVocab:Service [
+    base:desc "Service that logs telemetry data and maintains historical records"
+    DTDFVocab:provides LoggingHealthInsight
+]
+
+instance VisualizationService : DTDFVocab:Service [
+    base:desc "Service that generates interactive dashboards for data visualization"
+    DTDFVocab:provides DashboardDisplayAction
+]
+
+instance SimulationService : DTDFVocab:Service [
+    base:desc "Service that runs simulation of crane kinematics"
+    DTDFVocab:provides SimulationResultInsight
+]
+
+// C17: Insights / Actions
+instance FaultDetectionInsight : DTDFVocab:Insight [
+    base:desc "Insight that identifies potential faults in crane operation based on telemetry anomalies"
+]
+
+instance ValidationMetricInsight : DTDFVocab:Insight [
+    base:desc "Insight that reports deviation metrics between measured and simulated trajectories"
+]
+
+instance LoggingHealthInsight : DTDFVocab:Insight [
+    base:desc "Insight that tracks logging system health and data integrity"
+]
+
+instance SimulationResultInsight : DTDFVocab:Insight [
+    base:desc "Insight that summarizes simulation outputs and trajectory predictions"
+]
+
+instance MotionStrategyRefinementAction : DTDFVocab:Action [
+    base:desc "Action that refines motion strategies to improve control performance"
+    DTDFVocab:IsAutomatic true
+]
+
+instance DashboardDisplayAction : DTDFVocab:Action [
+    base:desc "Action that updates interactive data visualization dashboards"
+    DTDFVocab:IsAutomatic true
+]
+
+// C10: Models
+instance KinematicModel : DTDFVocab:Model [
+    base:desc "Kinematic model of the gantry crane constructed from CAD geometry"
+    DTDFVocab:inputTo SimulationEngineEnabler, ControlAlgorithmEnabler
+]
+
+// C3: Acting Components
+instance PhysicalCraneInterface : DTDFVocab:Component [
+    base:desc "Python program that polls the crane controllers and collects telemetry"
+]
+
+instance LoggingApplication : DTDFVocab:Component [
+    base:desc "Application that writes telemetry into TimescaleDB and publishes via MQTT"
+]
+
+instance SimulationEngineComponent : DTDFVocab:Component [
+    base:desc "Component that executes the simulation engine for trajectory generation"
+]
+
+instance ControlAlgorithmComponent : DTDFVocab:Component [
+    base:desc "Component that runs the optimal control algorithm"
+]
+
+// C17: Environment
+instance LabEnvironment : DTDFVocab:Environment [
+    base:contains PhysicalCraneInterface, LoggingApplication, SimulationEngineComponent, ControlAlgorithmComponent
+]
+
+instance virtual_to_physical_interaction : DTDFVocab:VirtualToPhysical [
+    base:desc "Control commands are issued by the Control Application to the Physical Crane Interface in JSON form, specifying target positions or trajectories generated by the Trajectory Generator Service.  The commands include kinematic parameters such as desired gantry X/Y coordinates and trolley weight distribution.  The Physical Crane Interface validates commands (e.g., bounds checking) before forwarding them to the crane controllers over the same connection used for telemetry.  After command execution, the physical crane emits updated state information that is logged and inspected by the Continuous Validation Service, which alerts operators via the Grafana Dashboard if deviations exceed a pre‑set threshold.  The document does not detail authentication, conflict‑resolution or explicit feedback‑confirmation protocols."
+]
+
+instance dt_technical_connection : DTDFVocab:TechnicalConnection [
+    base:desc "The digital twin’s services communicate through an MQTT broker using the standard MQTT protocol over TCP.  The architecture is therefore a message‑bus based topology where each container (Logging Application, Trajectory Generator, Simulation Service, Continuous Validation Service, digital twin services) acts as a publisher/subscriber on relevant topics.  No further network‑layer details such as bandwidth, latency, redundancy or security mechanisms are described in the document."
+]

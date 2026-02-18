@@ -1,0 +1,217 @@
+// C2: Acting Components
+instance MotorComponent : DTDFVocab:ActingComponent [
+    base:desc "Permanent magnet synchronous motor (input: motor current *I_M*, output: torque *τ_M*)"
+]
+
+instance GearTransmissionComponent : DTDFVocab:ActingComponent [
+    base:desc "Multi-stage gearbox system (standard gearbox + cycloidal gearbox) outputting torque *τ_out* and angular velocity *ω* at robot joint. Torque *τ_G* derived from motor torque *τ_M* via gear ratio. Includes explicit friction modeling"
+]
+
+// C3: Physical Sensing Components
+instance MotorEncoder : DTDFVocab:SensingComponent [
+    base:desc "Positional encoder measuring motor angular position to reduce backlash/positional uncertainty"
+    DTDFVocab:producedData MotorEncoderDataStream
+]
+
+instance SecondaryEncoder : DTDFVocab:SensingComponent [
+    base:desc "Secondary encoder behind gearbox measuring angular position for improved positional accuracy"
+    DTDFVocab:producedData SecondaryEncoderDataStream
+]
+
+instance CurrentSensor : DTDFVocab:SensingComponent [
+    base:desc "Measures motor input current *I_M* for power and torque calculation"
+    DTDFVocab:producedData CurrentSensorDataStream
+]
+
+// C4: Physical-to-Virtual Interaction
+instance MotorEncoderDataStream : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom MotorEncoder
+    base:desc "Real-time angular position data stream from motor encoder via MQTT"
+]
+
+instance SecondaryEncoderDataStream : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom SecondaryEncoder
+    base:desc "Real-time angular position data stream from secondary encoder via MQTT"
+]
+
+instance CurrentSensorDataStream : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom CurrentSensor
+    base:desc "Real-time motor current data stream *I_M* via MQTT"
+]
+
+instance TorqueDataStream : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom MotorComponent
+    base:desc "Derived torque data stream *τ_M* from motor component"
+]
+
+// C10: Models/Data
+instance StructuralModel : DTDFVocab:Model [
+    base:desc "SysML Block Definition Diagram (BDD) and Internal Block Diagram (IBD) describing robot's first axis (motor, gearbox, cycloidal gearbox) and energy flows (rotational torque/current)"
+    DTDFVocab:inputTo MQTTProtocol
+]
+
+instance IdealGearboxModel : DTDFVocab:Model [
+    base:desc "MathWorks MATLAB Simulink model simulating ideal gearbox behavior (torque/velocity relationships)"
+    DTDFVocab:inputTo MATLABSimulink
+]
+
+instance CoulombViscousFrictionModel : DTDFVocab:Model [
+    base:desc "MathWorks MATLAB Simulink model implementing Coulomb-Viscous friction mechanisms for motor and gearbox"
+    DTDFVocab:inputTo MATLABSimulink
+]
+
+instance StribeckFrictionModel : DTDFVocab:Model [
+    base:desc "MathWorks MATLAB Simulink model implementing Stribeck friction behavior for high-speed applications"
+    DTDFVocab:inputTo MATLABSimulink
+]
+
+instance LuGreFrictionModel : DTDFVocab:Model [
+    base:desc "MathWorks MATLAB Simulink model implementing LuGre friction model for dynamic friction characterization"
+    DTDFVocab:inputTo MATLABSimulink
+]
+
+instance MeasuredMotorTorqueData : DTDFVocab:Data [
+    base:desc "Actual motor output torque *τ_M* measured from physical system"
+    DTDFVocab:fromData TorqueDataStream
+    DTDFVocab:inputTo MQTTProtocol
+]
+
+instance MeasuredGearboxTorqueData : DTDFVocab:Data [
+    base:desc "Derived gearbox torque *τ_G* calculated from motor torque via gear ratio"
+    DTDFVocab:fromData TorqueDataStream
+    DTDFVocab:inputTo MATLABSimulink
+]
+
+instance MeasuredSystemOutputData : DTDFVocab:Data [
+    base:desc "Final robot joint output torque *τ_out* and angular velocity *ω* from physical system"
+    DTDFVocab:fromData MotorEncoderDataStream, SecondaryEncoderDataStream
+    DTDFVocab:inputTo MQTTProtocol
+]
+
+instance SimulatedMotorTorqueData : DTDFVocab:Data [
+    base:desc "Simulated motor output torque *τr_M* from friction models for comparison"
+    DTDFVocab:fromData TorqueDataStream
+    DTDFVocab:inputTo MATLABSimulink
+]
+
+instance SimulatedGearboxOutputData : DTDFVocab:Data [
+    base:desc "Simulated gearbox output torque *τr_G* from friction models for comparison"
+    DTDFVocab:fromData MotorEncoderDataStream
+    DTDFVocab:inputTo MATLABSimulink
+]
+
+instance FrictionModelParametersData : DTDFVocab:Data [
+    base:desc "Metadata containing friction model parameters (static, kinetic, viscous coefficients) for model comparison"
+    DTDFVocab:fromData MotorEncoderDataStream
+    DTDFVocab:inputTo MATLABSimulink
+]
+
+instance DataProvenanceMetadata : DTDFVocab:Data [
+    base:desc "Computational provenance metadata linking data points to their origins (MQTT channels, sensor IDs)"
+    DTDFVocab:fromData CurrentSensorDataStream, MotorEncoderDataStream, SecondaryEncoderDataStream
+    DTDFVocab:inputTo MQTTProtocol
+]
+
+// C11: Enablers
+instance MQTTProtocol : DTDFVocab:Enabler [
+    base:desc "MQTT protocol for real-time sensor data streaming (input current *I_M*, motor angle, torque, angular velocity, acceleration)"
+    DTDFVocab:enables RealTimeFrictionIdentificationService, DataVisualizationDashboard
+]
+
+instance MATLABSimulink : DTDFVocab:Enabler [
+    base:desc "MathWorks MATLAB Simulink for simulation models (ideal gearbox behavior, friction models)"
+    DTDFVocab:enables ModelDrivenCorrectionService
+]
+
+instance CustomDashboard : DTDFVocab:Enabler [
+    base:desc "Custom visualization tool integrating live data, simulations, and friction model parameters"
+    DTDFVocab:enables RealTimeFrictionIdentificationService, DataVisualizationDashboard
+]
+
+// C6: Services
+instance RealTimeFrictionIdentificationService : DTDFVocab:Service [
+    base:desc "Continuous, multi-physics-aware identification of joint friction (static, kinetic, viscous) using white-box and black-box models"
+    DTDFVocab:provides FrictionLossInsight, ModelParameterUpdateAction
+]
+
+instance ModelDrivenCorrectionService : DTDFVocab:Service [
+    base:desc "Dynamic exchange of friction models to adjust robot control algorithms, improving motion accuracy by up to 30%"
+    DTDFVocab:provides ControlAlgorithmAdjustmentAction
+]
+
+instance DataVisualizationDashboard : DTDFVocab:Service [
+    base:desc "Unified visualization of live data, simulated vs. measured outputs, and friction model parameters"
+    DTDFVocab:provides OperationalMonitoringInsight
+]
+
+// C17: Insights/Actions
+instance FrictionLossInsight : DTDFVocab:Insight [
+    base:desc "Real-time detection of friction losses (static, kinetic, viscous) and their impact on motion accuracy"
+]
+
+instance ModelParameterUpdateAction : DTDFVocab:Action [
+    base:desc "Dynamic updating of friction models (Coulomb-Viscous, Stribeck, LuGre) based on live measurements"
+    DTDFVocab:IsAutomatic true
+]
+
+instance ControlAlgorithmAdjustmentAction : DTDFVocab:Action [
+    base:desc "Adjustment of control algorithms to compensate for friction-induced inaccuracies"
+    DTDFVocab:IsAutomatic true
+]
+
+instance OperationalMonitoringInsight : DTDFVocab:Insight [
+    base:desc "Dashboard-based visualization of live data and model parameters for troubleshooting and optimization"
+]
+
+// C12: Environment
+instance RobotFirstAxisEnvironment : DTDFVocab:Environment [
+    base:contains MotorComponent, GearTransmissionComponent
+]
+
+instance MABIMAX100RobotEnvironment : DTDFVocab:Environment [
+    base:contains RobotFirstAxisEnvironment, MotorEncoder, SecondaryEncoder, CurrentSensor
+]
+
+instance twinning_time_scale : DTDFVocab:TimeScale [
+    base:desc "The twinning time scale is **real-time and event-driven**:
+  - **Data Acquisition Rate**: Sensor data (e.g., *I_M*, torque, angular velocity) is streamed at high frequency (implied by live measurement requirements for friction modeling).
+  - **Model Update Frequency**: Friction models are continuously updated in real-time during operation, with iterative refinement based on live data (e.g., via black-box model identification).
+  - **Synchronization**: Data traces are aligned with physical events (e.g., robot movements) to ensure temporal coherence between physical and virtual representations."
+]
+
+instance dt_constellation : DTDFVocab:Constellation [
+    base:desc "The DT constellation consists of:
+  - **Core Components**:
+    - **Physical System (PT)**: MABI MAX 100 robot’s first axis (motor, gearbox, encoders).
+    - **Digital Shadow (DS)**: A passive real-time representation of the physical system’s data traces (e.g., *I_M*, *τ_M*, *ω*), linked to models and visualized in a dashboard.
+    - **Processing Layer**: Simulation models (e.g., Coulomb-Viscous friction) and data calculation models (e.g., torque derivation) that process input data traces to generate output traces (e.g., simulated vs. measured torque).
+  - **Orchestration**: Data flows unidirectionally from the physical system to the digital shadow (via MQTT), with no direct virtual-to-physical interaction. The DS serves as a foundational baseline for future digital twin development."
+]
+
+instance life_cycle_stages : DTDFVocab:EvolutionStage [
+    base:desc "The digital twin operates across the following life-cycle stages:
+  - **As Designed**: Structural and behavioral models (SysML Block Definition Diagram, Internal Block Diagram) define the robot’s first axis architecture, including motor, gearbox, and energy flows.
+  - **As Manufactured**: Live sensor data (e.g., *I_M*, torque, angular velocity) is captured during operation to validate and refine friction models.
+  - **As Operated**: Continuous monitoring and model updates during real-time robot operation to maintain accuracy and adapt to wear, load variations, or tooling changes."
+]
+
+instance fidelity_and_validity_considerations : DTDFVocab:FidelityConsideration [
+    base:desc "Fidelity and validity considerations include:
+  - **Model Accuracy**: White-box (analytical) and black-box (data-driven) friction models are dynamically updated to account for wear, load, and temperature variations, ensuring high fidelity to real-world behavior.
+  - **Uncertainty Handling**: Traceability of data provenance (e.g., sensor IDs, model parameters) enables validation of model outputs against measured data, reducing uncertainty in motion accuracy predictions.
+  - **Verification/Validation**: No explicit mention of formal verification/validation mechanisms, but iterative refinement during operation implies empirical validation of friction models."
+]
+
+instance dt_technical_connection : DTDFVocab:TechnicalConnection [
+    base:desc "The technical connection between the physical twin (PT) and digital twin (DT) is implemented via:
+  - **Protocol**: **MQTT** for real-time data streaming from sensors (e.g., motor current, torque, angular velocity).
+  - **Data Linking**: Semantic associations between data traces (e.g., *I_M*, *τ_M*) and their computational origins (e.g., motor encoder, simulation models) via metadata.
+  - **Asset Administration Shell (AAS)**: Implied in the context of integrating structural and behavioral models (SysML) for a cohesive digital representation."
+]
+
+instance standardization : DTDFVocab:Standardization [
+    base:desc "The DT adheres to the following standards:
+  - **Modeling Languages**: **SysML** for system architecture and behavior modeling.
+  - **Digital Shadow Reference Model**: Based on **Kritzinger et al. (2015)** and **Michael et al. (2015)**, extended with three model types (Engineering, Data Calculation, Simulation) and traceability mechanisms.
+  - **Asset Administration Shell (AAS)**: Implied for integrating structural and behavioral models in a cohesive digital representation."
+]

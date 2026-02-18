@@ -9,8 +9,9 @@ Once installed, pull the required models:
 ```bash
 # Example LLM (adjust to desired model, e.g., llama3, qwen, mistral, etc.):
 ollama pull llama3.2
-# Embedding model:
+# Embedding models:
 ollama pull nomic-embed-text
+ollama pull embeddinggemma
 ```
 
 ### 2. (Optional) Install uv
@@ -49,17 +50,18 @@ parser.add_argument("--pdf", default="data/papers/The Incubator Case Study for D
 parser.add_argument("--chunk-size", type=int, default=1500)
 parser.add_argument("--chunk-overlap", type=int, default=200)
 parser.add_argument("--temperature", type=float, default=0.1)
-parser.add_argument("--model-name", default="qwen3:4b")
-parser.add_argument("--embedding-model", default="nomic-embed-text")
+parser.add_argument("--model-name", default="qwen3:8b")
+parser.add_argument("--embedding-model", default="embeddinggemma")
 parser.add_argument("--exp-id", help="Existing experiment id (hash_timestamp or just hash for latest) containing characteristics for standalone OML generation")
 parser.add_argument("--no-save", action="store_true", help="Do not persist results")
-parser.add_argument("--no-regenerate-db", action="store_true", help="Do not regenerate the vector database even if it exists")
-parser.add_argument("--no-oml-validation", action="store_true", help="Skip OML validation step")
+parser.add_argument("--keep-db", action="store_true", help="Keep the vector database even if it exists")
+parser.add_argument("--max-judge-retries", type=int, default=2, help="Maximum retries for low-confidence judge evaluations. Set to 0 to disable judging.")
+parser.add_argument("--max-oml-retries", type=int, default=3, help="Maximum retries for OML generation validation. Set to 0 to skip validation.")
 ```
 
 ## Analyzing results
 
 Full command for analyzing results and generating a report/figures.
 ```bash
-uv run src\results_visualizer.py analyze --experiments-dir experiments --dashboard --show --report
+uv run src\viz\results_visualizer.py analyze --experiments-dir experiments --dashboard --show --report
 ```

@@ -1,0 +1,142 @@
+// C3: Physical sensing components
+instance SwingAngleEncoder : DTDFVocab:SensingComponent [
+    base:desc "Swing‑angle encoder mounted on the gantry beam measuring angular deviation"
+    DTDFVocab:producedData EncoderTransmission
+]
+
+instance Anemometer : DTDFVocab:SensingComponent [
+    base:desc "Miniature anemometer integrated at the crane tip to monitor airflow"
+    DTDFVocab:producedData AnemometerTransmission
+]
+
+// C4: Physical-to-virtual interaction
+instance EncoderTransmission : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom SwingAngleEncoder
+]
+
+instance AnemometerTransmission : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom Anemometer
+]
+
+// C10: Models/Data
+instance CADModel : DTDFVocab:Model [
+    base:desc "CAD representation of the gantry crane exported from Autodesk Fusion 360 as a STEP file"
+]
+
+instance KinematicModel : DTDFVocab:Model [
+    base:desc "Geometric kinematic model used by the Trajectory Generator Service to synthesize feasible motion plans"
+    DTDFVocab:inputTo TrajectoryGeneratorEnabler
+]
+
+instance SimulationModel : DTDFVocab:Model [
+    base:desc "Physics‑based simulation model used by the Simulation Service to emulate crane dynamics"
+    DTDFVocab:inputTo SimulationEnabler
+]
+
+// C10: Data instances
+instance EncoderTelemetryData : DTDFVocab:Data [
+    base:desc "Telemetry data stream from the swing‑angle encoder"
+    DTDFVocab:fromData EncoderTransmission
+    DTDFVocab:inputTo MQTTBrokerEnabler, TimescaleDBEnabler
+]
+
+instance AnemometerTelemetryData : DTDFVocab:Data [
+    base:desc "Telemetry data stream from the anemometer"
+    DTDFVocab:fromData AnemometerTransmission
+    DTDFVocab:inputTo MQTTBrokerEnabler, TimescaleDBEnabler
+]
+
+// C11: Enablers
+instance MQTTBrokerEnabler : DTDFVocab:Enabler [
+    base:desc "Eclipse Mosquitto broker handling publish/subscribe traffic between the physical controller and cloud services"
+    DTDFVocab:enables MonitoringService
+]
+
+instance TimescaleDBEnabler : DTDFVocab:Enabler [
+    base:desc "TimescaleDB database storing high‑frequency sensor logs with efficient retention"
+    DTDFVocab:enables HistoricalLoggingService
+]
+
+instance TrajectoryGeneratorEnabler : DTDFVocab:Enabler [
+    base:desc "Trajectory Generator Service synthesises feasible motion plans using the kinematic model"
+    DTDFVocab:enables ControlSuggestionService
+]
+
+instance SimulationEnabler : DTDFVocab:Enabler [
+    base:desc "Physics‑based Simulation Service emulates crane dynamics for validation and prediction"
+    DTDFVocab:enables ValidationService
+]
+
+instance VisualizationDashboardEnabler : DTDFVocab:Enabler [
+    base:desc "Grafana dashboard visualising telemetry streams queried from TimescaleDB"
+    DTDFVocab:enables VisualizationService
+]
+
+// C6: Services
+instance MonitoringService : DTDFVocab:Service [
+    base:desc "Monitors live crane operational data and provides real‑time status"
+    DTDFVocab:provides MonitoringInsight
+]
+
+instance ControlSuggestionService : DTDFVocab:Service [
+    base:desc "Provides optimal control suggestions to improve motion efficiency"
+    DTDFVocab:provides OptimalControlSuggestionAction
+]
+
+instance HistoricalLoggingService : DTDFVocab:Service [
+    base:desc "Logs historical crane data for trend analysis"
+    DTDFVocab:provides HistoricalTrendInsight
+]
+
+instance VisualizationService : DTDFVocab:Service [
+    base:desc "Provides data visualization interfaces via Grafana dashboard"
+    DTDFVocab:provides VisualizationAction
+]
+
+instance ValidationService : DTDFVocab:Service [
+    base:desc "Compares live measurements against the kinematic model to detect deviations"
+    DTDFVocab:provides DeviationDetectionInsight
+]
+
+// C17: Insights/Actions
+instance MonitoringInsight : DTDFVocab:Insight [
+    base:desc "Insight into real‑time crane operation status"
+]
+
+instance OptimalControlSuggestionAction : DTDFVocab:Action [
+    base:desc "Action recommending motion plan adjustments to improve efficiency"
+    DTDFVocab:IsAutomatic true
+]
+
+instance HistoricalTrendInsight : DTDFVocab:Insight [
+    base:desc "Insight into historical trends of crane telemetry"
+]
+
+instance VisualizationAction : DTDFVocab:Action [
+    base:desc "Action to render data visualisation on Grafana"
+    DTDFVocab:IsAutomatic false
+]
+
+instance DeviationDetectionInsight : DTDFVocab:Insight [
+    base:desc "Insight indicating deviations between live data and kinematic model"
+]
+
+instance virtual_to_physical_interaction : DTDFVocab:VirtualToPhysical [
+    base:desc "Control commands originate from the Control Application, which utilizes the Physical Crane Interface to send instructions to the crane hardware. Commands are issued via Python function calls to the interface, which then transmits the control signals to the crane controllers. The documentation does not detail the exact command format, authentication, validation, feedback, conflict resolution, or execution confirmation mechanisms employed."
+]
+
+instance twinning_time_scale : DTDFVocab:TimeScale [
+    base:desc "The twin operates continuously: a sensor‑reading service streams raw data from the Raspberry‑Pi mounted on the gantry crane, which is immediately published to an MQTT broker. A state‑comparison service in the twin consumes these messages in real time, continuously comparing current measurements against the digital model. All measurement streams are ingested into a TimescaleDB time‑series database for subsequent analysis. No explicit periodic sampling interval or latency limits are defined in the documentation."
+]
+
+instance dt_constellation : DTDFVocab:Constellation [
+    base:desc "The system is orchestrated by Docker Compose, which deploys six Docker containers: (1) the physical crane control container, (2) the sensor data collector, (3) the MQTT broker for intra‑system messaging, (4) the Twin core service that performs continuous state comparison, (5) the analytics/logic service, and (6) the TimescaleDB time‑series database used as the persistent log of all sensor data and twin states. All components interact via MQTT topics; the Twin core publishes updates back to the physical control container, and both the sensor collector and Twin core write to and read from TimescaleDB. No physical crane simulator is employed; all operations involve the actual boot‑up hardware."
+]
+
+instance fidelity_and_validity_considerations : DTDFVocab:FidelityConsideration [
+    base:desc "A Continuous Validation Service operates concurrently with physical operations, continuously comparing real‑time sensor measurements against simulated trajectory predictions. The service computes Euclidean distance metrics between measured and simulated positions and flags deviations exceeding an adjustable threshold (e.g., 10 mm). Fault detection routines monitor anomalous motor currents and wind gusts. Validation includes unit testing of the kinematic model, integration testing of the Simulation Service, and periodic integrity checks of the TimescaleDB records. Quality assurance is achieved through automated regression testing of the twin pipeline and manual verification during system commissioning."
+]
+
+instance dt_technical_connection : DTDFVocab:TechnicalConnection [
+    base:desc "The digital twin’s internal services communicate via a local MQTT broker, which facilitates signaling between the Trajectory Generator Service, Simulation Service, Continuous Validation Service, and other components. PostgreSQL (TimescaleDB) serves as the time‑series database backend, accessed using the standard PostgreSQL protocol. Grafana connects to the database over HTTP to render dashboards. The document does not specify additional network protocols, topologies, bandwidth or latency requirements, or explicit reliability or security mechanisms beyond the presence of MQTT broker communication."
+]

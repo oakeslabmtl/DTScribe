@@ -1,0 +1,174 @@
+// ====================================================
+// C2: Acting Components
+// ====================================================
+instance HoistStepperMotor : DTDFVocab:ActingComponent [
+    base:desc "Stepper motor driving the hoist, controlled via a TMC4671‑Eval motor controller"
+]
+
+instance GantryHorizontalActuator : DTDFVocab:ActingComponent [
+    base:desc "Horizontal motion actuator of the gantry structure, driven by the same motor controller setup"
+]
+
+// ====================================================
+// C3: Physical Sensing Components
+// ====================================================
+instance SwingAngleEncoder : DTDFVocab:SensingComponent [
+    base:desc "Encoder measuring the swing angle of the loaded container"
+    DTDFVocab:producedData SwingAngleDataTransmitted
+]
+
+instance Anemometer : DTDFVocab:SensingComponent [
+    base:desc "Wind speed sensor providing environmental data for the crane operation"
+    DTDFVocab:producedData WindSpeedDataTransmitted
+]
+
+instance MotorStateSensor : DTDFVocab:SensingComponent [
+    base:desc "Sensor (via Arduino) exposing motor current, speed and fault status from the TMC4671 controller"
+    DTDFVocab:producedData MotorStateDataTransmitted
+]
+
+// ====================================================
+// C4: Physical‑to‑Virtual Interaction (Data Transmitted)
+// ====================================================
+instance SwingAngleDataTransmitted : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom SwingAngleEncoder
+]
+
+instance WindSpeedDataTransmitted : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom Anemometer
+]
+
+instance MotorStateDataTransmitted : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom MotorStateSensor
+]
+
+// ====================================================
+// C10: Data Objects
+// ====================================================
+instance SwingAngleData : DTDFVocab:Data [
+    base:desc "Timestamped swing‑angle measurement stream"
+    DTDFVocab:fromData SwingAngleDataTransmitted
+    DTDFVocab:inputTo TimescaleDBEnabler, MQTTBrokerEnabler
+]
+
+instance WindSpeedData : DTDFVocab:Data [
+    base:desc "Timestamped wind‑speed measurement stream"
+    DTDFVocab:fromData WindSpeedDataTransmitted
+    DTDFVocab:inputTo TimescaleDBEnabler, MQTTBrokerEnabler
+]
+
+instance MotorStateData : DTDFVocab:Data [
+    base:desc "Timestamped motor state (current, speed, fault flags) stream"
+    DTDFVocab:fromData MotorStateDataTransmitted
+    DTDFVocab:inputTo TimescaleDBEnabler, MQTTBrokerEnabler
+]
+
+// ====================================================
+// C11: Enablers (Tools & Platforms)
+// ====================================================
+instance TimescaleDBEnabler : DTDFVocab:Enabler [
+    base:desc "TimescaleDB time‑series database storing all raw and processed crane data"
+    DTDFVocab:enables LoggingService
+]
+
+instance MQTTBrokerEnabler : DTDFVocab:Enabler [
+    base:desc "Eclipse Mosquitto MQTT broker mediating inter‑service messaging"
+    DTDFVocab:enables TrajectoryGeneratorService,
+                      SimulationService,
+                      ContinuousValidationService,
+                      GrafanaDashboardService
+]
+
+// ====================================================
+// C6: Services (Containerised Twin Services)
+// ====================================================
+instance TrajectoryGeneratorService : DTDFVocab:Service [
+    base:desc "Generates swing‑free optimal trajectories using the kinematic model"
+    DTDFVocab:provides OptimalTrajectoryInsight, ExecutePlannedTrajectoryAction
+]
+
+instance SimulationService : DTDFVocab:Service [
+    base:desc "Runs a dynamic simulation of the crane and its controllers for any given trajectory"
+    DTDFVocab:provides PredictedOutcomeInsight, EvaluateAlternativeTrajectoryAction
+]
+
+instance ContinuousValidationService : DTDFVocab:Service [
+    base:desc "Continuously validates live trajectories against simulation, raises alerts on threshold breaches"
+    DTDFVocab:provides AnomalyDetectionInsight, AlertOperatorAction
+]
+
+instance LoggingService : DTDFVocab:Service [
+    base:desc "Records all crane state vectors into TimescaleDB"
+    DTDFVocab:provides RecordCraneStateAction
+]
+
+instance GrafanaDashboardService : DTDFVocab:Service [
+    base:desc "Visualises real‑time and historical data, trajectory traces and confidence bounds"
+    DTDFVocab:provides RealTimeVisualizationInsight, DisplayAlertAction
+]
+
+// ====================================================
+// C17: Insights & Actions
+// ====================================================
+// Insights
+instance OptimalTrajectoryInsight : DTDFVocab:Insight [
+    base:desc "Optimal swing‑free motion trajectory computed for a requested container move"
+]
+
+instance PredictedOutcomeInsight : DTDFVocab:Insight [
+    base:desc "Predicted crane response and controller behaviour for a planned trajectory"
+]
+
+instance AnomalyDetectionInsight : DTDFVocab:Insight [
+    base:desc "Detected deviation between measured and simulated trajectories exceeding the configured threshold"
+]
+
+instance RealTimeVisualizationInsight : DTDFVocab:Insight [
+    base:desc "Live visual representation of measured vs. simulated trajectories with confidence bounds"
+]
+
+// Actions
+instance ExecutePlannedTrajectoryAction : DTDFVocab:Action [
+    base:desc "Command the Control Application to execute the generated optimal trajectory"
+    DTDFVocab:IsAutomatic false
+]
+
+instance EvaluateAlternativeTrajectoryAction : DTDFVocab:Action [
+    base:desc "Allow operator to compare alternative trajectories before execution"
+    DTDFVocab:IsAutomatic false
+]
+
+instance AlertOperatorAction : DTDFVocab:Action [
+    base:desc "Send an alert to the operator via the Grafana dashboard when validation fails"
+    DTDFVocab:IsAutomatic true
+]
+
+instance RecordCraneStateAction : DTDFVocab:Action [
+    base:desc "Persist incoming crane state data into TimescaleDB"
+    DTDFVocab:IsAutomatic true
+]
+
+instance DisplayAlertAction : DTDFVocab:Action [
+    base:desc "Show validation or fault alerts on the Grafana dashboard"
+    DTDFVocab:IsAutomatic true
+]
+
+instance virtual_to_physical_interaction : DTDFVocab:VirtualToPhysical [
+    base:desc "Control commands are generated by digital‑twin services (e.g., the Trajectory Generator Service) and sent to the physical crane through the Physical Crane Interface. The Control Application, a Python application, receives optimal trajectory specifications, translates them into low‑level motor commands for the cart and hoist controllers, and issues them over the same Python‑based connection used for the interface, presumably via the Arduino or direct controller links. Execution feedback is provided by the crane’s sensors, logged by the Logging Application, and can trigger alerts through the Continuous Validation Service. Confirmation of command execution is thus observable in the logged state, but the documents do not describe any specific authentication, validation, or conflict‑resolution mechanisms for the commands."
+]
+
+instance dt_constellation : DTDFVocab:Constellation [
+    base:desc "The system is orchestrated with Docker‑Compose, which launches all containers and defines a common virtual network. A service‑oriented architecture is used: the Simulation Service, Trajectory Generator Service, and Continuous Validation Service interact with the shared TimescaleDB for persistent data and publish/subscribe to the MQTT broker for event‑driven coordination. The Grafana Dashboard visualizes data from the database and receives notifications via MQTT. Python applications implement the functional services, and the overall pattern follows a central message‑broker with shared persistence, providing resource management through container isolation and Docker orchestration."
+]
+
+instance fidelity_and_validity_considerations : DTDFVocab:FidelityConsideration [
+    base:desc "Model fidelity is addressed through a Continuous Validation Service that continuously compares measured trajectory data from the physical crane with the corresponding simulated trajectory generated by the Simulation Service. The service computes distance metrics between measured and simulated states, checks them against a predefined acceptable threshold, and raises alerts on the Grafana dashboard when the threshold is exceeded. Validation methods are based on the continuous validation approach presented in the authors’ prior publications, and fault detection research extends this with time‑series classification techniques applied to the logged data. No explicit uncertainty quantification or error correction mechanisms are described in the documents."
+]
+
+instance dt_technical_connection : DTDFVocab:TechnicalConnection [
+    base:desc "All software components run on a single personal computer. Dockerized services (TimescaleDB database, Grafana dashboard, and the Eclipse Mosquitto MQTT broker) communicate over Docker’s internal TCP/IP network. Inter‑service signaling between the Python containers (Control Application, Logging Application, Trajectory Generator, Simulation, Continuous Validation) is performed via MQTT topics on the broker. The Physical Crane Interface communicates with the Arduino and motor controllers over a local serial/USB link; the precise protocol is not specified. The documents do not mention explicit bandwidth or latency requirements, redundancy schemes, or security protocols such as TLS for MQTT."
+]
+
+instance dt_hosting_deployment : DTDFVocab:Deployment [
+    base:desc "The exemplar is hosted on‑premise on a personal computer. The Python code is delivered as the pip‑installable package gantrylib, while the database, dashboard, and MQTT broker are provided as Docker containers orchestrated with a docker‑compose file that also handles first‑time initialization of TimescaleDB and Grafana. Computational requirements are modest—any PC capable of running Python and Docker is sufficient—and storage is supplied by TimescaleDB for time‑series data. Scalability is achieved through Docker compose, allowing additional containers or replicas to be added on other machines. Availability relies on the underlying PC and Docker runtime; no cloud platform, high‑availability, or explicit reliability mechanisms are described."
+]

@@ -11,6 +11,10 @@ class IOMLWriter(ABC):
         """Write OML content to specified path."""
         pass
 
+    def _combine_oml_with_validation_errors(self, oml_content: str, validation_errors: str) -> str:
+        """Combine OML content with validation errors."""
+        pass
+
 class OMLFileWriter(IOMLWriter):
     """Concrete implementation for writing OML to files following SRP."""
     
@@ -77,14 +81,14 @@ class OMLFileWriter(IOMLWriter):
                     continue
                 m = re.match(r"^\[(\d+),\s*(\d+)\]:\s*(.+)$", raw)
                 if not m:
-                    # If the line doesn't match expected pattern, attach it as a general note to line 1
-                    line_errors.setdefault(1, []).append(raw)
+                    # If the line doesn't match expected pattern, skip it.
+                    # This avoids attaching general logs or XML output to line 1.
                     continue
-                line_num = int(m.group(1)) - 6  # Adjust index for header lines
+                line_num = max(1, int(m.group(1)) - 6)  # Adjust index for header lines and clamp to 1
                 col_num = int(m.group(2))
                 message = m.group(3).strip()
                 # Compose concise inline comment keeping column info
-                comment = f"TODO: Fix the error on this line helped with this error message: '{message}'"
+                comment = f"TODO: Fix the error on this line using the following error message: '{message}'"
                 line_errors.setdefault(line_num, []).append(comment)
 
         # Append errors as inline comments at the end of their respective lines

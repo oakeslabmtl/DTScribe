@@ -1,0 +1,244 @@
+// ----------------------------------------------------
+// C3: Physical sensing components
+// ----------------------------------------------------
+instance HokuyoLiDARSensor : DTDFVocab:SensingComponent [
+    base:desc "Hokuyo UST‑10LX 2‑D LiDAR providing distance measurements and raw point‑cloud data"
+    DTDFVocab:producedData LiDARPointCloudDataTransmitted
+]
+
+instance IntelDepthCameraSensor : DTDFVocab:SensingComponent [
+    base:desc "Intel DeepSense D435i depth camera delivering RGB‑D image frames for visual perception"
+    DTDFVocab:producedData DepthImageDataTransmitted
+]
+
+instance ChassisEncoderSensor : DTDFVocab:SensingComponent [
+    base:desc "Chassis encoder subsystem deriving ego‑vehicle speed and steering angle"
+    DTDFVocab:producedData VehicleStateDataTransmitted
+]
+
+// ----------------------------------------------------
+// C4: DataTransmitted (raw)
+ // ----------------------------------------------------
+instance LiDARPointCloudDataTransmitted : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom HokuyoLiDARSensor
+]
+
+instance DepthImageDataTransmitted : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom IntelDepthCameraSensor
+]
+
+instance VehicleStateDataTransmitted : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom ChassisEncoderSensor
+]
+
+// ----------------------------------------------------
+// C10: Raw Data (originating from sensors)
+// ----------------------------------------------------
+instance LiDARPointCloudData : DTDFVocab:Data [
+    base:desc "Raw 3‑D point‑cloud stream emitted by the Hokuyo LiDAR"
+    DTDFVocab:fromData LiDARPointCloudDataTransmitted
+    DTDFVocab:inputTo PointCloudProcessingEnabler
+]
+
+instance DepthImageData : DTDFVocab:Data [
+    base:desc "RGB‑D image frames emitted by the Intel depth camera"
+    DTDFVocab:fromData DepthImageDataTransmitted
+    DTDFVocab:inputTo VisionProcessingEnabler
+]
+
+instance VehicleStateData : DTDFVocab:Data [
+    base:desc "Ego‑vehicle speed and steering angle derived from chassis encoders"
+    DTDFVocab:fromData VehicleStateDataTransmitted
+    DTDFVocab:inputTo ACCProcessingEnabler
+]
+
+// ----------------------------------------------------
+// C10: Processed Data (output of models)
+// ----------------------------------------------------
+instance ObjectTrackData : DTDFVocab:Data [
+    base:desc "Time‑series of clustered and Kalman‑filtered object tracks derived from LiDAR point clouds"
+    DTDFVocab:fromData LiDARPointCloudDataTransmitted
+    DTDFVocab:inputTo VisualizationEngineEnabler
+]
+
+instance ACCDecisionData : DTDFVocab:Data [
+    base:desc "Desired longitudinal acceleration command produced by the ACC control model"
+    DTDFVocab:fromData VehicleStateDataTransmitted
+    DTDFVocab:inputTo ACCExecutorEnabler
+]
+
+// ----------------------------------------------------
+// C10: Models (algorithmic entities)
+// ----------------------------------------------------
+instance PointCloudClusteringTrackingModel : DTDFVocab:Model [
+    base:desc "DBSCAN clustering followed by Kalman filter tracking of LiDAR point clouds"
+    DTDFVocab:inputTo PointCloudProcessingEnabler
+]
+
+instance ACCControlModel : DTDFVocab:Model [
+    base:desc "ISO‑15622 Performance Class I adaptive cruise control algorithm executed off‑board"
+    DTDFVocab:inputTo ACCProcessingEnabler
+]
+
+instance Visualization3DModel : DTDFVocab:Model [
+    base:desc "3‑D rendering model for visualizing vehicle state, projected path and object tracks"
+    DTDFVocab:inputTo VisionProcessingEnabler
+]
+
+// ----------------------------------------------------
+// C11: Enablers (middleware / compute)
+// ----------------------------------------------------
+instance ROS2MiddlewareEnabler : DTDFVocab:Enabler [
+    base:desc "ROS 2 middleware managing node lifecycles for sensor acquisition and model execution"
+    DTDFVocab:enables DataMonitoringService,
+                    ComputationOffloadingService,
+                    RemoteManagementService
+]
+
+instance PointCloudProcessingEnabler : DTDFVocab:Enabler [
+    base:desc "Processing node that runs the point‑cloud clustering & tracking model"
+    DTDFVocab:enables DataMonitoringService
+]
+
+instance VisionProcessingEnabler : DTDFVocab:Enabler [
+    base:desc "Processing node that runs the 3‑D visualization model on GPU (NVIDIA JetPack)"
+    DTDFVocab:enables DataMonitoringService
+]
+
+instance ACCProcessingEnabler : DTDFVocab:Enabler [
+    base:desc "Processing node that runs the ACC control model in cloud/edge environment"
+    DTDFVocab:enables ComputationOffloadingService
+]
+
+instance ACCExecutorEnabler : DTDFVocab:Enabler [
+    base:desc "Executor that transmits ACCDecisionData back to the physical twin for actuation"
+    DTDFVocab:enables ComputationOffloadingService
+]
+
+instance VisualizationEngineEnabler : DTDFVocab:Enabler [
+    base:desc "GPU‑accelerated visualization engine presenting real‑time state and tracks"
+    DTDFVocab:enables DataMonitoringService
+]
+
+instance RemoteControlInterfaceEnabler : DTDFVocab:Enabler [
+    base:desc "OPC‑UA (IEC 62541) interface allowing operator UI to enable/disable ACC, set speed, or trigger emergency brake"
+    DTDFVocab:enables RemoteManagementService
+]
+
+// ----------------------------------------------------
+// C6: Services
+// ----------------------------------------------------
+instance DataMonitoringService : DTDFVocab:Service [
+    base:desc "Real‑time UI visualizing ego‑vehicle state, projected path and object tracks"
+    DTDFVocab:provides RealTimeVehicleStateInsight,
+                    ObjectTracksInsight,
+                    ProjectedPathInsight
+]
+
+instance ComputationOffloadingService : DTDFVocab:Service [
+    base:desc "Off‑board execution of the ACC algorithm with results streamed back to the physical twin"
+    DTDFVocab:provides ACCCommandAction
+]
+
+instance RemoteManagementService : DTDFVocab:Service [
+    base:desc "Operator‑driven enable/disable of ACC, desired‑speed adjustment and emergency‑brake activation"
+    DTDFVocab:provides EnableACCAction,
+                    AdjustSpeedAction,
+                    EmergencyBrakeAction
+]
+
+// ----------------------------------------------------
+// C17: Insights
+// ----------------------------------------------------
+instance RealTimeVehicleStateInsight : DTDFVocab:Insight [
+    base:desc "Live visualization of ego‑vehicle speed and steering angle"
+]
+
+instance ObjectTracksInsight : DTDFVocab:Insight [
+    base:desc "Real‑time display of clustered and tracked objects around the vehicle"
+]
+
+instance ProjectedPathInsight : DTDFVocab:Insight [
+    base:desc "Projected future trajectory based on current speed and ACC decisions"
+]
+
+// ----------------------------------------------------
+// C17: Actions
+// ----------------------------------------------------
+instance ACCCommandAction : DTDFVocab:Action [
+    base:desc "Desired acceleration command transmitted to the physical twin for speed control"
+    DTDFVocab:IsAutomatic true
+]
+
+instance EnableACCAction : DTDFVocab:Action [
+    base:desc "Operator request to enable adaptive cruise control"
+    DTDFVocab:IsAutomatic false
+]
+
+instance AdjustSpeedAction : DTDFVocab:Action [
+    base:desc "Operator set‑point for desired cruising speed"
+    DTDFVocab:IsAutomatic false
+]
+
+instance EmergencyBrakeAction : DTDFVocab:Action [
+    base:desc "Immediate brake command triggered by operator or safety logic"
+    DTDFVocab:IsAutomatic true
+]
+
+// ----------------------------------------------------
+// C2: Acting Components
+// ----------------------------------------------------
+instance VedderESCActuator : DTDFVocab:ActingComponent [
+    base:desc "Vedder electronic speed controller receiving motor voltage commands to control vehicle speed"
+]
+
+instance SteeringServoActuator : DTDFVocab:ActingComponent [
+    base:desc "Steering servo receiving angle commands to steer the vehicle"
+]
+
+// ----------------------------------------------------
+// C5: Environment (hardware scope)
+// ----------------------------------------------------
+instance VehicleHardwareEnvironment : DTDFVocab:Environment [
+    base:contains VedderESCActuator,
+                 SteeringServoActuator,
+                 HokuyoLiDARSensor,
+                 IntelDepthCameraSensor,
+                 ChassisEncoderSensor
+]
+
+instance virtual_to_physical_interaction : DTDFVocab:VirtualToPhysical [
+    base:desc "The DT sends control commands back to the PT: desired speed values for the ESC, enable/disable ACC flags, emergency‑brake commands, and steering adjustments. These commands are issued by the Controlling Functional Entity (ACC) and the Actuation Functional Entity on the Physical Twin Entity."
+]
+
+instance twinning_time_scale : DTDFVocab:TimeScale [
+    base:desc "The system operates in real‑time with a hard end‑to‑end latency bound of ≤100 ms (per 3GPP TS 22.185) and clock synchronization accuracy of 100 ms across all DTS components; data collection and ACC computation occur at each perception cycle (on the order of tens of milliseconds)."
+]
+
+instance dt_constellation : DTDFVocab:Constellation [
+    base:desc "The constellation orchestrates a Physical Twin Entity (sensor acquisition and actuation), a Digital Twin Entity (data collection, ACC computation, visualization, reporting), a User Entity (UI for monitoring and remote commands), and a Cross‑System Data Translation Entity; intra‑entity messaging uses ROS 2 topics, inter‑entity communication uses Wi‑Fi over standardized interfaces."
+]
+
+instance life_cycle_stages : DTDFVocab:EvolutionStage [
+    base:desc "The DT is employed during the design and development phase as a high‑fidelity simulation/experiment platform, and during operation as a monitoring, optimization and remote‑control platform for the running vehicle."
+]
+
+instance fidelity_and_validity_considerations : DTDFVocab:FidelityConsideration [
+    base:desc "High fidelity is achieved by using raw sensor data (LiDAR, camera) and real‑time processing; validity is ensured through latency ≤100 ms, clock sync ≤100 ms, compliance with ISO 15622 ACC safety class, and continuous UI reporting for operator verification."
+]
+
+instance dt_technical_connection : DTDFVocab:TechnicalConnection [
+    base:desc "Components communicate via a standardized interface (R1) implemented with ROS 2 messages within the DT and Wi‑Fi links for PT‑DT exchange; the Data Translation FE handles serialization, message‑type alignment and unit conversion, and OPC UA is suggested as an optional transport protocol."
+]
+
+instance dt_hosting_deployment : DTDFVocab:Deployment [
+    base:desc "The Digital Twin Entity runs on external compute resources (cloud or edge server), the Physical Twin Entity executes on the vehicle‑mounted NVIDIA Jetson Orin Nano, and the User Entity UI runs on a workstation or browser client; each entity is packaged as ROS 2 nodes deployed on its respective hardware."
+]
+
+instance standardization : DTDFVocab:Standardization [
+    base:desc "The system follows ISO 23247 reference architecture, ISO 15622 for ACC functional requirements, ISO/IEC 30173:2023 for digital‑twin terminology, and leverages 3GPP TS 22.185 latency guidelines; optional OPC UA (IEC 62541) may be used for data exchange."
+]
+
+instance security_and_safety_considerations : DTDFVocab:SecuritySafety [
+    base:desc "Safety considerations include adherence to ISO 15622 ACC class‑I requirements, strict latency (≤100 ms) and clock‑sync (≤100 ms) constraints, and remote command validation via the UI. Security measures are not explicitly described in the document."
+]

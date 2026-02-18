@@ -1,0 +1,156 @@
+// C3: Physical sensing components
+instance LiDARPointCloudSensor : DTDFVocab:SensingComponent [
+    base:desc "Advanced LiDAR sensor that generates point‑cloud data for clustering and tracking of nearby objects"
+    DTDFVocab:producedData LiDARPointCloudDataTransmitted
+]
+
+instance VehicleTelemetrySensor : DTDFVocab:SensingComponent [
+    base:desc "Telemetry sensor suite providing vehicle speed, position, motor state, and steering servo position"
+    DTDFVocab:producedData VehicleTelemetryDataTransmitted
+]
+
+// C4: Physical-to-virtual interaction (Data Transmitted)
+instance LiDARPointCloudDataTransmitted : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom LiDARPointCloudSensor
+]
+
+instance VehicleTelemetryDataTransmitted : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom VehicleTelemetrySensor
+]
+
+// C10: Data
+instance ClusteredObjectTracksData : DTDFVocab:Data [
+    base:desc "Clustered object tracks derived from raw LiDAR point‑cloud data"
+    DTDFVocab:fromData LiDARPointCloudDataTransmitted
+    DTDFVocab:inputTo DataTranslationEnabler
+]
+
+instance VehicleStateData : DTDFVocab:Data [
+    base:desc "Vehicle state data (speed, position, motor and steering status) used for ACC computation and remote management"
+    DTDFVocab:fromData VehicleTelemetryDataTransmitted
+    DTDFVocab:inputTo ACCComputationEnabler
+    DTDFVocab:inputTo RemoteManagementEnabler
+]
+
+// C10: Models
+instance PointCloudProcessingModel : DTDFVocab:Model [
+    base:desc "Software component that clusters LiDAR point‑clouds and produces object tracks"
+    DTDFVocab:inputTo DataTranslationEnabler
+]
+
+instance ACCBehaviorModel : DTDFVocab:Model [
+    base:desc "Adaptive Cruise Control (ACC) model that determines lead vehicle, computes desired speed, and returns it for actuation"
+    DTDFVocab:inputTo ACCComputationEnabler
+]
+
+// C11: Enablers
+instance DataTranslationEnabler : DTDFVocab:Enabler [
+    base:desc "ISO 23247 Data Translation functional entity that serialises, aligns, and converts incoming sensor streams"
+    DTDFVocab:enables DataMonitoringService
+]
+
+instance ACCComputationEnabler : DTDFVocab:Enabler [
+    base:desc "Enabler that hosts the ACC behavioral model and performs off‑board speed computation in the cloud"
+    DTDFVocab:enables ComputationOffloadingService
+]
+
+instance RemoteManagementEnabler : DTDFVocab:Enabler [
+    base:desc "Functional entity that processes operator commands for ACC enable/disable, target speed setting, and emergency braking"
+    DTDFVocab:enables RemoteManagementService
+]
+
+// C6: Services
+instance DataMonitoringService : DTDFVocab:Service [
+    base:desc "Provides a web‑based UI that streams real‑time vehicle state, projected path, and object tracks; allows data view, save, and reporting"
+    DTDFVocab:provides RealTimeVehicleStateInsight
+    DTDFVocab:provides ViewRealTimeStateAction
+]
+
+instance ComputationOffloadingService : DTDFVocab:Service [
+    base:desc "Runs the ACC algorithm in the cloud and returns the desired speed to the vehicle for actuation"
+    DTDFVocab:provides DesiredSpeedComputationAction
+    DTDFVocab:provides DesiredSpeedInsight
+]
+
+instance RemoteManagementService : DTDFVocab:Service [
+    base:desc "Enables operators to enable/disable ACC, set target speed, and issue emergency brake commands via the UI"
+    DTDFVocab:provides EnableACCAction
+    DTDFVocab:provides SetTargetSpeedAction
+    DTDFVocab:provides EmergencyBrakeAction
+]
+
+// C17: Insights
+instance RealTimeVehicleStateInsight : DTDFVocab:Insight [
+    base:desc "Insight into the current vehicle state, including speed, position, and actuator status"
+]
+
+instance DesiredSpeedInsight : DTDFVocab:Insight [
+    base:desc "Insight indicating the speed computed by the ACC algorithm based on lead‑vehicle distance"
+]
+
+// C17: Actions
+instance ViewRealTimeStateAction : DTDFVocab:Action [
+    base:desc "Operator action to visualize real‑time vehicle state and object tracks in the UI"
+    DTDFVocab:IsAutomatic false
+]
+
+instance DesiredSpeedComputationAction : DTDFVocab:Action [
+    base:desc "Automatic computation of the desired speed by the ACC model"
+    DTDFVocab:IsAutomatic true
+]
+
+instance EnableACCAction : DTDFVocab:Action [
+    base:desc "Operator command to enable the Adaptive Cruise Control function"
+    DTDFVocab:IsAutomatic false
+]
+
+instance SetTargetSpeedAction : DTDFVocab:Action [
+    base:desc "Operator command to set a target speed for the ACC algorithm"
+    DTDFVocab:IsAutomatic false
+]
+
+instance EmergencyBrakeAction : DTDFVocab:Action [
+    base:desc "Operator command to trigger an immediate emergency brake"
+    DTDFVocab:IsAutomatic false
+]
+
+// C2: Acting components
+instance ThrottleActuator : DTDFVocab:ActingComponent [
+    base:desc "Throttle actuator that receives desired speed commands from the DT and controls vehicle acceleration"
+]
+
+instance BrakeActuator : DTDFVocab:ActingComponent [
+    base:desc "Brake actuator that receives emergency brake commands from the DT and applies vehicle braking"
+]
+
+instance ACCEnableActuator : DTDFVocab:ActingComponent [
+    base:desc "Actuator interface that enables or disables the ACC functionality based on operator commands"
+]
+
+instance virtual_to_physical_interaction : DTDFVocab:VirtualToPhysical [
+    base:desc "Control commands generated by the Digital Twin (e.g., ACC enable/disable, desired speed set‑point, and emergency‑brake command) are sent back to the vehicle over the same Wi‑Fi UDP link. The commands are formatted as ROS 2 messages that are consumed by the Actuation functional entity within the Physical Twin Entity, which drives the motor and steering servo actuators. The DTS confirms command execution by observing the updated vehicle‑state feedback that is streamed back to the twin. No details are provided about command validation, authentication, conflict resolution, or explicit acknowledgement protocols."
+]
+
+instance twinning_time_scale : DTDFVocab:TimeScale [
+    base:desc "The DT must maintain a shared notion of time with the physical twin; synchronization accuracy of 100 ms is required due to hardware limitations, matching safety‑critical vehicular standards. Services such as ACC computation offloading and remote management require low end‑to‑end communication latency (explicit latency value not provided) and real‑time updates of vehicle state for UI display and control loops."
+]
+
+instance dt_constellation : DTDFVocab:Constellation [
+    base:desc "The DTS follows the ISO 23247 reference architecture, organizing functionality into three entities—Physical Twin Entity, Digital Twin Entity, and User Entity—each comprising functional entities (FEs) implemented as ROS 2 packages. Each FE is realized as one or more ROS 2 nodes, deployed on separate hardware components, enabling modular orchestration via ROS 2 publish/subscribe middleware and a shared 100 ms time base. Data flows from sensors through the Physical Twin Entity (pre‑processing, point‑cloud clustering & tracking) to the Digital Twin Entity (data management, control) and finally to the User Entity (3D visualization, control panel)."
+]
+
+instance dt_technical_connection : DTDFVocab:TechnicalConnection [
+    base:desc "The DTS relies on a hybrid network architecture. Internally, software components are connected on each entity via a ROS 2 communication layer (publish/subscribe). Communication between entities (Physical Twin, Digital Twin, and User) uses Wi‑Fi as the physical medium with UDP as the transport protocol. Clock synchronisation across devices is required with a maximum skew of 100 ms, as dictated by safety‑critical vehicular standards. The documents do not give quantitative bandwidth or latency targets, nor do they describe redundancy, reliability mechanisms, or security protocols such as encryption or authentication."
+]
+
+instance dt_hosting_deployment : DTDFVocab:Deployment [
+    base:desc "Each functional entity is implemented as an independent ROS 2 package that can be deployed on separate hardware platforms. The Physical Twin Entity runs on the on‑board compute of the 1/10‑scale autonomous vehicle, while the Digital Twin Entity and User Interface can be hosted on external compute resources, including cloud or edge platforms, to enable computation off‑loading of the ACC algorithm. The architecture therefore supports a distributed deployment model (vehicle‑side + remote/cloud). Specific computational, storage sizing, scalability strategies, or availability guarantees are not detailed in the provided documents."
+]
+
+instance horizontal_integration : DTDFVocab:HoriIntegration [
+    base:desc "Integration with external systems is envisioned through standard industrial protocols such as OPC Unified Architecture, as suggested by the ISO 23247 framework, allowing data exchange and interoperability; however, the specific protocols or external system dependencies used in this implementation are not detailed in the documents."
+]
+
+instance standardization : DTDFVocab:Standardization [
+    base:desc "The automotive Digital Twin (DT) implementation adopts the ISO 23247 standard (Digital Twin framework for manufacturing) as its reference architecture, organizing functionality into entities (Physical Twin Entity, Digital Twin Entity, User Entity) and functional entities. The design also references automotive domain standards such as ISO 26262 for safety‑critical systems and AUTOSAR for hardware‑agnostic software component deployment. The approach is deliberately independent of specific data formats or communication protocols, allowing the use of domain‑specific technologies (e.g., OPC Unified Architecture for device coordination, ROS2 packages for functional entity implementation)."
+]
