@@ -137,6 +137,9 @@ def extract_block_metrics(data: List[Dict[str, Any]], ground_truth: List[int] = 
         if ground_truth:
             accuracy = calculate_accuracy(extracted_chars, ground_truth)
         
+        extraction_rate = experiment.get('extraction_rate', None)
+        not_found_count = experiment.get('not_found_count', None)
+        
         # Find all blocks by looking for block_N_processing_time patterns
         block_numbers = set()
         for key in metadata.keys():
@@ -193,6 +196,8 @@ def extract_block_metrics(data: List[Dict[str, Any]], ground_truth: List[int] = 
                 'retries': 0,
                 'average_score': None,
                 'accuracy': accuracy,
+                'extraction_rate': extraction_rate,
+                'not_found_count': not_found_count,
                 'max_judge_retries': max_judge_retries,
                 'baseline_full_doc': baseline_full_doc
             })
@@ -219,6 +224,8 @@ def extract_block_metrics(data: List[Dict[str, Any]], ground_truth: List[int] = 
                 'retries': metadata.get(f'block_{block_num}_retries', 0),
                 'average_score': avg_score,
                 "average_initial_score": block_initial_scores.get(block_num, np.nan),
+                'extraction_rate': extraction_rate,
+                'not_found_count': not_found_count,
                 'accuracy': accuracy,
                 'max_judge_retries': max_judge_retries,
                 'baseline_full_doc': baseline_full_doc
@@ -227,8 +234,8 @@ def extract_block_metrics(data: List[Dict[str, Any]], ground_truth: List[int] = 
     
     df = pd.DataFrame(rows)
 
-    # Ensure numeric columns are strictly numeric to avoid object dtypes
-    numeric_cols = ['processing_time', 'input_tokens', 'output_tokens', 'retries', 'average_score', 'average_initial_score', 'accuracy']
+    # Ensure numeric columns are strictly numeric to avoid object dtypes, 'not_found_count'
+    numeric_cols = ['processing_time', 'input_tokens', 'output_tokens', 'retries', 'average_score', 'average_initial_score', 'accuracy', 'extraction_rate']
     for col in numeric_cols:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors='coerce')
@@ -1184,6 +1191,55 @@ def export_accuracy_table(df: pd.DataFrame, save_path: pathlib.Path):
         
     result_df = pd.DataFrame(rows)
     result_df.to_csv(save_path, index=False)
+
+
+def export_miss_rate_table(df: pd.DataFrame, save_path: pathlib.Path):
+    """Export a table of miss rate (1 - extraction_rate) per model with mean and std dev, grouped by config."""
+    if 'extraction_rate' not in df.columns or df['extraction_rate'].isna().all():
+        print("Warning: 'extraction_rate' column missing or empty.")
+        return
+
+    # Calculate miss rate (0-1) where extraction_rate is 0-100 in JSON
+    # Miss Rate = 1 - (Extraction Rate / 100)
+    # So if extraction_rate is 85.71%, miss_rate is 14.29%
+    df_copy = df.copy()
+    df_copy['miss_rate'] = 1.0 - (df_copy['extraction_rate'] / 100.0)
+
+    # Miss rate is per experiment (same for all blocks), so we deduplicate
+    cols = ['experiment_id', 'model_name', 'max_judge_retries', 'baseline_full_doc', 'miss_rate']
+    cols = [c for c in cols if c in df_copy.columns]
+    experiment_df = df_copy[cols].drop_duplicates()
+    
+    # Group by model + config
+    group_cols = ['model_name', 'max_judge_retries', 'baseline_full_doc']
+    group_cols = [c for c in group_cols if c in df_copy.columns]
+
+    stats = experiment_df.groupby(group_cols)['miss_rate'].agg(['mean', 'std', 'count']).reset_index()
+    
+    rows = []
+    for _, row in stats.iterrows():
+        mean_pct = row['mean'] * 100
+        std_pct = row['std'] * 100 if pd.notna(row['std']) else 0.0
+        
+        # Latex format: \makecell{mean% $\pm$ std%}
+        latex_str = r"\makecell{" + f"{mean_pct:.1f} $\pm$ {std_pct:.1f}" + r"}"
+        
+        entry = {
+            'MissRate_Mean': row['mean'],
+            'Model': row.get('model_name', None),
+            'MissRate_Std': row['std'],
+            'LaTeX_Cell': latex_str,
+            'N_Experiments': row['count']
+        }
+        if 'max_judge_retries' in row:
+            entry['Max_Judge_Retries'] = row['max_judge_retries']
+        if 'baseline_full_doc' in row:
+            entry['Baseline_Full_Doc'] = row['baseline_full_doc']
+            
+        rows.append(entry)
+        
+    result_df = pd.DataFrame(rows)
+    result_df.to_csv(save_path, index=False)
     print(f"Accuracy summary table saved to {save_path}")
 
 
@@ -1319,6 +1375,278 @@ def export_latex_matrix(df: pd.DataFrame, paper_id: str, save_path: pathlib.Path
         f.write('\n'.join(latex_content))
     
     print(f"LaTeX matrix table saved to {save_path}")
+
+
+def export_miss_rate_latex_matrix(df: pd.DataFrame, paper_id: str, save_path: pathlib.Path):
+    """Generates the LaTeX matrix table for miss rate comparison."""
+    if 'extraction_rate' not in df.columns or df['extraction_rate'].isna().all():
+        return
+
+    # Calculate miss rate (0-1) where extraction_rate is 0-100 in JSON
+    df_copy = df.copy()
+    df_copy['miss_rate'] = 1.0 - (df_copy['extraction_rate'] / 100.0)
+
+    # Filter relevant columns and deduplicate by experiment
+    cols = ['experiment_id', 'model_name', 'max_judge_retries', 'baseline_full_doc', 'miss_rate']
+    # Filter only columns present
+    cols = [c for c in cols if c in df_copy.columns]
+    experiment_df = df_copy[cols].drop_duplicates()
+
+    # Aggregate stats
+    group_cols = ['model_name', 'max_judge_retries', 'baseline_full_doc']
+    stats = experiment_df.groupby(group_cols)['miss_rate'].agg(['mean', 'std']).reset_index()
+
+    # Define model ordering and display names
+    model_order = [
+        'ministral-3:3b-cloud',
+        'ministral-3:8b-cloud',
+        'ministral-3:14b-cloud',
+        'qwen3-next:80b-cloud',
+        'gpt-oss:20b-cloud',
+        'gpt-oss:120b-cloud'
+    ]
+    
+    model_latex_headers = {
+        'ministral-3:3b-cloud': r'\makecell{\texttt{ministral-3} \\ (3B)}',
+        'ministral-3:8b-cloud': r'\makecell{\texttt{ministral-3} \\ (8B)}',
+        'ministral-3:14b-cloud': r'\makecell{\texttt{ministral-3} \\ (14B)}',
+        'qwen3-next:80b-cloud': r'\makecell{\texttt{qwen3-next} \\ (80B)}',
+        'gpt-oss:20b-cloud': r'\makecell{\texttt{gpt-oss} \\ (20B)}',
+        'gpt-oss:120b-cloud': r'\makecell{\texttt{gpt-oss} \\ (120B)}'
+    }
+
+    # Configurations: (Name, JudgeEnabled, FullDoc)
+    configs = [
+        ("Base", False, True),
+        ("+Cluster", False, False),
+        ("+Judge", True, True),
+        ("+Cluster+Judge", True, False)
+    ]
+
+    def get_model_config_stats(model, judge_retries_gt_0, baseline_full_doc):
+        matches = stats[
+            (stats['model_name'] == model) & 
+            (stats['baseline_full_doc'] == baseline_full_doc)
+        ]
+        
+        if judge_retries_gt_0:
+            matches = matches[matches['max_judge_retries'] > 0]
+        else:
+            matches = matches[matches['max_judge_retries'] == 0]
+            
+        if matches.empty:
+            return None
+        return matches.iloc[0]
+
+    # Calculate min mean for each model to identify best results (lowest miss rate is best)
+    model_min_means = {}
+    for model in model_order:
+        means = []
+        for _, judge_enabled, full_doc in configs:
+            row = get_model_config_stats(model, judge_enabled, full_doc)
+            if row is not None:
+                means.append(row['mean'])
+        if means:
+            model_min_means[model] = min(means)
+        else:
+            model_min_means[model] = 100.0
+
+    def get_cell_content(model, judge_retries_gt_0, baseline_full_doc):
+        row = get_model_config_stats(model, judge_retries_gt_0, baseline_full_doc)
+        
+        if row is None:
+            return "--"
+        
+        mean_val = row['mean']
+        mean_pct = mean_val * 100
+        std_pct = row['std'] * 100 if pd.notna(row['std']) else 0.0
+        
+        content = f"{mean_pct:.1f} $\\pm$ {std_pct:.1f}"
+        
+        # Bold if it's the best result for this model (within epsilon)
+        if mean_val <= model_min_means.get(model, 100.0) + 1e-9:
+            return f"\\textbf{{{content}}}"
+            
+        return content
+
+    paper_label = paper_id if paper_id else "Pn"
+
+    latex_content = [
+        r"\begin{table*}[htbp]",
+        r"    \centering",
+        r"    \small",
+        r"    \setlength{\tabcolsep}{4pt}",
+        r"    \caption{Miss rate ($n=25$), with two judge retries.}",
+        r"    \begin{tabular}{c|l|cccccc}",
+        r"        \toprule",
+        r"        \makecell{\textbf{Paper} \\ \textbf{ID}} & \textbf{Configuration}& " + 
+        " & ".join([model_latex_headers.get(m, m.replace('_', r'\_')) for m in model_order]) + r" \\",
+        r"        \hline",
+        r"        "
+    ]
+
+    for i, (config_name, judge_enabled, full_doc) in enumerate(configs):
+        row_str = ""
+        if i == 0:
+            row_str += f"        \\multirow{{4}}{{*}}{{\\textbf{{{paper_label}}}}} \n"
+            row_str += f"          & \\textbf{{{config_name}}}"
+        else:
+            row_str += f"          & \\textbf{{{config_name}}}"
+        
+        for model in model_order:
+            val = get_cell_content(model, judge_enabled, full_doc)
+            row_str += f"& {val} "
+        
+        row_str += r"\\"
+        latex_content.append(row_str)
+
+    latex_content.extend([
+        r"        \hline",
+        r"        ",
+        r"        \bottomrule",
+        r"    \end{tabular}",
+        r"    \label{tab:miss_rate_" + paper_label.lower() + r"}",
+        r"\end{table*}"
+    ])
+
+    with open(save_path, 'w', encoding='utf-8') as f:
+        f.write('\n'.join(latex_content))
+    
+    print(f"LaTeX miss rate matrix table saved to {save_path}")
+
+
+def export_not_found_latex_matrix(df: pd.DataFrame, paper_id: str, save_path: pathlib.Path):
+    """Generates the LaTeX matrix table for average not_found_count comparison (no std dev)."""
+    if 'not_found_count' not in df.columns or df['not_found_count'].isna().all():
+        print("Warning: 'not_found_count' column missing or empty.")
+        return
+
+    # Filter relevant columns and deduplicate by experiment
+    cols = ['experiment_id', 'model_name', 'max_judge_retries', 'baseline_full_doc', 'not_found_count']
+    # Filter only columns present
+    cols = [c for c in cols if c in df.columns]
+    experiment_df = df[cols].drop_duplicates()
+
+    # Aggregate stats
+    group_cols = ['model_name', 'max_judge_retries', 'baseline_full_doc']
+    # Aggregating only mean as requested
+    stats = experiment_df.groupby(group_cols)['not_found_count'].agg(['mean']).reset_index()
+
+    # Define model ordering and display names
+    model_order = [
+        'ministral-3:3b-cloud',
+        'ministral-3:8b-cloud',
+        'ministral-3:14b-cloud',
+        'qwen3-next:80b-cloud',
+        'gpt-oss:20b-cloud',
+        'gpt-oss:120b-cloud'
+    ]
+    
+    model_latex_headers = {
+        'ministral-3:3b-cloud': r'\makecell{\texttt{ministral-3} \\ (3B)}',
+        'ministral-3:8b-cloud': r'\makecell{\texttt{ministral-3} \\ (8B)}',
+        'ministral-3:14b-cloud': r'\makecell{\texttt{ministral-3} \\ (14B)}',
+        'qwen3-next:80b-cloud': r'\makecell{\texttt{qwen3-next} \\ (80B)}',
+        'gpt-oss:20b-cloud': r'\makecell{\texttt{gpt-oss} \\ (20B)}',
+        'gpt-oss:120b-cloud': r'\makecell{\texttt{gpt-oss} \\ (120B)}'
+    }
+
+    # Configurations: (Name, JudgeEnabled, FullDoc)
+    configs = [
+        ("Base", False, True),
+        ("+Cluster", False, False),
+        ("+Judge", True, True),
+        ("+Cluster+Judge", True, False)
+    ]
+
+    def get_model_config_stats(model, judge_retries_gt_0, baseline_full_doc):
+        matches = stats[
+            (stats['model_name'] == model) & 
+            (stats['baseline_full_doc'] == baseline_full_doc)
+        ]
+        
+        if judge_retries_gt_0:
+            matches = matches[matches['max_judge_retries'] > 0]
+        else:
+            matches = matches[matches['max_judge_retries'] == 0]
+            
+        if matches.empty:
+            return None
+        return matches.iloc[0]
+
+    # Calculate min mean for each model to identify best results (lowest not found count is best)
+    model_min_means = {}
+    for model in model_order:
+        means = []
+        for _, judge_enabled, full_doc in configs:
+            row = get_model_config_stats(model, judge_enabled, full_doc)
+            if row is not None:
+                means.append(row['mean'])
+        if means:
+            model_min_means[model] = min(means)
+        else:
+            model_min_means[model] = float('inf')
+
+    def get_cell_content(model, judge_retries_gt_0, baseline_full_doc):
+        row = get_model_config_stats(model, judge_retries_gt_0, baseline_full_doc)
+        
+        if row is None:
+            return "--"
+        
+        mean_val = row['mean']
+        
+        content = f"{mean_val:.2f}"
+        
+        # Bold if it's the best result for this model (within epsilon)
+        if mean_val <= model_min_means.get(model, float('inf')) + 1e-9:
+            return f"\\textbf{{{content}}}"
+            
+        return content
+
+    paper_label = paper_id if paper_id else "Pn"
+
+    latex_content = [
+        r"\begin{table*}[htbp]",
+        r"    \centering",
+        r"    \small",
+        r"    \setlength{\tabcolsep}{4pt}",
+        r"    \caption{Average \textit{Not in Document} characteristic count.}",
+        r"    \begin{tabular}{c|l|cccccc}",
+        r"        \toprule",
+        r"        \makecell{\textbf{Paper} \\ \textbf{ID}} & \textbf{Configuration}& " + 
+        " & ".join([model_latex_headers.get(m, m.replace('_', r'\_')) for m in model_order]) + r" \\",
+        r"        \hline",
+        r"        "
+    ]
+
+    for i, (config_name, judge_enabled, full_doc) in enumerate(configs):
+        row_str = ""
+        if i == 0:
+            row_str += f"        \\multirow{{4}}{{*}}{{\\textbf{{{paper_label}}}}} \n"
+            row_str += f"          & \\textbf{{{config_name}}}"
+        else:
+            row_str += f"          & \\textbf{{{config_name}}}"
+        
+        for model in model_order:
+            val = get_cell_content(model, judge_enabled, full_doc)
+            row_str += f"& {val} "
+        
+        row_str += r"\\"
+        latex_content.append(row_str)
+
+    latex_content.extend([
+        r"        \hline",
+        r"        ",
+        r"        \bottomrule",
+        r"    \end{tabular}",
+        r"    \label{tab:not_in_doc_" + paper_label.lower() + r"}",
+        r"\end{table*}"
+    ])
+
+    with open(save_path, 'w', encoding='utf-8') as f:
+        f.write('\n'.join(latex_content))
+    
+    print(f"LaTeX Not in Document matrix table saved to {save_path}")
 
 
 def calculate_resource_stats(df: pd.DataFrame, title="Resource Usage Statistics", save_path: pathlib.Path = None):
@@ -1534,6 +1862,16 @@ def main():
     # Save detailed metrics
     df.to_csv(analysis_dir / "detailed_block_metrics.csv", index=False)
     print(f"Detailed metrics saved to {analysis_dir / 'detailed_block_metrics.csv'}")
+
+    # Export miss rate table
+    print("\n--- Generating Miss Rate Summary Table ---")
+    export_miss_rate_table(df, analysis_dir / "model_miss_rate_summary.csv")
+    
+    print("\n--- Generating Miss Rate LaTeX Matrix Table ---")
+    export_miss_rate_latex_matrix(df, args.paper, analysis_dir / "miss_rate_matrix_table.tex")
+    
+    print("\n--- Generating Not Found LaTeX Matrix Table ---")
+    export_not_found_latex_matrix(df, args.paper, analysis_dir / "not_found_matrix_table.tex")
 
     # Export accuracy table if applicable
     if ground_truth:
