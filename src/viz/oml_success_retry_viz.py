@@ -92,6 +92,8 @@ def load_data_from_jsons(exp_path):
                 row['total_input_tokens'] = d.get('total_input_tokens', 0)
                 row['total_output_tokens'] = d.get('total_output_tokens', 0)
                 row['generation_time_seconds'] = d.get('generation_time_seconds', 0.0)
+                row['oml_line_count'] = d.get('oml_line_count', 0)
+                row['oml_instance_count'] = d.get('oml_instance_count', 0)
 
                 data.append(row)
                     
@@ -605,6 +607,123 @@ def export_latex_matrix(df: pd.DataFrame, paper_id: str, save_path: pathlib.Path
     print(f"LaTeX matrix table saved to {save_path}")
 
 
+def export_complexity_latex_matrix(df: pd.DataFrame, paper_id: str, save_path: pathlib.Path):
+    """Generates the LaTeX matrix table for OML complexity comparison (avg lines / avg instances)."""
+    if df.empty:
+        return
+
+    # Define model ordering and display names
+    model_order = [
+         'ministral-3:3b-cloud',
+         'ministral-3:8b-cloud',
+         'ministral-3:14b-cloud',
+         'qwen3-next:80b-cloud',
+         'gpt-oss:20b-cloud',
+         'gpt-oss:120b-cloud'
+    ]
+    
+    model_latex_headers = {
+        'ministral-3:3b-cloud': r'\makecell{\texttt{ministral-3} \\ (3B)}',
+        'ministral-3:8b-cloud': r'\makecell{\texttt{ministral-3} \\ (8B)}',
+        'ministral-3:14b-cloud': r'\makecell{\texttt{ministral-3} \\ (14B)}',
+        'qwen3-next:80b-cloud': r'\makecell{\texttt{qwen3-next} \\ (80B)}',
+        'gpt-oss:20b-cloud': r'\makecell{\texttt{gpt-oss} \\ (20B)}',
+        'gpt-oss:120b-cloud': r'\makecell{\texttt{gpt-oss} \\ (120B)}'
+    }
+
+    # Configuration definitions matching generate_plots_for_model
+    if 'max_judge_retries' not in df.columns:
+        df['max_judge_retries'] = 0
+    df['max_judge_retries'] = df['max_judge_retries'].fillna(0)
+
+    configs = [
+        ("Base", lambda d: (d['baseline_full_doc'] == True) & (d['max_judge_retries'] == 0)),
+        ("+Cluster", lambda d: (d['baseline_full_doc'] == False) & (d['max_judge_retries'] == 0)),
+        ("+Judge", lambda d: (d['baseline_full_doc'] == True) & (d['max_judge_retries'] > 0)),
+        ("+Cluster+Judge", lambda d: (d['baseline_full_doc'] == False) & (d['max_judge_retries'] > 0))
+    ]
+
+    # Helper to calculate metrics
+    def calculate_complexity(sub_df):
+        if sub_df.empty:
+            return None
+        
+        # Calculate averages for valid OMLs only? Or all generated OMLs?
+        # Typically complexity is interesting for valid ones or all. 
+        # But if invalid OML is empty or garbage, it might skew.
+        # Let's use all generated OMLs that have data, assuming parsing was possible.
+        # The extraction handles partials if they exist in JSON.
+        
+        avg_lines = sub_df['oml_line_count'].mean()
+        avg_instances = sub_df['oml_instance_count'].mean()
+        
+        return avg_lines, avg_instances
+
+    # Pre-calculate all values
+    results = {} # (model, config_name) -> (avg_lines, avg_instances)
+
+    for model in model_order:
+        model_df = df[df['model_name'] == model]
+        if model_df.empty:
+            continue
+            
+        for config_name, filter_func in configs:
+            sub_df = model_df[filter_func(model_df)]
+            metrics = calculate_complexity(sub_df)
+            
+            if metrics:
+                results[(model, config_name)] = metrics
+
+    paper_label = paper_id if paper_id else "Pn"
+
+    latex_content = [
+        r"\begin{table*}[htbp]",
+        r"    \centering",
+        r"    \small",
+        r"    \setlength{\tabcolsep}{4pt}",
+        r"    \caption{OML Complexity comparison ($L_{avg}~/~I_{avg}$). $L_{avg}$ denotes average line count, $I_{avg}$ denotes average instance count.}",
+        r"    \begin{tabular}{c|l|cccccc}",
+        r"        \hline",
+        r"        \makecell{\textbf{Paper} \\ \textbf{ID}} & \textbf{Configuration} & " + 
+        " & ".join([model_latex_headers.get(m, m.replace('_', r'\_')) for m in model_order]) + r" \\",
+        r"        \hline",
+        r"        "
+    ]
+
+    for i, (config_name, _) in enumerate(configs):
+        row_str = ""
+        if i == 0:
+            row_str += f"        \\multirow{{4}}{{*}}{{\\textbf{{{paper_label}}}}} \n"
+            row_str += f"          & \\textbf{{{config_name}}}"
+        else:
+            row_str += f"          & \\textbf{{{config_name}}}"
+        
+        for model in model_order:
+            val = results.get((model, config_name))
+            if val is None:
+                row_str += " & -"
+            else:
+                l, i_count = val
+                display_str = f"{l:.1f} / {i_count:.1f}"
+                row_str += f" & {display_str}"
+        
+        row_str += r"\\"
+        latex_content.append(row_str)
+
+    latex_content.extend([
+        r"        \hline",
+        r"        ",
+        r"    \end{tabular}",
+        r"    \label{tab:complexity_" + paper_label.lower() + r"}",
+        r"\end{table*}"
+    ])
+
+    with open(save_path, 'w', encoding='utf-8') as f:
+        f.write('\n'.join(latex_content))
+    
+    print(f"LaTeX complexity matrix table saved to {save_path}")
+
+
 summary_data = []
 
 if __name__ == "__main__":
@@ -664,5 +783,9 @@ if __name__ == "__main__":
     # Generate LaTeX Matrix Table if requested (or always if paper is not strictly required but we can default)
     print("\n--- Generating LaTeX Matrix Table ---")
     export_latex_matrix(df, args.paper, analysis_dir / "oml_success_matrix_table.tex")
+    
+    # Generate OML Complexity LaTeX Table
+    print("\n--- Generating OML Complexity Matrix Table ---")
+    export_complexity_latex_matrix(df, args.paper, analysis_dir / "oml_complexity_matrix_table.tex")
 
     print("\nProcessing complete.")

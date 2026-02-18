@@ -635,6 +635,7 @@ JSON:
         # --- 1. PREPARATION ---
         # Define description-based vocab mapping
         description_based_vocab_mapping = {
+            "system_under_study": "SystemUnderStudy",
             "virtual_to_physical_interaction": "VirtualToPhysical",
             "twinning_time_scale": "TimeScale",
             "dt_constellation": "Constellation",
