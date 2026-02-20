@@ -1,0 +1,152 @@
+// Sensing Components
+instance SwingAngleEncoder : DTDFVocab:SensingComponent [
+    base:desc "Swing‑angle encoder on the gantry crane's hoist arm, measuring the swing angle."
+    DTDFVocab:producedData SwingAngleSignalTransmitted
+]
+
+instance Anemometer : DTDFVocab:SensingComponent [
+    base:desc "Anemometer mounted near the crane to measure wind speed during operations."
+    DTDFVocab:producedData AnemometerWindSpeedTransmitted
+]
+
+// Data Transmitted
+instance SwingAngleSignalTransmitted : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom SwingAngleEncoder
+]
+
+instance AnemometerWindSpeedTransmitted : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom Anemometer
+]
+
+// Data
+instance SwingAngleSignal : DTDFVocab:Data [
+    base:desc "Time‑series record of swing angle sensor readings stored in TimescaleDB."
+    DTDFVocab:fromData SwingAngleSignalTransmitted
+    DTDFVocab:inputTo TimescaleDBEnabler
+]
+
+instance AnemometerWindSpeedSignal : DTDFVocab:Data [
+    base:desc "Time‑series record of anemometer wind speed readings stored in TimescaleDB."
+    DTDFVocab:fromData AnemometerWindSpeedTransmitted
+    DTDFVocab:inputTo TimescaleDBEnabler
+]
+
+// Models
+instance CADGeometricModel : DTDFVocab:Model [
+    base:desc "CAD‑based geometric model of the gantry crane derived from Autodesk Fusion360."
+    DTDFVocab:inputTo GantryLibEnabler
+]
+
+instance KinematicModel : DTDFVocab:Model [
+    base:desc "Kinematic model describing cart and hoist motion along X and Y axes."
+    DTDFVocab:inputTo GantryLibEnabler
+]
+
+// Enablers
+instance GantryLibEnabler : DTDFVocab:Enabler [
+    base:desc "Python gantrylib exposing CAD‑derived kinematic equations."
+    DTDFVocab:enables OptimalControlService, ContinuousValidationService
+]
+
+instance TimescaleDBEnabler : DTDFVocab:Enabler [
+    base:desc "TimescaleDB instance for storing high‑volume time‑series data."
+    DTDFVocab:enables HistoricalDataLoggingService, DataVisualizationService
+]
+
+instance MQTTBrokerEnabler : DTDFVocab:Enabler [
+    base:desc "Eclipse Mosquitto MQTT broker facilitating publish/subscribe between twin and crane controller."
+    DTDFVocab:enables OptimalControlService, ContinuousValidationService, RealTimeMonitoringService
+]
+
+instance GrafanaEnabler : DTDFVocab:Enabler [
+    base:desc "Grafana for visualizing real‑time crane kinematics and validation metrics."
+    DTDFVocab:enables DataVisualizationService
+]
+
+// Services
+instance OptimalControlService : DTDFVocab:Service [
+    base:desc "Generates optimal control commands and shortest‑path trajectories respecting joint velocity limits."
+    DTDFVocab:provides TrajectoryInsight, GenerateTrajectoryAction, ControlCommandAction
+]
+
+instance ContinuousValidationService : DTDFVocab:Service [
+    base:desc "Continually compares simulated state against live telemetry and computes deviation metrics."
+    DTDFVocab:provides ConfidenceScoreInsight, AlertAction
+]
+
+instance HistoricalDataLoggingService : DTDFVocab:Service [
+    base:desc "Records every sensor and command event in TimescaleDB for post‑run analytics."
+    DTDFVocab:provides DataLoggingInsight, LogSensorDataAction
+]
+
+instance DataVisualizationService : DTDFVocab:Service [
+    base:desc "Provides dashboards displaying kinematics, performance metrics, and alerts."
+    DTDFVocab:provides VisualizationInsight
+]
+
+instance RealTimeMonitoringService : DTDFVocab:Service [
+    base:desc "Real‑time monitoring of crane pose and actuator states."
+    DTDFVocab:provides PoseInsight
+]
+
+// Insights
+instance PoseInsight : DTDFVocab:Insight [
+    base:desc "Real‑time monitoring of crane pose and actuator states."
+]
+
+instance TrajectoryInsight : DTDFVocab:Insight [
+    base:desc "Insight into planned trajectory between specified rack positions."
+]
+
+instance ConfidenceScoreInsight : DTDFVocab:Insight [
+    base:desc "Confidence score indicating twin fidelity based on deviation between simulated and live data."
+]
+
+instance VisualizationInsight : DTDFVocab:Insight [
+    base:desc "Data visualization dashboards displaying kinematics, performance metrics and alerts."
+]
+
+instance DataLoggingInsight : DTDFVocab:Insight [
+    base:desc "Historical sensor data logging for post‑flight analysis."
+]
+
+// Actions
+instance GenerateTrajectoryAction : DTDFVocab:Action [
+    base:desc "Generates a new trajectory and publishes control commands via MQTT."
+    DTDFVocab:IsAutomatic true
+]
+
+instance ControlCommandAction : DTDFVocab:Action [
+    base:desc "Publishes control commands to the crane controller using MQTT."
+    DTDFVocab:IsAutomatic true
+]
+
+instance LogSensorDataAction : DTDFVocab:Action [
+    base:desc "Records sensor and command events in TimescaleDB."
+    DTDFVocab:IsAutomatic false
+]
+
+instance AlertAction : DTDFVocab:Action [
+    base:desc "Triggers alerts when confidence score falls below the predefined threshold."
+    DTDFVocab:IsAutomatic true
+]
+
+instance virtual_to_physical_interaction : DTDFVocab:VirtualToPhysical [
+    base:desc "Operational commands originate from the Control Application and are dispatched through the Physical Crane Interface, a Python program that translates high‑level requests into hardware‑level commands sent to the crane’s controllers. The documentation does not describe communication protocols, authentication, or command confirmation mechanisms."
+]
+
+instance dt_constellation : DTDFVocab:Constellation [
+    base:desc "The system orchestrates its digital twin through a constellation of loosely coupled services, each deployed in a Docker container for reproducibility and isolation. A physical gantry crane equipped with an on‑board small‑board computer (e.g., Raspberry Pi) streams telemetry—position, speed, actuator states, and sensor readings—to a dedicated time‑series database (InfluxDB or TimescaleDB) that persists all raw measurements with timestamp precision. The MQTT broker acts as the central message bus: it forwards real‑time command and status topics such as '/crane/command' and '/crane/telemetry'. The Trajectory Generator Service subscribes to '/crane/telemetry', computes next waypoints, and publishes them to '/crane/trajectory'. The Simulation Service consumes these trajectory commands, runs a physics‑based model of the crane (implemented in a Python module), and outputs simulated kinematics to '/simulation/state', enabling comparison with actual measurements. The Continuous Validation Service listens to both '/crane/telemetry' and '/simulation/state', applies statistical similarity tests (e.g., sliding‑window correlation or mean‑squared error thresholds) to detect drifts, and writes validation flags back to '/validation/alert'. A web‑based Dashboard aggregates data from the database, subscribes to MQTT topics, and visualises real‑time telemetry, simulated states, and validation alerts via websockets. Resource management is handled by Docker Compose, which defines volume mounts to persist database data across restarts and controls CPU affinities to guarantee deterministic container start‑up order, ensuring that the simulation service only receives trajectories after the trajectory generator has initialised. Together, this constellation delivers a cohesive, event‑driven digital twin that synchronises physical actions with simulation and validation, while keeping each component independently maintainable."
+]
+
+instance dt_technical_connection : DTDFVocab:TechnicalConnection [
+    base:desc "Services within the digital twin communicate via an MQTT broker (used for signaling between services) and the TimescaleDB database. The document does not provide details on network protocols beyond MQTT, network topology, bandwidth, latency, reliability, or security protocols. "
+]
+
+instance dt_hosting_deployment : DTDFVocab:Deployment [
+    base:desc "All components are executed on a single personal computer, with the Database, MQTT Broker, and Dashboard packaged as Docker containers to simplify deployment. The Physical Crane Interface, Control Application, and Logging Application run natively on the host OS. No cloud or distributed deployment is described; the system is intended for on‑premises, edge‑based operation."
+]
+
+instance standardization : DTDFVocab:Standardization [
+    base:desc "The system adopts an ad‑hoc approach with no adherence to a commercial digital‑twin framework. No explicit compliance with industrial digital‑twin standards such as AutomationML or CIM is reported. The twin relies on open‑source technologies that follow standard protocols (e.g., MQTT for messaging, PostgreSQL/TimescaleDB for persistence, Docker for containerization). CAD models are produced in Autodesk Fusion 360, and system‑level models are built in Capella, but they are not mapped to an established industrial standard. No certification or regulatory framework is cited in the documentation."
+]

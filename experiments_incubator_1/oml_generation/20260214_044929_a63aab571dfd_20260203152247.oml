@@ -1,0 +1,141 @@
+// Physical Sensing Components
+instance HeatbedSurfaceTemperatureSensor : DTDFVocab:SensingComponent [
+    base:desc "DS18S20 1‑Wire digital thermometer mounted on heatbed surface, measuring 35 °C to +125 °C with 1.5 mV resolution."
+    DTDFVocab:producedData HeatbedTemperatureDataTransmitted
+]
+
+instance AirOutletTemperatureSensor : DTDFVocab:SensingComponent [
+    base:desc "DS18S20 1‑Wire digital thermometer mounted at the air outlet to monitor temperature gradients."
+    DTDFVocab:producedData AirOutletTemperatureDataTransmitted
+]
+
+// Data Transmitted
+instance HeatbedTemperatureDataTransmitted : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom HeatbedSurfaceTemperatureSensor
+]
+
+instance AirOutletTemperatureDataTransmitted : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom AirOutletTemperatureSensor
+]
+
+// Data
+instance HeatbedTemperatureData : DTDFVocab:Data [
+    base:desc "Temperature reading from heatbed sensor (°C)."
+    DTDFVocab:fromData HeatbedTemperatureDataTransmitted
+    DTDFVocab:inputTo CalibrationEnabler, ControlEnabler, MonitoringEnabler
+]
+
+instance AirOutletTemperatureData : DTDFVocab:Data [
+    base:desc "Temperature reading from air outlet sensor (°C)."
+    DTDFVocab:fromData AirOutletTemperatureDataTransmitted
+    DTDFVocab:inputTo CalibrationEnabler, ControlEnabler, MonitoringEnabler
+]
+
+// Acting Components
+instance HeatbedActuator : DTDFVocab:ActingComponent [
+    base:desc "Ceramic heatbed driven via solid‑state relay controlled by a 12 V DC supply with PWM interface."
+]
+
+instance FanActuator : DTDFVocab:ActingComponent [
+    base:desc "Brushless fan rated at 12 V, ~200 L min⁻¹ flow, throttled via 12‑bit PWM, addressed through CAN‑bus."
+]
+
+// Enablers
+instance RaspberryPiSensorDriver : DTDFVocab:Enabler [
+    base:desc "Python runtime on Raspberry Pi 4 Model B reading DS18S20 sensors via 1‑wire bus and forwarding data to RabbitMQ."
+    DTDFVocab:enables ServiceSensorDataIngestion
+]
+
+instance CalibrationEnabler : DTDFVocab:Enabler [
+    base:desc "Calibration module executing SciPy least‑squares optimization to refine incubator thermal model parameters."
+    DTDFVocab:enables ServiceCalibration
+]
+
+instance ControlEnabler : DTDFVocab:Enabler [
+    base:desc "Bang‑bang controller toggling heatbed on/off to maintain user‑specified temperature set‑point."
+    DTDFVocab:enables ServiceBangBangControl
+]
+
+instance MonitoringEnabler : DTDFVocab:Enabler [
+    base:desc "Monitoring module applying safety thresholds on temperature readings and alerting via RabbitMQ."
+    DTDFVocab:enables ServiceSafetyMonitoring
+]
+
+instance RabbitMQMessagingEnabler : DTDFVocab:Enabler [
+    base:desc "Local RabbitMQ server for inter‑component messaging (publishing sensor data, control actions, calibration results)."
+    DTDFVocab:enables ServiceMessaging
+]
+
+// Models
+instance ThermalIncubatorModel : DTDFVocab:Model [
+    base:desc "Computational model of the incubator's thermal dynamics, updated by calibration algorithms."
+    DTDFVocab:inputTo CalibrationEnabler, ControlEnabler, MonitoringEnabler
+]
+
+// Services
+instance ServiceSensorDataIngestion : DTDFVocab:Service [
+    base:desc "Ingests raw sensor data from DS18S20 via Raspberry Pi and forwards it to the data layer."
+    DTDFVocab:provides TemperatureProfileInsight
+]
+
+instance ServiceBangBangControl : DTDFVocab:Service [
+    base:desc "Bang‑bang controller toggles the heatbed on/off to maintain the desired temperature set‑point."
+    DTDFVocab:provides BangBangAction
+]
+
+instance ServiceCalibration : DTDFVocab:Service [
+    base:desc "Calibration service employing SciPy least‑squares routine to refine model parameters."
+    DTDFVocab:provides CalibrationInsight
+]
+
+instance ServiceSafetyMonitoring : DTDFVocab:Service [
+    base:desc "Monitors temperature for excursions beyond a safe envelope and triggers alerts."
+    DTDFVocab:provides InsightSafetyViolation, SafetyAlertAction
+]
+
+instance ServiceMessaging : DTDFVocab:Service [
+    base:desc "Publishes state and control messages to RabbitMQ for external dashboards and analytics."
+    DTDFVocab:provides ActionPublishMessage
+]
+
+// Insights
+instance TemperatureProfileInsight : DTDFVocab:Insight [
+    base:desc "Real‑time temperature profile of the incubator."
+]
+
+instance CalibrationInsight : DTDFVocab:Insight [
+    base:desc "Refined thermal model parameters derived from least‑squares calibration."
+]
+
+instance InsightSafetyViolation : DTDFVocab:Insight [
+    base:desc "Detection of temperature excursions beyond the safe envelope."
+]
+
+// Actions
+instance BangBangAction : DTDFVocab:Action [
+    base:desc "Toggles the heatbed on or off to maintain the set‑point."
+    DTDFVocab:IsAutomatic true
+]
+
+instance SafetyAlertAction : DTDFVocab:Action [
+    base:desc "Sends an alert via the messaging system when temperature exceeds safety limits."
+    DTDFVocab:IsAutomatic true
+]
+
+instance ActionPublishMessage : DTDFVocab:Action [
+    base:desc "Publishes numerical data or control commands to RabbitMQ."
+    DTDFVocab:IsAutomatic true
+]
+
+// Environment
+instance IncubatorEnvironment : DTDFVocab:Environment [
+    base:contains HeatbedActuator, FanActuator, HeatbedSurfaceTemperatureSensor, AirOutletTemperatureSensor
+]
+
+instance dt_constellation : DTDFVocab:Constellation [
+    base:desc "A Digital Twin framework that integrates modelling, simulation, monitoring, and optimisation technologies to add value to the Physical Twin, as depicted in Fig. 1 via calibration algorithms that update CPS and environment models; the resulting data informs monitors that enforce safety and optimality, and when violations are detected, humans or autonomous algorithms can enact change on the Physical Twin."
+]
+
+instance fidelity_and_validity_considerations : DTDFVocab:FidelityConsideration [
+    base:desc "Model fidelity is ensured through cross‑validation, where simulated temperature trajectories are statistically compared to experimental data collected during controlled incubator runs; an RMSE threshold of 1 °C defines acceptable fidelity. Verification is conducted via unit tests for each differential equation, ensuring dimensional consistency, and simulation‐based sanity checks. Uncertainty quantification employs Monte‑Carlo propagation of sensor noise (±0.5 °C) and parameter variability, yielding confidence intervals for predicted temperatures. Error detection includes real‑time outlier detection by comparing sensor readings to the model’s Kalman filter predictions; deviations beyond 3σ trigger fault alerts. Quality assurance processes involve version‑controlled storage of CAD, simulation and control scripts in a git repository with audit trails, and periodic review of calibration datasets to confirm residual error minimization."
+]

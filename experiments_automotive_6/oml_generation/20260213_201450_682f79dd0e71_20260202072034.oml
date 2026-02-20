@@ -1,0 +1,128 @@
+// Sensing Components
+instance LidarSensor : DTDFVocab:SensingComponent [
+    base:desc "On‑board LiDAR sensor producing raw point‑cloud streams"
+    DTDFVocab:producedData LidarUDPStream
+]
+
+instance VehicleStateSensor : DTDFVocab:SensingComponent [
+    base:desc "ECU‑based vehicle state sensor producing pose, velocity, and wheel‑speed updates"
+    DTDFVocab:producedData VehicleStateUDPStream
+]
+
+// Physical‑to‑Virtual Data Transmitted
+instance LidarUDPStream : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom LidarSensor
+    base:desc "Raw LiDAR point‑cloud transmitted over Wi‑Fi using UDP sockets"
+]
+
+instance VehicleStateUDPStream : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom VehicleStateSensor
+    base:desc "Vehicle state updates (pose, velocity, wheel speeds) transmitted over Wi‑Fi via UDP"
+]
+
+// Virtual Data
+instance LidarPointCloudDDSData : DTDFVocab:Data [
+    base:desc "DDS‑compatible binary format of LiDAR point‑cloud after unit conversion and ISO 23247 alignment"
+    DTDFVocab:fromData LidarUDPStream
+    DTDFVocab:inputTo ACCCloudServer, UserInterfaceFE
+]
+
+instance VehicleStateData : DTDFVocab:Data [
+    base:desc "ROS2 topic containing vehicle state updates after FE conversion"
+    DTDFVocab:fromData VehicleStateUDPStream
+    DTDFVocab:inputTo ACCCloudServer, UserInterfaceFE
+]
+
+instance ObjectTrackData : DTDFVocab:Data [
+    base:desc "Detected object tracks after Euclidean clustering of LiDAR point‑cloud"
+    DTDFVocab:fromData LidarUDPStream
+    DTDFVocab:inputTo ACCCloudServer, UserInterfaceFE
+]
+
+instance ProjectedDrivingPathData : DTDFVocab:Data [
+    base:desc "Projected driving path predicted from clustering output"
+    DTDFVocab:fromData LidarUDPStream
+    DTDFVocab:inputTo ACCCloudServer, UserInterfaceFE
+]
+
+// Enablers
+instance ACCCloudServer : DTDFVocab:Enabler [
+    base:desc "Cloud or edge server computing ACC desired speed based on lead‑vehicle distance"
+    DTDFVocab:enables ComputationOffloadingService
+]
+
+instance UserInterfaceFE : DTDFVocab:Enabler [
+    base:desc "Frontend providing visualization of vehicle state, object tracks, and projected path with reporting capabilities"
+    DTDFVocab:enables DataMonitoringService
+]
+
+instance OperatorControlFE : DTDFVocab:Enabler [
+    base:desc "Frontend enabling operators to manually enable/disable ACC, set desired speed, and issue emergency braking"
+    DTDFVocab:enables RemoteManagementService
+]
+
+// Services
+instance DataMonitoringService : DTDFVocab:Service [
+    base:desc "Real‑time acquisition and visualization of ACC‑relevant vehicle state data via UI supporting viewing, saving, and report generation"
+    DTDFVocab:provides VehicleStateInsight, ObjectTrackInsight
+]
+
+instance ComputationOffloadingService : DTDFVocab:Service [
+    base:desc "Offloading core ACC function to cloud server computing desired speed based on distance to lead vehicle"
+    DTDFVocab:provides ACCCommandAction
+]
+
+instance RemoteManagementService : DTDFVocab:Service [
+    base:desc "Remote management enabling operators to selectively control ACC, adjust desired speed, and trigger emergency braking"
+    DTDFVocab:provides EnableACCAction, SetDesiredSpeedAction, EmergencyBrakeAction
+]
+
+// Insights
+instance VehicleStateInsight : DTDFVocab:Insight [
+    base:desc "Insight into current vehicle state such as pose, velocity, and wheel speeds"
+]
+
+instance ObjectTrackInsight : DTDFVocab:Insight [
+    base:desc "Insight into detected object tracks in the environment"
+]
+
+// Actions
+instance ACCCommandAction : DTDFVocab:Action [
+    base:desc "Desired speed command for ACC sent from cloud server to vehicle ECU"
+    DTDFVocab:IsAutomatic true
+]
+
+instance EnableACCAction : DTDFVocab:Action [
+    base:desc "Command to enable or disable ACC"
+    DTDFVocab:IsAutomatic false
+]
+
+instance SetDesiredSpeedAction : DTDFVocab:Action [
+    base:desc "Command to set desired speed for ACC"
+    DTDFVocab:IsAutomatic false
+]
+
+instance EmergencyBrakeAction : DTDFVocab:Action [
+    base:desc "Command to initiate emergency braking"
+    DTDFVocab:IsAutomatic false
+]
+
+instance twinning_time_scale : DTDFVocab:TimeScale [
+    base:desc "The system requires precise temporal alignment across all components, enforcing a shared clock with an accuracy tighter than 100 ms due to hardware constraints. Each computational node, sensor, and actuator must operate with this 100 ms synchronization granularity to meet safety‑critical vehicular service latency requirements, particularly for computation‑offloading tasks where devices exchange time‑stamped data. No higher‑frequency time buses are specified beyond this bound."
+]
+
+instance dt_constellation : DTDFVocab:Constellation [
+    base:desc "The orchestration follows the ISO 23247 Reference Architecture, mapping each software component (FEs) to a dedicated ROS 2 package containing one or more ROS 2 nodes. The Physical Twin Entity hosts general vehicle functions such as Point Cloud Clustering & Tracking, while the Digital Twin Entity manages data storage, pre‑processing, and control mechanisms. The User Entity contains the User Interface FE split into 3D Visualization and Control Panel sub‑components. Deployment on separate hardware facilitates dedicated resource management per entity, with ROS 2’s data‑distribution service handling inter‑entity messaging and synchronization."
+]
+
+instance dt_technical_connection : DTDFVocab:TechnicalConnection [
+    base:desc "All intra‑DTS software components communicate over a ROS2 network, which utilizes DDS for publish/subscribe messaging. Inter‑entity communication (between the Physical Twin Entity and the Digital Twin Entity) is conducted over a Wi‑Fi network using UDP at the transport layer, as illustrated in Fig. 2. The Data Translation FE serves as the serialization hub, synchronizing and converting sensor streams to comply with ISO 23247. The architecture forms a bus‑like topology within the vehicle, with all processing units exchanging data via DDS topics routed over the vehicle’s internal Wi‑Fi."
+]
+
+instance standardization : DTDFVocab:Standardization [
+    base:desc "Standardization: The Digital Twin implementation aligns with the ISO 23247 – Digital Twin Framework for Manufacturing, following its reference architecture (Part 2). The architecture defines four entity roles: Data Collection and Device Control Entity, Digital Twin Entity, User Entity, and Functional Entities. It adheres to ISO‑ed guidelines for modeling Observable Manufacturing Elements (OMEs). For concrete device communication, the system uses OPC Unified Architecture (OPC UA) as an example implementation, enabling interoperability with industrial devices. The open-source reference implementation is available on GitHub (https://github.com/McSCert/Automotive-Digital-Twin). No other certification or compliance frameworks are explicitly mentioned."
+]
+
+instance security_and_safety_considerations : DTDFVocab:SecuritySafety [
+    base:desc "3GPP TS 22.185 specifies a V2X security architecture that requires mutual authentication between vehicle and roadside units (RSUs) using an application‑level Public Key Infrastructure (PKI) based on the V2X Authentication/Authorization (VAA) profile. Cryptographic protection of V2X messages is enforced by Message Authentication Codes (MACs) calculated with AES‑128‑GCM and channel encryption is provided by AES‑CCM‑16‑128. Vehicle identifiers are pseudonymised with short‑lived pseudonyms (typically refreshed every 15–30 s), and certificate revocation is performed via the X.509 Certificate Revocation List (CRL) and Online Certificate Status Protocol (OCSP) mechanisms. ISO 26262 mandates a functional‑safety lifecycle that includes a safety concept, hazard analysis and risk assessment (H‑ARA), safety goals, and safety requirements. Level ASIL D systems must implement fault‑tolerant architectures, such as dual‑ or triple‑modular redundancy, isolated components, and watchdog‑based fail‑safe mechanisms. Safety‑critical system considerations include the need for rigorous software and hardware verification, MISRA‑C compliance for safety‑related code, and continuous monitoring of safety‑related events through safety monitors and basic safety functions. The safety lifecycle also requires the establishment of safety margins, concurrent fault detection, and safe‑state transitions in the event of faults to prevent hazardous states. "
+]

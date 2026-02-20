@@ -1,409 +1,473 @@
-import sys
-import os
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from dotenv import load_dotenv
-
-from langgraph.graph import StateGraph
-from typing_extensions import TypedDict, Dict, Any
-
-import pandas as pd
-
-from utils.rag_config import load_and_split_pdf, generate_desc, llm
-import shutil
-from models.schemas import (
-    Block1Characteristics, 
-    Block2Characteristics, 
-    Block3Characteristics, 
-    Block4Characteristics, 
-    Block5Characteristics, 
-    Block6Characteristics,
-    # DTCharacteristics
-    )
-
-# ---- Config ----
-load_dotenv()
-os.environ['LANGSMITH_TRACING'] = os.getenv("LANGSMITH_TRACING")
-os.environ['LANGSMITH_API_KEY'] = os.getenv("LANGSMITH_API_KEY")
-os.environ['USER_AGENT'] = os.getenv("USER_AGENT")
-
-
-# ---- Graph State setup ----
-class State(TypedDict):
-    pdf_path: str
-    vectordb: object
-    extracted_characteristics: Dict[str, Any]
-    oml_output: str
-
-
-# --------- functions for eahc node -------
-def preprocess(state: State) -> State:
-    """
-    Load a PDF, split it into chunks, and store them in a vector database.
-    """
-    if "pdf_path" not in state:
-        raise ValueError("PDF path must be provided.")
-
-    print("Loading and splitting PDF...")
-    vectordb = load_and_split_pdf(state["pdf_path"])
-    print("Vector DB created...")
-
-    return {"vectordb": vectordb}
-
-
-#######################################################3333####################
-###############################################################################
-
-# NOTE for Prompt engineering
-# - broaden the scope of the retrieval query by making it less specific
-# - Insist on extracting the characteristics in a more detailed way, focusing on the specific use case
-
-###############################################################################
-###############################################################################
-
-def extractor_block1(state: State) -> State:
-    """Extract characterrstics from the first block of the Digital Twin description."""
-
-    if "vectordb" not in state:
-        raise ValueError("Vector database must be provided.")
-    
-    block1_retrieval_query= """(
-        The System under study, the Physical Twin (PT) of the system of interest.
-        The services provided by the Digital Twin (DT), such as optimization, task planning, and visualization.
-        The tools or enablers used to achieve the goals of the Digital Twin (DT) and provide services.
-        """
-    
-    print("Retrieving documents for Block 1 characteristics...")
-    retrieved_docs = state["vectordb"].similarity_search(block1_retrieval_query, k=3)  
-
-    block1_description = """
-        System_under_study: What is the System under study in this case?, i.e., the Physical Twin of the system of interest in this case.
-        dt_services: What are the specific services which the DT provides to the users and the physical system?
-        tooling_and_enablers: What are specific the tools or enablers that are used to achieve the goals of the DT? i.e., they enable the DT to provide the DT services. Mention concisely, the technologies, tools and techniques and thei functionality.
-        """
-
-    print("Extracting Block 1 characteristics...")
-    output = generate_desc(block1_description, retrieved_docs, Block1Characteristics)
-
-    return {"extracted_characteristics": output.model_dump(exclude_none=True)}
-    # return {"extracted_characteristics": output}
-
-
-def extractor_block2(state: State) -> State:
-    """Extract characterrstics from the second block of the Digital Twin description."""
-
-    if "vectordb" not in state:
-        raise ValueError("Vector database must be provided.")
-    
-    block2_retrieval_query= """
-        time-scale use and the time rates for services and synchronization.
-        multiplicities, or the internal twins in the system.
-        orchestration of the DT system, components, and services as a whole.
-        information exchange with external information systems.
-        """
-    
-    print("Retrieving documents for Block 2 characteristics...")
-    retrieved_docs = state["vectordb"].similarity_search(block2_retrieval_query, k=5)  
-
-    block2_description = """
-        twinning_time_scale: Describe the time-scale use and the time rates for the Digital Twin (DT) services and DT-to-PT synchronization. 
-        multiplicities: Describe the multiplicities, i.e., the internal twins that compose the Digital Twin (DT) system, which can be implemented in a centralized or decentralized way.
-        dt_constellation: Describe the orchestration of the Digital Twin (DT) system, components, and services as a whole.
-        horizontal_integration: Describe the information exchange with external information systems not limited to other Digital Twins (DTs).
-        """
-
-    print("Extracting Block 2 characteristics...")
-    output = generate_desc(block2_description, retrieved_docs, Block2Characteristics)
-
-    # merge the output with the previous characteristics
-    if "extracted_characteristics" in state:
-        existing_characteristics = state["extracted_characteristics"]
-        existing_characteristics.update(output.model_dump(exclude_none=True))
-        return {"extracted_characteristics": existing_characteristics}
-
-    return {"extracted_characteristics": output.model_dump(exclude_none=True)}
-
-
-def extractor_block3(state: State) -> State:
-    """Extract characterrstics from the third block of the Digital Twin description."""
-
-    if "vectordb" not in state:
-        raise ValueError("Vector database must be provided.")
-    
-    block3_retrieval_query= """
-        The Digital Twin (DT) components, including available models and data.
-        The available acting components in the Digital Twin (DT), the mechanisms the Digital Twin (DT) can use to act on the Physical Twin (PT).
-        The available sensing components in the Digital Twin (DT), the mechanisms the Physical Twin (PT) can use to transfer data to the Digtal Twin (DT).
-        The fidelity and validity considerations behind the models that constitute the Digital Twin (DT), including verification and validation mechanisms, uncertainty, and errors.
-        """
-    
-    print("Retrieving documents for Block 3 characteristics...")
-    retrieved_docs = state["vectordb"].similarity_search(block3_retrieval_query, k=3)  
-
-    block3_description = """
-            dt_models_and_data: Describes the Digital Twin (DT) components, including available models and data, and what is their role in the Digital Twin (DT) constellation.
-            physical_acting_components: Describes the available acting components in the Digital Twin (DT) constellation, i.e., the mechanisms the Digital Twin (DT) can use to act on the Physical Twin (PT).
-            physical_sensing_components: Describes the available sensing components in the Digital Twin (DT) constellation, i.e., the mechanisms the Physical Twin (PT) can use to transfer data to the Digtal Twin (DT).
-            fidelity_and_validity_considerations: Describes the fidelity and validity considerations behind the models that constitute the Digital Twin (DT), including verification and validation mechanisms, uncertainty, and errors.
-      """
-
-    print("Extracting Block 3 characteristics...")
-    output = generate_desc(block3_description, retrieved_docs, Block3Characteristics)
-
-    # merge the output with the previous characteristics
-    if "extracted_characteristics" in state:
-        existing_characteristics = state["extracted_characteristics"]
-        existing_characteristics.update(output.model_dump(exclude_none=True))
-        return {"extracted_characteristics": existing_characteristics}
-
-    return {"extracted_characteristics": output.model_dump(exclude_none=True)}
-
-
-def extractor_block4(state: State) -> State:
-
-    """Extract characterrstics from the fourth block of the Digital Twin description."""
-
-    if "vectordb" not in state:
-        raise ValueError("Vector database must be provided.")
-    
-    block4_retrieval_query= """
-        Data transmission from PT to DT, including inputs and events that the Digital Twin (DT) processes.
-        Data transmission from Digital Twin (DT) to Physical Twin (PT), including outputs the Digital Twin (DT) generates as part of its services.
-        The technical network connection details between Physical Twin (PT) and Digital Twin (DT), including the network protocols and architectures.
-        The technical hosting aspects of the Digital Twin (DT) and the associated technology."
-    """
-    
-    print("Retrieving documents for Block 4 characteristics...")
-    retrieved_docs = state["vectordb"].similarity_search(block4_retrieval_query, k=5)  
-
-    block4_description = """
-            physical_to_virtual_interaction: Describes the interactions from the physical world to the virtual world, i.e., the data transmitted from Physical Twin (PT) to Digital Twin (DT), including inputs and events that the Digital Twin (DT) processes.
-            virtual_to_physical_interaction: Describes the interactions from the virtual world to the physical world, i.e., the data transmitted from Digital Twin (DT) to Physical Twin (PT), including outputs the Digital Twin (DT) generates as part of its services.
-            dt_technical_connection: Describes the technical network connection details between Physical Twin (PT) and Digital Twin (DT), including the network protocols and architectures."
-            dt_hosting_deployment: Describes the technical hosting aspects of the Digital Twin (DT) and the associated technology."
-    """
-
-    print("Extracting Block 4 characteristics...")
-    output = generate_desc(block4_description, retrieved_docs, Block4Characteristics)
-
-    # merge the output with the previous characteristics
-    if "extracted_characteristics" in state:
-        existing_characteristics = state["extracted_characteristics"]
-        existing_characteristics.update(output.model_dump(exclude_none=True))
-        return {"extracted_characteristics": existing_characteristics}
-
-    return {"extracted_characteristics": output.model_dump(exclude_none=True)}
-
-
-def extractor_block5(state: State) -> State:
-
-    """Extract characterrstics from the fifth block of the Digital Twin description."""
-
-    if "vectordb" not in state:
-        raise ValueError("Vector database must be provided.")
-    
-    block5_retrieval_query= """
-        The lifecycle phases in which the Digital Twin (DT) takes place. Which representation phase the Digital Twin (DT) covers of its physical counterpart, i.e., as designed (ideal), as manufactured, or as operated.
-        The engineering process of Digital Twin (DT) implementation, including the development process, quality assurance, and definition of requirements. Milestones of the Digital Twin (DT) engineering process over time and intended upgrades. 
-        The insights and decision making, i.e., indirect outputs of the Digital Twin (DT), which have no direct effect on the Physical Twin (PT) such as update of parameters, plans, and so on.
-        The standards being followed for the engineering of the Digital Twin (DT) and its components.
-    """
-    
-    print("Retrieving documents for Block 5 characteristics...")
-    retrieved_docs = state["vectordb"].similarity_search(block5_retrieval_query, k=7)  
-
-    block5_description = """
-        life_cycle_stages: Describes the lifecycle phases in which the Digital Twin (DT) takes place. It also informs which representation phase the Digital Twin (DT) covers of its physical counterpart, i.e., as designed (ideal), as manufactured, or as operated.
-        twinning_process_and_dt_evolution: Describes the engineering process involved in the Digital Twin (DT) implementation, including the development process, quality assurance, and definition of requirements. It also informs on the milestones of the Digital Twin (DT) engineering process over time and intended upgrades. 
-        insights_and_decision_making: Defines the insights and decision making, i.e., indirect outputs of the Digital Twin (DT), which have no direct effect on the Physical Twin (PT) such as update of parameters, plans, and so on.
-        standardization: Refers to the standards being followed for the engineering of the Digital Twin (DT) and its components.
-       
- """
-
-    print("Extracting Block 5 characteristics...")
-    output = generate_desc(block5_description, retrieved_docs, Block5Characteristics)
-
-    # merge the output with the previous characteristics
-    if "extracted_characteristics" in state:
-        existing_characteristics = state["extracted_characteristics"]
-        existing_characteristics.update(output.model_dump(exclude_none=True))
-        return {"extracted_characteristics": existing_characteristics}
-
-    return {"extracted_characteristics": output.model_dump(exclude_none=True)}
-
-
-def extractor_block6(state: State) -> State:
-
-    """Extract characterrstics from the fifth block of the Digital Twin description."""
-
-    if "vectordb" not in state:
-        raise ValueError("Vector database must be provided.")
-    
-    block6_retrieval_query= """
-        Data ownership and data privacy, data cybersecurity and safety on operation.
-    """
-    
-    print("Retrieving documents for Block 6 characteristics...")
-    retrieved_docs = state["vectordb"].similarity_search(block6_retrieval_query, k=3)  
-
-    block6_description = """
-        data_ownership_and_privacy: Refers to the ethical and technical aspects regarding data ownership and data privacy. Is the data owned by the PT owner or by the DT service provider?"
-        security_and_safety_considerations: Refers to the ethical and technical aspects regarding data cybersecurity and safety on operation. Can a DT execute operations remotely on a PT where there may be accidents with humans?"
- """
-
-    print("Extracting Block 6 characteristics...")
-    output = generate_desc(block6_description, retrieved_docs, Block6Characteristics)
-
-    # merge the output with the previous characteristics
-    if "extracted_characteristics" in state:
-        existing_characteristics = state["extracted_characteristics"]
-        existing_characteristics.update(output.model_dump(exclude_none=True))
-        return {"extracted_characteristics": existing_characteristics}
-
-    return {"extracted_characteristics": output.model_dump(exclude_none=True)}
-
-
-
-# FIXME: Too many instructions, simplify prompt
-def generate_oml(state: State) -> State:
-    """
-    Generate OML description based on extracted characteristics.
-    """
-    if "extracted_characteristics" not in state:
-        raise ValueError("Extracted characteristics must be provided.")
-        
-    characteristics = state["extracted_characteristics"]
-    
-    # Read the vocabulary for context
-    dtdf_vocab = ""
-    try:
-        with open("data/oml/DTDF/vocab/DTDFVocab.oml", "r", encoding="utf-8") as f:
-            dtdf_vocab = f.read()
-    except FileNotFoundError:
-        print("Warning: Could not find 'DTDFVocab.oml' file")
-    
-    base_oml = ""
-    try:
-        with open("data/oml/DTDF/vocab/base.oml", "r", encoding="utf-8") as f:
-            base_oml = f.read()
-    except FileNotFoundError:
-        print("Warning: Could not find 'base.oml' file")
-
-    baseDesc = ""
-    try:
-        with open("data/oml/DTDF/desc/baseDesc.oml", "r", encoding="utf-8") as f:
-            baseDesc = f.read()
-    except FileNotFoundError:
-        print("Warning: Could not find 'baseDesc.oml' file")
-    
-    prompt = f"""
-You are an expert in OML (Ontological Modeling Language) tasked with generating a complete OML description for a Digital Twin based on the following extracted characteristics:
-
-EXTRACTED CHARACTERISTICS:
-\n{characteristics}\n
-
-You are also provided with a vocabulary reference to use in your OML description. The vocabulary is structured in a way that allows you to create instances and relationships between them, following the OML syntax.
-VOCABULARY REFERENCE:
-
-DTDFVocab.oml: ´´´\n{dtdf_vocab}\n´´´
----
-base.oml:´´´\n{base_oml}\n´´´
---- 
-baseDesc.oml:´´´\n{baseDesc}\n´´´
----
-
-Only generate OML code that’s similar to the following syntax examples: 
-// enabler (C11)
-instance <name_of_enabler>: DTDFVocab:Enabler [
-        DTDFVocab:enables <name_of_service_enabled_1>
-        DTDFVocab:enables <name_of_service_enabled_2>
-        DTDFVocab:enables <name_of_service_enabled_3>
-]
-
-// DT hosting/deployment (C16)
-instance deployment : DTDFVocab:Deployment [
-        base:desc "<Description of the DT hosting/deployment characteristic>"
-]
-
-// Models/Data (C10)
-instance <name_of_model_or_data>: DTDFVocab:Data
-    [
-        DTDFVocab:inputTo <name_of_enabler_1>
-        DTDFVocab:inputTo <name_of_enabler_2>
-        DTDFVocab:fromData <name_of-physical_to_virtual_interaction>
-    ]
-
-IMPORTANT NOTE: Certain characteristics can have multiple instances: Physical acting components, Physical sensing components, Physical-to-virtual interaction, DT services, Twinning time-scale, DT models and data, Tooling and enablers, Insights and decision making.
-
----
-INSTRUCTIONS:
-- Generate a complete OML description following the structure shown in the example
-- Generate only the OML code, no additional explanation.
+"""Main orchestrator & CLI.
 """
+
+from typing import Dict, Any, List, Optional
+import time
+import traceback
+from datetime import datetime
+import argparse
+from abstractions import (
+    IBlockProcessor, IPipelineInitializer, IOMLGenerator, 
+    IQualityAnalyzer, IStateManager, IDocumentRetriever, ICharacteristicsExtractor
+)
+from implementations import (
+    StateManager, DocumentRetriever, CharacteristicsExtractor,
+    PipelineInitializer, OMLGenerator, QualityAnalyzer,
+    Block1Processor, Block2Processor, Block3Processor,
+    Block4Processor, Block5Processor, Block6Processor,
+    DTCharacteristicsProcessor
+)
+from experiment_tracking import (
+    ExperimentConfig, ResultsSaver, ExperimentTracker,
+    CharacteristicsExtractionResult, OMLGenerationResult
+)
+
+from langchain_ollama import ChatOllama
+from judge_evaluator import JudgeEvaluator
+
+class ExtractionOrchestrator:
+    """Main orchestrator that coordinates the extraction pipeline."""
     
-    response = llm.invoke(prompt)
+    def __init__(
+        self,
+        initializer: IPipelineInitializer,
+        state_manager: IStateManager,
+        oml_generator: IOMLGenerator,
+        quality_analyzer: IQualityAnalyzer,
+        block_processors: List[IBlockProcessor],
+        baseline_block_processors: Optional[List[IBlockProcessor]] = None,
+        experiment_tracker: ExperimentTracker = None,
+    ):
+        """Initialize orchestrator with its collaborating components."""
+        self._initializer = initializer
+        self._state_manager = state_manager
+        self._oml_generator = oml_generator
+        self._quality_analyzer = quality_analyzer
+        self._block_processors = block_processors
+        self._baseline_block_processors = baseline_block_processors or []
+        self._experiment_tracker = experiment_tracker
+
+        self._retriever: IDocumentRetriever = None
+        self._extractor: ICharacteristicsExtractor = None
+        self.last_experiment_id: Optional[str] = None
+
+    def initialize_pipeline(self, input_path: str, config: ExperimentConfig):
+        """Initialize the pipeline with the given PDF and configuration."""
+        print("🚀 Initializing extraction pipeline...")
+        if self._state_manager.get_state("vectordb"):
+            print("♻️ Resetting existing vector DB...")
+            self._state_manager.get_state("vectordb")._client.reset()
+        init_result = self._initializer.initialize(input_path, config, config.model_name, config.embedding_model)
+        self._state_manager.update_state(init_result)
+
+    def run_extraction(self, input_path: str, experiment_id: Optional[str] = None, config: Optional[ExperimentConfig] = None, save_results: bool = True) -> Dict[str, Any]:
+        """Run the complete extraction pipeline with optional experiment tracking."""
+        print("🚀 Starting Enhanced Digital Twin Characteristics Extraction")
+        print("=" * 60)
+
+        overall_start_time = time.time()
+        # Start experiment only if not externally provided
+        if self._experiment_tracker and config and not experiment_id:
+            experiment_id = self._experiment_tracker.start_experiment(config)
+            print(f"📊 Experiment ID (started): {experiment_id}")
+        elif experiment_id:
+            print(f"📊 Using provided Experiment ID: {experiment_id}")
+        self.last_experiment_id = experiment_id
+
+        # Set up retriever and extractor
+        rag_pipeline = self._state_manager.get_state("rag_pipeline")
+        vectordb = self._state_manager.get_state("vectordb")
+
+        self._retriever = DocumentRetriever(rag_pipeline, vectordb)
+        self._extractor = CharacteristicsExtractor(rag_pipeline)
+
+
+        if config.max_judge_retries <= 0:
+            print("⚠️ Skipping LLM judge step as max_judge_retries <= 0")
+            judge = None
+        else:
+            print(f"🧪 Using LLM {config.judge_model_name} for judge")
+            judge_llm = ChatOllama(
+                model=config.judge_model_name,
+                temperature=0.0,
+                seed=42,
+            )
+            judge = JudgeEvaluator(judge_llm)
+
+        judge_init = {
+            "judge_enabled": config.max_judge_retries > 0,
+            "max_judge_retries": config.max_judge_retries,
+        }
+
+        if judge is not None:
+            judge_init.update({
+                "judge_model_name_effective": getattr(config, "judge_model_name", None) or config.model_name,
+                "judge_uses_different_model": (
+                    getattr(config, "judge_model_name", None) is not None
+                    and config.judge_model_name != config.model_name
+                ),
+                "judge_temperature": getattr(judge_llm, "temperature", None),
+                "judge_seed": getattr(judge_llm, "seed", None),
+            })
+
+        existing_metadata = self._state_manager.get_state("extraction_metadata") or {}
+        existing_metadata["judge_init"] = judge_init
+        self._state_manager.update_state({"extraction_metadata": existing_metadata})
+
+
+        # Track block processing
+        block_metrics = {
+            'processing_times': {},
+            'docs_retrieved': {},
+            'success_rates': {},
+            'retries': {},
+            'judge': {},
+        }
+        errors = []
+        warnings = []
+        total_input_tokens = 0
+        total_output_tokens = 0
+
+        # Decide which processors to run (baseline or standard)
+        raw_custom = getattr(config, "custom_params", {}) or {}
+        cli_custom = raw_custom.get("custom_params", raw_custom)
+        baseline_full_doc = bool(getattr(config, "baseline_full_doc", cli_custom.get("baseline_full_doc", False)))
+        active_processors = self._baseline_block_processors if baseline_full_doc else self._block_processors
+
+        # Process all blocks
+        for i, processor in enumerate(active_processors, 1):
+            
+            print(f"\n--- Processing Block {i} ---")
+
+            result = processor.process(self._retriever, self._extractor, judge=judge, max_retries=config.max_judge_retries)
+
+            # Track block metrics
+            block_name = result.metadata.get("block_name", f"block_{i}")
+            # block_name = result.metadata['block_name'] if 'block_name' in result.metadata else f"block_{i}"
+
+            block_metrics['success_rates'][block_name] = result.success
+
+            if f"{block_name}_processing_time" in result.metadata:
+                block_metrics['processing_times'][block_name] = result.metadata[f"{block_name}_processing_time"]
+
+            if f"{block_name}_docs_retrieved" in result.metadata:
+                block_metrics['docs_retrieved'][block_name] = [
+                    doc.page_content if hasattr(doc, 'page_content') else str(doc)
+                    for doc in result.metadata.get(f"{block_name}_docs_retrieved") or []
+                ]
+            
+            if f"{block_name}_input_tokens" in result.metadata:
+                total_input_tokens += result.metadata.get(f"{block_name}_input_tokens", 0)
+
+            if f"{block_name}_output_tokens" in result.metadata:
+                total_output_tokens += result.metadata.get(f"{block_name}_output_tokens", 0)
+            
+            if f"{block_name}_retries" in result.metadata:
+                block_metrics['retries'][block_name] = result.metadata[f"{block_name}_retries"]
+            
+            if f"{block_name}_judge" in result.metadata:
+                block_metrics['judge'][block_name] = result.metadata[f"{block_name}_judge"]
+         
+            if result.success:
+                self._state_manager.merge_characteristics(result.characteristics)
+                # Update metadata
+                existing_metadata = self._state_manager.get_state("extraction_metadata") or {}
+                existing_metadata.update(result.metadata)
+                self._state_manager.update_state({"extraction_metadata": existing_metadata})
+            else:
+                error_msg = f"{block_name} processing failed: {result.error_message}"
+                print(f"❌ {error_msg}")
+                errors.append(error_msg)
+
+        # Calculate characteristics extraction metrics
+        characteristics_processing_time = time.time() - overall_start_time
+
+        # Save characteristics extraction results if tracking is enabled
+        characteristics_result = None
+        if self._experiment_tracker and save_results:
+            results = self._state_manager.get_all_state()
+            quality_metrics = self.analyze_characteristic_extraction(results)
+
+            print("==" * 60)
+            print(f"{quality_metrics.get('extraction_rate', 0.0):.2f}% characteristics extracted")
+            print("==" * 60)
+
+            characteristics_result = CharacteristicsExtractionResult(
+                experiment_id=experiment_id,
+                input_path=input_path,
+                extracted_characteristics=results.get("extracted_characteristics", {}),
+                extraction_metadata=results.get("extraction_metadata", {}),
+                errors=errors,
+                warnings=warnings,
+                timestamp=datetime.now(),
+                config=config,
+                total_characteristics=quality_metrics.get('total_characteristics', 0),
+                extracted_count=quality_metrics.get('extracted_count', 0),
+                not_found_count=quality_metrics.get('not_found_count', 0),
+                extraction_rate=quality_metrics.get('extraction_rate', 0.0),
+                average_description_length=quality_metrics.get('average_description_length', 0.0),
+                # total_docs_retrieved=quality_metrics.get('total_docs_retrieved', 0),
+                total_chunks=quality_metrics.get('total_chunks', 0),
+                processing_time_seconds=characteristics_processing_time,
+                block_processing_times=block_metrics.get('processing_times', {}),
+                block_success_rates=block_metrics.get('success_rates', {}),
+                total_input_tokens=total_input_tokens,
+                total_output_tokens=total_output_tokens,
+                # judged_characteristics=block_metrics.get('judge', {}),
+                block_retries=block_metrics.get('retries', {}),
+            )
+
+            saved_path = self._experiment_tracker.results_saver.save_characteristics_results(characteristics_result)
+            print(f"💾 Characteristics results saved to: {saved_path}")
+
+        # Include experiment_id in state for downstream consumers
+        state = self._state_manager.get_all_state()
+        state['experiment_id'] = experiment_id
+        return state
+
+
+    def run_oml_generation(self, experiment_id: str = None, save_results: bool = True, config: Optional[ExperimentConfig] = None,
+                            source_experiment_id: str = None) -> Dict[str, Any]:
+        """Run OML generation; optionally load characteristics from a saved experiment.
+
+        Parameters:
+            experiment_id: (optional) ID for this OML generation run.
+            save_results: persist results if tracking enabled.
+            source_experiment_id: load characteristics from this prior extraction experiment.
+        """
+        print("\n--- Generating OML ---")
+        oml_start_time = time.time()
+        oml_errors: List[str] = []
+        oml_warnings: List[str] = []
+
+        characteristics = None
+        if source_experiment_id and self._experiment_tracker:
+            loaded = self._experiment_tracker.results_saver.load_characteristics_results(source_experiment_id)
+            if loaded:
+                print(f"📄 Loaded characteristics from experiment {source_experiment_id}")
+                characteristics = loaded.extracted_characteristics
+                # use source experiment id as lineage if no explicit experiment id passed
+                if experiment_id is None:
+                    experiment_id = source_experiment_id
+            else:
+                print(f"⚠️ No saved characteristics found for experiment id {source_experiment_id}; falling back to in-memory state")
+        if characteristics is None:
+            characteristics = self._state_manager.get_state("extracted_characteristics") or {}
+        if not characteristics:
+            print("❌ No characteristics available to generate OML. Run extraction first or specify --exp-id.")
+            return self._state_manager.get_all_state()
+
+        try:
+            vocab_files = {
+                "DTDFVocab": "data/oml/DTDF/vocab/DTDFVocab.oml",
+                "base": "data/oml/DTDF/vocab/base.oml"
+            }
+            oml_output, oml_repetition_count, validation_status, total_input_tokens, total_output_tokens = self._oml_generator.generate(characteristics, vocab_files, max_retries=config.max_oml_retries)
+            self._state_manager.update_state({"oml_output": oml_output})
+        except Exception as e:
+            # Check for critical network/rate limit errors
+            error_msg = str(e).lower()
+            is_critical = "429" in error_msg or "500" in error_msg or "too many requests" in error_msg or "503" in error_msg or "service unavailable" in error_msg
+            
+            if is_critical:
+                print(f"🔥 Critical OML generation error: {e}. Bubbling up for experiment retry.")
+                raise e
+
+            oml_error = f"OML generation failed: {str(e)}"
+            print(f"❌ {oml_error}")
+            traceback.print_exc()
+            oml_errors.append(oml_error)
+            oml_output = ""
+
+        oml_processing_time = time.time() - oml_start_time
+
+        if self._experiment_tracker and save_results:
+            oml_result = OMLGenerationResult(
+                experiment_id=f"{experiment_id}" if experiment_id else f"manual_{int(time.time())}",
+                timestamp=datetime.now(),
+                config=config,
+                input_path=self._state_manager.get_state("input_path"),
+                characteristics_experiment_id=source_experiment_id or experiment_id or f"manual_{int(time.time())}",
+                generated_oml=oml_output,
+                oml_metadata={},
+                generation_time_seconds=oml_processing_time,
+                oml_max_retries=config.max_oml_retries,
+                oml_repetition_count=oml_repetition_count,
+                errors=oml_errors,
+                warnings=oml_warnings,
+                oml_valid=(validation_status == 1),
+                oml_line_count=len(oml_output.splitlines()),
+                oml_instance_count=oml_output.count("instance"),
+                total_input_tokens=total_input_tokens,
+                total_output_tokens=total_output_tokens,
+            )
+            saved_oml_path = self._experiment_tracker.results_saver.save_oml_results(oml_result)
+            print(f"💾 OML results saved to: {saved_oml_path}")
+        return self._state_manager.get_all_state()
+
+    def analyze_characteristic_extraction(self, results: Dict[str, Any]) -> Dict[str, Any]:
+        """Analyze the quality of extraction results."""
+        return self._quality_analyzer.analyze_characteristics(results)
+
+
+class ExtractionPipelineFactory:
+    """Factory for creating extraction pipeline components."""
     
-    # Extract content from the response
-    oml_content = response.content if hasattr(response, 'content') else str(response)
+    @staticmethod
+    def create_orchestrator(
+        with_experiment_tracking: bool = True,
+        output_dir: Optional[str] = "experiments",
+        ) -> ExtractionOrchestrator:
+
+        """Create a fully configured extraction orchestrator."""
+        
+        # Create core components
+        state_manager = StateManager()
+        initializer = PipelineInitializer()
+        quality_analyzer = QualityAnalyzer()
+        
+        # Create experiment tracking if requested
+        experiment_tracker = None
+        if with_experiment_tracking:
+            results_saver = ResultsSaver(base_output_dir=output_dir)
+            experiment_tracker = ExperimentTracker(results_saver)
+        
+        # Create block processors
+        block_processors = [
+            Block1Processor(),
+            Block2Processor(),
+            Block3Processor(),
+            Block4Processor(),
+            Block5Processor(),
+            Block6Processor()
+        ]
+        baseline_block_processors = [DTCharacteristicsProcessor()]
+        
+        # Create a wrapper that handles the OML generator creation
+        class DeferredOMLGenerator:
+            def __init__(self, state_manager):
+                self._state_manager = state_manager
+                self._generator = None
+
+            def generate(self, characteristics: Dict[str, Any], vocab_files: Dict[str, str], max_retries: int = 3) -> str:
+                if self._generator is None:
+                    rag_pipeline = self._state_manager.get_state("rag_pipeline")
+                    if rag_pipeline is None:
+                        # Attempt deferred load failed; provide clearer message
+                        raise RuntimeError("RAG pipeline still not available after attempted load.")
+                    self._generator = OMLGenerator(rag_pipeline)
+                return self._generator.generate(characteristics, vocab_files, max_retries=max_retries)
+
+        oml_generator = DeferredOMLGenerator(state_manager)
+        
+        return ExtractionOrchestrator(
+            initializer=initializer,
+            state_manager=state_manager,
+            oml_generator=oml_generator,
+            quality_analyzer=quality_analyzer,
+            block_processors=block_processors,
+            baseline_block_processors=baseline_block_processors,
+            experiment_tracker=experiment_tracker
+        )
     
-    return {"oml_output": oml_content}
+    @staticmethod
+    def create_config(
+        model_name: str,
+        embedding_model: str,
+        chunk_size: int,
+        chunk_overlap: int,
+        temperature: float,
+        top_p: float,
+        top_k: int,
+        max_judge_retries: int = 2,
+        max_oml_retries: int = 3,
+        judge_model_name: Optional[str] = None,
+        baseline_full_doc: bool = False,
+        baseline_max_chars: int = 24000,
+        **custom_params
+    ) -> ExperimentConfig:
+        """Create an experiment configuration."""
+        if judge_model_name is None:
+            judge_model_name = model_name
+
+        return ExperimentConfig(
+            model_name=model_name,
+            embedding_model=embedding_model,
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap,
+            temperature=temperature,
+            top_p=top_p,
+            top_k=top_k,
+            max_judge_retries=max_judge_retries,
+            max_oml_retries=max_oml_retries,
+            judge_model_name=judge_model_name,
+            baseline_full_doc=baseline_full_doc,
+            baseline_max_chars=baseline_max_chars,
+            custom_params=custom_params
+        )
 
 
+def main():
+    parser = argparse.ArgumentParser(description="Extraction / OML generation pipeline")
+    parser.add_argument("--mode", choices=["both", "extraction", "oml"], default="both", help="Run extraction, OML generation, or both")
+    parser.add_argument("--input-path", default="data/papers/The Incubator Case Study for Digital Twin Engineering.pdf", help="PDF path for extraction")
+    parser.add_argument("--output-dir", default="experiments", help="Directory to save experiment results")
+    parser.add_argument("--chunk-size", type=int, default=3000)
+    parser.add_argument("--chunk-overlap", type=int, default=500)
+    parser.add_argument("--temperature", type=float, default=0.1)
+    parser.add_argument("--model-name", default="qwen3:8b")
+    parser.add_argument("--judge-model-name", default="deepseek-v3.2:cloud", help="Optional LLM model name used only for the judge. Defaults to --model-name.")
+    parser.add_argument("--embedding-model", default="embeddinggemma")
+    parser.add_argument("--exp-id", help="Existing experiment id (hash_timestamp or just hash for latest) containing characteristics for standalone OML generation")
+    parser.add_argument("--no-save", action="store_true", help="Do not persist results")
+    parser.add_argument("--max-judge-retries", type=int, default=2, help="Maximum retries for low-confidence judge evaluations. Set to 0 to disable judging.")
+    parser.add_argument("--max-oml-retries", type=int, default=3, help="Maximum retries for OML generation validation. Set to 0 to skip validation.")
+    parser.add_argument("--baseline-full-doc", action="store_true", help="Use baseline mode: no chunking/RAG. Feed the full document to the LLM and extract the 21 DT characteristics at once (DTCharacteristics).")
+    parser.add_argument("--baseline-max-chars", type=int, default=24000, help="Maximum number of characters to read from the document in baseline full-doc mode.")
+    args = parser.parse_args()
 
-# ---- Graph setup ----
-graph = StateGraph(State)
 
-# set nodes
-graph.add_node("preprocess", preprocess)
-graph.add_node("extractor_block1", extractor_block1)
-graph.add_node("extractor_block2", extractor_block2)
-graph.add_node("extractor_block3", extractor_block3)
-graph.add_node("extractor_block4", extractor_block4)
-graph.add_node("extractor_block5", extractor_block5)
-graph.add_node("extractor_block6", extractor_block6)
-graph.add_node("generate_oml", generate_oml)
+    config = ExtractionPipelineFactory.create_config(
+        model_name=args.model_name,
+        embedding_model=args.embedding_model,
+        chunk_size=args.chunk_size,
+        chunk_overlap=args.chunk_overlap,
+        temperature=args.temperature,
+        max_judge_retries=args.max_judge_retries,
+        max_oml_retries=args.max_oml_retries,
+        judge_model_name=args.judge_model_name,
+        baseline_full_doc=args.baseline_full_doc,
+        baseline_max_chars=args.baseline_max_chars,
+        custom_params={"cli": True}
+    )
+    print("Using configuration:", config)
 
-# set edges
-graph.set_entry_point("preprocess")
-graph.add_edge("preprocess", "extractor_block1")
-graph.add_edge("extractor_block1", "extractor_block2")
-graph.add_edge("extractor_block2", "extractor_block3")
-graph.add_edge("extractor_block3", "extractor_block4")
-graph.add_edge("extractor_block4", "extractor_block5")
-graph.add_edge("extractor_block5", "extractor_block6")
-# graph.set_finish_point("extractor_block6")
-graph.add_edge("extractor_block6", "generate_oml")
-graph.set_finish_point("generate_oml")
+    orchestrator = ExtractionPipelineFactory.create_orchestrator(
+        with_experiment_tracking=True,
+        output_dir=args.output_dir
+    )
+    
+    orchestrator.initialize_pipeline(args.input_path, config=config)
 
-workflow = graph.compile()
+    extraction_results = {}
+    experiment_id = None
+    if args.mode in ("extraction", "both"):
+        extraction_results = orchestrator.run_extraction(args.input_path, experiment_id=None, config=config, save_results=not args.no_save)
+        experiment_id = orchestrator.last_experiment_id
 
+    if args.mode in ("oml", "both"):
+        oml_results = orchestrator.run_oml_generation(experiment_id=experiment_id, save_results=not args.no_save, source_experiment_id=args.exp_id, config=config)
+        oml_output = oml_results.get("oml_output")
+        if not oml_output:
+            print("No OML generated.")
+
+    if extraction_results and extraction_results.get("extracted_characteristics"):
+        quality_metrics = orchestrator.analyze_characteristic_extraction(extraction_results)
+        print("\n📈 Extraction Quality:")
+        print(f" - Extraction Rate: {quality_metrics['extraction_rate']:.2f}%")
+        print(f" - Extracted: {quality_metrics['extracted_count']}/{quality_metrics['total_characteristics']}")
+
+    print("\nCompleted mode:", args.mode)
 
 if __name__ == "__main__":
-    # pdf_path = "data/case_studies/DT_book-276-289_incubator.pdf"
-    pdf_path = "data/papers/The Incubator Case Study for Digital Twin Engineering.pdf"
-    # pdf_path = "data/papers/Gil et al. - 2025 - Toward a systematic reporting framework for Digital Twins a cooperative robotics case study-1-12.pdf"
-    
-
-    # Delete ../vector_db if it already exists
-    vector_db_path = os.path.join(os.path.dirname(__file__), "..", "vector_db")
-    if os.path.exists(vector_db_path):
-        shutil.rmtree(vector_db_path)
-
-    # Run the workflow
-    result = workflow.invoke({"pdf_path": pdf_path})
-
-    print("\n Extracted characteristics:\n", result["extracted_characteristics"])
-
-    df = pd.DataFrame(result["extracted_characteristics"], index=[1])
-    df = df.transpose().reset_index()
-    df.columns = ['Characteristic', 'Description']
-
-    print(f"Generated output:\n{df.to_markdown(index=False)}")
-    # Count how many extracted characteristics are 'Not Found'
-    not_found_count = sum(
-        1 for v in result["extracted_characteristics"].values() if v == "Not Found"
-    )
-    print(f"\nNumber of 'Not Found' characteristics: {not_found_count}")
-    print("\n OML description generated:\n", result.get("oml_output", "Not generated"))
-
-
+    main()

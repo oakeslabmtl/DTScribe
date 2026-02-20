@@ -1,0 +1,151 @@
+// Sensing Components
+instance LiDARSensor : DTDFVocab:SensingComponent [
+    base:desc "Raw LiDAR sensor providing point cloud data in XYZ coordinates with timestamps and reflectance"
+    DTDFVocab:producedData LiDARPointCloudTransmitted
+]
+
+instance CameraSensor : DTDFVocab:SensingComponent [
+    base:desc "On‑board camera capturing images for object detection and path projection"
+    DTDFVocab:producedData CameraImageTransmitted
+]
+
+instance VehicleStateBusSensor : DTDFVocab:SensingComponent [
+    base:desc "Vehicle state bus providing kinematic data: speed, acceleration, steering angle"
+    DTDFVocab:producedData VehicleStateTransmitted
+]
+
+instance UICommandSensor : DTDFVocab:SensingComponent [
+    base:desc "User interface transmitting remote ACC control commands"
+    DTDFVocab:producedData UICommandTransmitted
+]
+
+// Data Transmitted
+instance LiDARPointCloudTransmitted : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom LiDARSensor 
+]
+
+instance CameraImageTransmitted : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom CameraSensor 
+]
+
+instance VehicleStateTransmitted : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom VehicleStateBusSensor 
+]
+
+instance UICommandTransmitted : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom UICommandSensor 
+]
+
+// Data Instances
+instance LiDARPointCloudData : DTDFVocab:Data [
+    base:desc "Raw LiDAR point cloud data in XYZ with timestamps and reflectance"
+    DTDFVocab:fromData LiDARPointCloudTransmitted
+    DTDFVocab:inputTo DataProcessingEnabler
+]
+
+instance CameraImageData : DTDFVocab:Data [
+    base:desc "Raw camera image data including color channels and timestamp"
+    DTDFVocab:fromData CameraImageTransmitted
+    DTDFVocab:inputTo DataProcessingEnabler
+]
+
+instance VehicleKinematicData : DTDFVocab:Data [
+    base:desc "Vehicle kinematic state: speed, acceleration, steering angle"
+    DTDFVocab:fromData VehicleStateTransmitted
+    DTDFVocab:inputTo DataProcessingEnabler
+    DTDFVocab:inputTo CloudComputeEnabler
+]
+
+instance UICommandData : DTDFVocab:Data [
+    base:desc "User‑issued ACC control command payload (enable/disable ACC, set desired speed, emergency brake)"
+    DTDFVocab:fromData UICommandTransmitted
+    DTDFVocab:inputTo RemoteManagementEnabler
+]
+
+// Enablers
+instance DataProcessingEnabler : DTDFVocab:Enabler [
+    base:desc "Software stack that translates raw sensor data into ROS2 topics and performs point cloud clustering, object tracking, and path projection"
+    DTDFVocab:enables DataMonitoringService, ComputationOffloadingService
+]
+
+instance CloudComputeEnabler : DTDFVocab:Enabler [
+    base:desc "Cloud‑based compute service that runs the ACC algorithm and transmits desired speed back to the vehicle"
+    DTDFVocab:enables ComputationOffloadingService
+]
+
+instance RemoteManagementEnabler : DTDFVocab:Enabler [
+    base:desc "Middleware that receives low‑latency remote commands from the UI and forwards them to the vehicle ECU"
+    DTDFVocab:enables RemoteManagementService
+]
+
+// Services
+instance DataMonitoringService : DTDFVocab:Service [
+    base:desc "Service providing real‑time vehicle state visualization, projected driving path, and object track display in a UI, allowing operators to view, save, and generate reports on ACC‑relevant data"
+    DTDFVocab:provides ObjectTrackInsight, GenerateReportAction
+]
+
+instance ComputationOffloadingService : DTDFVocab:Service [
+    base:desc "Service offloading the entire ACC algorithm to cloud compute resources and transmitting desired speed back to the vehicle"
+    DTDFVocab:provides DesiredSpeedAction
+]
+
+instance RemoteManagementService : DTDFVocab:Service [
+    base:desc "Service enabling operators to remotely enable/disable ACC, set desired speed, and issue emergency braking commands via low‑latency communication"
+    DTDFVocab:provides EnableACCAction, DisableACCAction, SetDesiredSpeedAction, EmergencyBrakeAction
+]
+
+// Actions
+instance GenerateReportAction : DTDFVocab:Action [
+    base:desc "Generate and archive a report containing ACC‑relevant data captured during a drive"
+    DTDFVocab:IsAutomatic false
+]
+
+instance DesiredSpeedAction : DTDFVocab:Action [
+    base:desc "Transmit the desired speed computed by the ACC algorithm from cloud to vehicle ECU"
+    DTDFVocab:IsAutomatic true
+]
+
+instance EnableACCAction : DTDFVocab:Action [
+    base:desc "Turns Adaptive Cruise Control on in the vehicle ECU"
+    DTDFVocab:IsAutomatic false
+]
+
+instance DisableACCAction : DTDFVocab:Action [
+    base:desc "Turns Adaptive Cruise Control off in the vehicle ECU"
+    DTDFVocab:IsAutomatic false
+]
+
+instance SetDesiredSpeedAction : DTDFVocab:Action [
+    base:desc "Sets a user‑specified desired cruising speed for ACC"
+    DTDFVocab:IsAutomatic false
+]
+
+instance EmergencyBrakeAction : DTDFVocab:Action [
+    base:desc "Triggers emergency braking command in the vehicle ECU"
+    DTDFVocab:IsAutomatic false
+]
+
+// Insights
+instance ObjectTrackInsight : DTDFVocab:Insight [
+    base:desc "Provides real‑time data on detected object tracks and their predicted trajectories for monitoring ACC performance"
+]
+
+instance virtual_to_physical_interaction : DTDFVocab:VirtualToPhysical [
+    base:desc "Control decisions made within the Digital Twin are sent downstream to the Physical Twin using the same Wi‑Fi UDP channel. Commands comprise serialized motor actuation commands and steering servo actuation commands that specify target torque or angle values. These commands are published on ROS2 topics that map to the vehicle’s actuation interfaces. The document does not provide information on authentication, authorization, or cryptographic validation of these messages. Feedback from the vehicle’s state buses (e.g., current speed, steering angle) is fed back into the digital model to confirm command execution, but explicit mechanisms for conflict resolution or command acknowledgment are not described."
+]
+
+instance twinning_time_scale : DTDFVocab:TimeScale [
+    base:desc "The digital twin’s temporal coordination is driven by a 100 ms clock synchronization accuracy requirement. All computing nodes and physical devices must share a common notion of time so that data and control signals are exchanged within a 100 ms envelope. The system does not specify higher‑frequency sync loops, but it acknowledges that stricter (<100 ms) synchronization is mandated by safety‑critical vehicular standards for which the platform would need to support if required. Latency constraints for individual messaging are not detailed in the document."
+]
+
+instance dt_constellation : DTDFVocab:Constellation [
+    base:desc "The overall orchestration follows the ISO 23247 Reference Architecture, mapping each software feature entity (FE) to a ROS 2 package that contains one or more ROS 2 nodes. The system is organized into three hierarchical entities: User Entity (contains a User Interface FE split into a 3D Visualization and Control Panel), Digital Twin Entity (hosts data management and control mechanisms), and Physical Twin Entity (hosts device communication, data pre‑processing, actuation, and general automotive functions such as point‑cloud clustering & tracking). Each entity is mapped to a distinct physical node, providing decentralized deployment while maintaining a coherent whole through ROS 2 message passing. Resource management is achieved by assigning specific FEs to dedicated hardware platforms; for example, the Physical Twin Entity sits on the vehicle’s compute unit, whereas the User Entity runs on a separate workstation. System‑wide coordination is performed via ROS 2 topics, services, and actions that implement the data flow between sensors, actuators, and digital‑twin logic. The architecture departs from the ISO 23247 standard in that the Physical Twin Entity reflects the inherent resources (compute, sensors, actuators) rather than being an abstract entity; this enables hosting of automotive‑specific functionality."
+]
+
+instance dt_technical_connection : DTDFVocab:TechnicalConnection [
+    base:desc "The digital twin infrastructure employs a dual‑layer communication architecture. Inter‑SW component communication occurs over a ROS2 network, which aggregates messages using the DDS protocol on a local Ethernet or in‑vehicle network. For inter‑entity communication between the Physical Twin Entity and the Digital Twin Entity, a Wi‑Fi network transmits data using UDP. The document does not specify bandwidth, latency, reliability, redundancy, or security protocols, but the choice of UDP implies a low‑latency, best‑effort transfer suitable for real‑time sensor feeds. The ROS2 layer relies on DDS Quality of Service settings (e.g., reliability, durability) to meet internal communication requirements."
+]
+
+instance standardization : DTDFVocab:Standardization [
+    base:desc "The system complies with ISO 23247 – Digital twin framework for manufacturing. It adopts the reference architecture defined in Part 2, which specifies an entity‑based hierarchy of Data Collection & Device Control, Digital Twin and User entities, each composed of functional entities. The implementation may leverage OPC Unified Architecture (OPC UA) for data collection, device control, and information exchange, thereby ensuring interoperability with standard industrial communication protocols."
+]

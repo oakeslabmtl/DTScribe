@@ -1,0 +1,209 @@
+// ---------------------------------------------------------------
+// Physical Acting Components
+// ---------------------------------------------------------------
+instance CartStepperMotor : DTDFVocab:ActingComponent [
+    base:desc "Stepper motor driving the crane cart along the gantry"
+]
+
+instance HoistStepperMotor : DTDFVocab:ActingComponent [
+    base:desc "Stepper motor driving the hoist winch for vertical motion"
+]
+
+instance CartMotorController : DTDFVocab:ActingComponent [
+    base:desc "Trinamic TMC4671‑Eval controller for the cart stepper motor"
+]
+
+instance HoistMotorController : DTDFVocab:ActingComponent [
+    base:desc "Trinamic TMC4671‑Eval controller for the hoist stepper motor"
+]
+
+instance ElectromagnetEndEffector : DTDFVocab:ActingComponent [
+    base:desc "Electromagnet at the end of the hoist used to pick up containers"
+]
+
+// ---------------------------------------------------------------
+// Physical Sensing Components
+// ---------------------------------------------------------------
+instance SwingAngleEncoder : DTDFVocab:SensingComponent [
+    base:desc "Encoder measuring the swing angle of the hoisted load"
+    DTDFVocab:producedData TelemetryMqttMessage
+]
+
+instance Anemometer : DTDFVocab:SensingComponent [
+    base:desc "Anemometer measuring ambient wind speed affecting crane dynamics"
+    DTDFVocab:producedData TelemetryMqttMessage
+]
+
+instance ArduinoMeasurementBoard : DTDFVocab:SensingComponent [
+    base:desc "Arduino‑based board that reads the encoder and anemometer and reports motor status"
+    DTDFVocab:producedData TelemetryMqttMessage
+]
+
+// ---------------------------------------------------------------
+// Data Transmission (Physical → Virtual)
+// ---------------------------------------------------------------
+instance TelemetryMqttMessage : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom SwingAngleEncoder, Anemometer, ArduinoMeasurementBoard
+]
+
+// ---------------------------------------------------------------
+// Virtual Data Objects
+// ---------------------------------------------------------------
+instance TimeSeriesTelemetryData : DTDFVocab:Data [
+    base:desc "Time‑stamped sensor telemetry stored as time‑series"
+    DTDFVocab:fromData TelemetryMqttMessage
+    DTDFVocab:inputTo TimescaleDBDatabase, GrafanaDashboardEnabler
+]
+
+instance LoggedTelemetryInsight : DTDFVocab:Insight [
+    base:desc "Insight summarising logged telemetry trends for operators"
+]
+
+// ---------------------------------------------------------------
+// Models / Data (Inputs to Enablers)
+// ---------------------------------------------------------------
+instance Fusion360CADModel : DTDFVocab:Model [
+    base:desc "CAD geometry of the lab‑scale gantry crane (Autodesk Fusion360)"
+    DTDFVocab:inputTo DockerComposeOrchestrator
+]
+
+instance KinematicTrajectoryModel : DTDFVocab:Model [
+    base:desc "Kinematic model used for optimal trajectory planning"
+    DTDFVocab:inputTo DockerComposeOrchestrator
+]
+
+instance PhysicsSimulationModel : DTDFVocab:Model [
+    base:desc "Physics‑based simulation model of crane dynamics and controller logic"
+    DTDFVocab:inputTo DockerComposeOrchestrator
+]
+
+// ---------------------------------------------------------------
+// Enablers (Tools & Infrastructure)
+// ---------------------------------------------------------------
+instance EclipseMosquittoBroker : DTDFVocab:Enabler [
+    base:desc "Dockerized Eclipse Mosquitto MQTT broker for inter‑service messaging"
+    DTDFVocab:enables OptimalTrajectoryGenerationService,
+                    PhysicsBasedSimulationService,
+                    ContinuousValidationService,
+                    WebHumanMachineInterfaceService
+]
+
+instance TimescaleDBDatabase : DTDFVocab:Enabler [
+    base:desc "TimescaleDB instance (Docker container) storing time‑series sensor and control data"
+    DTDFVocab:enables ContinuousDataLoggingService,
+                    RealTimeVisualizationService
+]
+
+instance GrafanaDashboardEnabler : DTDFVocab:Enabler [
+    base:desc "Grafana dashboard (Docker container) visualising telemetry and validation results"
+    DTDFVocab:enables RealTimeVisualizationService
+]
+
+instance DockerComposeOrchestrator : DTDFVocab:Enabler [
+    base:desc "Docker Compose orchestration managing all containerised twin services"
+    DTDFVocab:enables ContinuousDataLoggingService,
+                    RealTimeVisualizationService,
+                    OptimalTrajectoryGenerationService,
+                    PhysicsBasedSimulationService,
+                    ContinuousValidationService,
+                    WebHumanMachineInterfaceService
+]
+
+// ---------------------------------------------------------------
+// Services (Digital Twin Capabilities)
+// ---------------------------------------------------------------
+instance ContinuousDataLoggingService : DTDFVocab:Service [
+    base:desc "Continuously writes incoming telemetry to TimescaleDB"
+    DTDFVocab:provides LoggedTelemetryInsight
+]
+
+instance RealTimeVisualizationService : DTDFVocab:Service [
+    base:desc "Provides real‑time Grafana visualization of crane state and validation metrics"
+    DTDFVocab:provides PerformanceTrendInsight
+]
+
+instance OptimalTrajectoryGenerationService : DTDFVocab:Service [
+    base:desc "Generates optimal motion trajectories based on the kinematic model"
+    DTDFVocab:provides OptimalMotionTrajectoryInsight,
+                     GenerateOptimalTrajectoryAction
+]
+
+instance PhysicsBasedSimulationService : DTDFVocab:Service [
+    base:desc "Runs physics‑based simulation of crane and controller for predictive analysis"
+    DTDFVocab:provides SimulationOutputInsight
+]
+
+instance ContinuousValidationService : DTDFVocab:Service [
+    base:desc "Continuously validates executed trajectories against simulation outputs"
+    DTDFVocab:provides ValidationAlertInsight,
+                     ValidateTrajectoryAction
+]
+
+instance WebHumanMachineInterfaceService : DTDFVocab:Service [
+    base:desc "Web‑based HMI allowing operators to monitor, configure, and control the crane"
+    DTDFVocab:provides OperatorControlAction
+]
+
+// ---------------------------------------------------------------
+// Insights & Actions (Outputs of Services)
+// ---------------------------------------------------------------
+instance OptimalMotionTrajectoryInsight : DTDFVocab:Insight [
+    base:desc "Insight presenting the computed optimal trajectory for the current task"
+]
+
+instance ValidationAlertInsight : DTDFVocab:Insight [
+    base:desc "Alert generated when validation metrics exceed predefined safety thresholds"
+]
+
+instance PerformanceTrendInsight : DTDFVocab:Insight [
+    base:desc "Trend visualisation of performance indicators such as swing angle and wind impact"
+]
+
+instance SimulationOutputInsight : DTDFVocab:Insight [
+    base:desc "Insight exposing simulated state trajectories for comparison with real data"
+]
+
+instance GenerateOptimalTrajectoryAction : DTDFVocab:Action [
+    base:desc "Automated action that triggers generation of a new optimal trajectory"
+    DTDFVocab:IsAutomatic true
+]
+
+instance ValidateTrajectoryAction : DTDFVocab:Action [
+    base:desc "Automated action that compares executed trajectory with simulation output"
+    DTDFVocab:IsAutomatic true
+]
+
+instance OperatorControlAction : DTDFVocab:Action [
+    base:desc "Operator‑initiated action via the web HMI to adjust parameters or halt the crane"
+    DTDFVocab:IsAutomatic false
+]
+
+// ---------------------------------------------------------------
+// Environment (Physical Twin Context)
+// ---------------------------------------------------------------
+instance LabScaleGantryCraneEnvironment : DTDFVocab:Environment [
+    base:contains CartStepperMotor, HoistStepperMotor,
+                    CartMotorController, HoistMotorController,
+                    ElectromagnetEndEffector,
+                    SwingAngleEncoder, Anemometer, ArduinoMeasurementBoard
+]
+
+instance virtual_to_physical_interaction : DTDFVocab:VirtualToPhysical [
+    base:desc "The Trajectory Generator Service computes optimal motion trajectories (using the crane kinematics model) and publishes them via the MQTT broker; the Control Application receives these trajectories and, through the Physical Crane Interface, sends command set‑points to the motor controllers to move the cart and hoist. The Human‑Machine Interface can also issue manual commands through the same path."
+]
+
+instance dt_constellation : DTDFVocab:Constellation [
+    base:desc "The overall constellation links the physical crane to a Python‑based interface, which feeds sensor data to a logging service and publishes via MQTT; services (trajectory generation, simulation, validation) subscribe to MQTT, use the stored data in TimescaleDB, and publish results back to the broker; the dashboard and HMI consume MQTT messages for visualization and operator interaction. All services run as Docker containers on a single PC."
+]
+
+instance fidelity_and_validity_considerations : DTDFVocab:FidelityConsideration [
+    base:desc "The Continuous Validation Service continuously compares measured trajectories against simulated trajectories, calculates distance metrics, and checks them against a predefined threshold; if breached, operators are alerted on the Grafana dashboard. The simulation also provides confidence bounds (upper and lower) for trajectory traces."
+]
+
+instance dt_technical_connection : DTDFVocab:TechnicalConnection [
+    base:desc "Communication between PT and DT components relies on MQTT (Eclipse Mosquitto) for signaling and data exchange, and on standard TCP/IP connections for TimescaleDB (PostgreSQL) queries and Grafana dashboard access."
+]
+
+instance dt_hosting_deployment : DTDFVocab:Deployment [
+    base:desc "All digital twin services are hosted on a personal computer; the Database, MQTT Broker, and Dashboard are Docker‑containerized and started via a Docker‑Compose file. The Python modules and applications are installed locally (pip) and run as separate processes."
+]

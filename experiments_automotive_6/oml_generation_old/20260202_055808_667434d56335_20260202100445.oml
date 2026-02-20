@@ -1,0 +1,167 @@
+// C3: Physical sensing components
+instance HokuyoUST10LX : DTDFVocab:SensingComponent [
+    base:desc "Hokuyo UST10LX LiDAR with 360° coverage, 20 m operating range, streams raw point‑cloud data at 30 Hz."
+    DTDFVocab:producedData LiDARDataUDP
+]
+instance IntelDepthSenseD435i : DTDFVocab:SensingComponent [
+    base:desc "Intel DepthSense D435i providing RGB‑D imagery up to 2 m with 1 mm depth resolution, streams at 30 Hz."
+    DTDFVocab:producedData DepthCameraDataETH
+]
+instance WheelEncoder : DTDFVocab:SensingComponent [
+    base:desc "Wheel encoder sensor producing rotational data for odometry."
+    DTDFVocab:producedData WheelEncoderDataUDP
+]
+instance IMU : DTDFVocab:SensingComponent [
+    base:desc "Inertial Measurement Unit providing acceleration and angular velocity."
+    DTDFVocab:producedData IMUDataUDP
+]
+instance GPS : DTDFVocab:SensingComponent [
+    base:desc "Global Positioning System delivering global reference position."
+    DTDFVocab:producedData GPSDataUDP
+]
+
+// C4: Physical‑to‑virtual interaction
+instance LiDARDataUDP : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom HokuyoUST10LX
+]
+instance DepthCameraDataETH : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom IntelDepthSenseD435i
+]
+instance WheelEncoderDataUDP : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom WheelEncoder
+]
+instance IMUDataUDP : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom IMU
+]
+instance GPSDataUDP : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom GPS
+]
+
+// C10: Models/Data
+instance LiDARPointCloudData : DTDFVocab:Data [
+    base:desc "Aggregated LiDAR point‑cloud frame stored in SQL database, including ego vehicle state."
+    DTDFVocab:fromData LiDARDataUDP
+    DTDFVocab:inputTo DataTranslationFE, PointCloudClusteringTrackingFE
+]
+instance DepthCameraRGBDImageData : DTDFVocab:Data [
+    base:desc "RGB‑D image frame from Intel D435i, stored with timestamp and pose."
+    DTDFVocab:fromData DepthCameraDataETH
+    DTDFVocab:inputTo DataTranslationFE, Visualization3DFE
+]
+instance WheelEncoderData : DTDFVocab:Data [
+    base:desc "Wheel encoder data packet containing rotational counts."
+    DTDFVocab:fromData WheelEncoderDataUDP
+    DTDFVocab:inputTo DataTranslationFE
+]
+instance IMUData : DTDFVocab:Data [
+    base:desc "IMU data packet containing acceleration and angular velocity."
+    DTDFVocab:fromData IMUDataUDP
+    DTDFVocab:inputTo DataTranslationFE
+]
+instance GPSData : DTDFVocab:Data [
+    base:desc "Processed GPS data packet with global position."
+    DTDFVocab:fromData GPSDataUDP
+    DTDFVocab:inputTo DataTranslationFE
+]
+instance VehicleStateData : DTDFVocab:Data [
+    base:desc "Vehicle state data derived from fused sensor streams, including pose, velocity, heading."
+    DTDFVocab:fromData LiDARDataUDP
+    DTDFVocab:inputTo DataMonitoringFE, ComputationOffloadingFE
+]
+
+// C11: Enablers
+instance DataTranslationFE : DTDFVocab:Enabler [
+    base:desc "Data Translation Front End serialises sensor payload, aligns message types, performs unit conversions, and timestamp alignment."
+    DTDFVocab:enables DataMonitoringService, ComputationOffloadingService
+]
+instance PointCloudClusteringTrackingFE : DTDFVocab:Enabler [
+    base:desc "Clustering & Tracking FE segments point‑cloud into obstacles and tracks objects via DBSCAN + Kalman filtering."
+    DTDFVocab:enables ComputationOffloadingService
+]
+instance Visualization3DFE : DTDFVocab:Enabler [
+    base:desc "3D Visualization FE renders point‑cloud and bounding volumes in real‑time."
+    DTDFVocab:enables DataMonitoringService
+]
+instance DataMonitoringFE : DTDFVocab:Enabler [
+    base:desc "Data Monitoring FE streams vehicle-to-vehicle and vehicle-to-infrastructure telemetry at 10 Hz for ACC support."
+    DTDFVocab:enables DataMonitoringService
+]
+instance ComputationOffloadingFE : DTDFVocab:Enabler [
+    base:desc "Computation Offloading FE delegates trajectory prediction and risk assessment to edge compute node."
+    DTDFVocab:enables ComputationOffloadingService
+]
+instance RemoteManagementFE : DTDFVocab:Enabler [
+    base:desc "Remote Management FE exposes React‑based Web UI secured with OAuth 2.0 for operators to calibrate, troubleshoot, and override ACC."
+    DTDFVocab:enables RemoteManagementService
+]
+
+// C6: Services
+instance DataMonitoringService : DTDFVocab:Service [
+    base:desc "Service providing real‑time UI for vehicle state, projected path, and object tracks."
+    DTDFVocab:provides VehicleStateInsight, ObjectTrackInsight
+]
+instance ComputationOffloadingService : DTDFVocab:Service [
+    base:desc "Service enabling ACC logic offloading to cloud, returning speed commands."
+    DTDFVocab:provides RiskAssessmentInsight, ConfidenceScoreInsight, TrajectoryPredictionInsight
+]
+instance RemoteManagementService : DTDFVocab:Service [
+    base:desc "Service allowing operators to enable/disable ACC, set desired speed, and issue emergency braking commands."
+    DTDFVocab:provides ACCEnableAction, ACCDisableAction, ACCSetDesiredSpeedAction, ACCEmergencyBrakeAction
+]
+
+// C17: Insights/Actions
+instance VehicleStateInsight : DTDFVocab:Insight [
+    base:desc "Insight showing real‑time vehicle state including pose, velocity, and heading."
+]
+instance ObjectTrackInsight : DTDFVocab:Insight [
+    base:desc "Insight displaying tracked obstacles derived from LiDAR point‑cloud."
+]
+instance RiskAssessmentInsight : DTDFVocab:Insight [
+    base:desc "Insight providing risk assessment of potential collisions based on trajectory predictions."
+]
+instance ConfidenceScoreInsight : DTDFVocab:Insight [
+    base:desc "Insight showing confidence scores from Bayesian risk estimator for ACC decisions."
+]
+instance TrajectoryPredictionInsight : DTDFVocab:Insight [
+    base:desc "Insight presenting predicted vehicle and lead vehicle trajectories."
+]
+instance ACCEnableAction : DTDFVocab:Action [
+    base:desc "Action to enable Adaptive Cruise Control."
+    DTDFVocab:IsAutomatic false
+]
+instance ACCDisableAction : DTDFVocab:Action [
+    base:desc "Action to disable Adaptive Cruise Control."
+    DTDFVocab:IsAutomatic false
+]
+instance ACCSetDesiredSpeedAction : DTDFVocab:Action [
+    base:desc "Action to set desired speed for ACC."
+    DTDFVocab:IsAutomatic false
+]
+instance ACCEmergencyBrakeAction : DTDFVocab:Action [
+    base:desc "Action to trigger emergency braking via remote management."
+    DTDFVocab:IsAutomatic false
+]
+
+instance virtual_to_physical_interaction : DTDFVocab:VirtualToPhysical [
+    base:desc "High‑level directives (e.g., target speed or emergency‑braking request) are published by the Digital Twin on a ROS 2 topic and captured by the Actuation FE. This FE validates the command payload against the ISO 23247 schema, translates it into low‑level actuator signals (motor voltage commands, steering servo positions), and broadcasts the command over a UDP/Wi‑Fi channel that the vehicle’s on‑board controller subscribes to. The controller executes the actuator update, publishes a confirmation status on a separate feedback topic, and the DT verifies execution confirmation. If confirmation is absent or mismatched, conflict‑resolution logic triggers an emergency‑brake sequence. Authentication and integrity checks, such as per‑message MACs and session tokens, are applied to the UDP packets to mitigate tampering."
+]
+
+instance twinning_time_scale : DTDFVocab:TimeScale [
+    base:desc "Shared notion of time across all devices is mandatory for computation offloading; clock synchronization accuracy must be ≤ 100 ms, as required by the system’s hardware limitations, even though many industry standards demand tighter bounds for safety‑critical automotive applications. The system therefore synchronises clocks between the physical and digital twin entities via ROS 2 timekeeping mechanisms; the documentation does not specify an exact frequency for these synchronization events."
+]
+
+instance dt_constellation : DTDFVocab:Constellation [
+    base:desc "The overall orchestration follows the ISO 23247 Reference Architecture and is realized through a three‑entity decomposition: (1) Digital Twin Entity—encapsulates data management and control mechanisms; (2) Physical Twin Entity—manages data pre‑processing, actuation, and device communication, and hosts general automotive algorithms such as point‑cloud clustering and tracking; (3) User Entity—provides user‑facing functionality via a User Interface FE split into a 3D Visualization and a Control Panel. Each Functional Entity (FE) is implemented as a dedicated ROS 2 package, containing one or more ROS 2 nodes that execute the required functionality. These packages are independently deployed on distinct hardware nodes, enabling distributed execution across the vehicle’s computational grid. The architecture accommodates deviations from ISO 23247 by incorporating the Physical Twin Entity as a distinct entity representing the system’s inherent resources, thereby influencing ownership and engineering processes of the Digital Twin System (DTS)."
+]
+
+instance dt_technical_connection : DTDFVocab:TechnicalConnection [
+    base:desc "Communication between application components occurs over a ROS2 middleware layer; nodes publish/subscribe within a ROS2 network that leverages UDP over the vehicle’s Wi‑Fi connection for inter‑entity communication. The architecture supports real‑time data feeds but the specifications for bandwidth, latency, reliability, redundancy, and security protocols are not described in the document."
+]
+
+instance standardization : DTDFVocab:Standardization [
+    base:desc "Compliance with ISO 23247 – Digital twin framework for manufacturing. The system adopts an entity-based reference architecture defined in Part 2 of the standard, comprising the Observable Manufacturing Element (OME), Data Collection and Device Control Entity, Digital Twin Entity, and User Entity. Each entity contains Functional Entities (FEs) for tasks such as data collection, device control, digital representation, and user interface. The standard permits choice of communication middleware (e.g., OPC UA), whereas the implementation selected for this system uses a ROS 2 network to achieve interoperability and data exchange with manufacturing equipment and user applications."
+]
+
+instance security_and_safety_considerations : DTDFVocab:SecuritySafety [
+    base:desc "The Digital Twin’s Adaptive Cruise Control (ACC) subsystem is governed by ISO 15622:2018, which specifies performance requirements and test procedures for intelligent transport systems. The system’s architecture implements ACC as per the guidelines in ISO 15622, ensuring compliance with the defined acceptance tests and safety performance metrics. While the documents explicitly reference that the system respects the safety‑critical nature of automotive control, no formal safety‑analysis standard (e.g., ISO 26262) is cited, and details on failure‑mode handling, fault‑tolerant design, or safety assurance processes are not provided. Likewise, cybersecurity measures are absent from the referenced specifications; access control, authentication mechanisms, and threat‑mitigation strategies are not specified. Consequently, it can be inferred that the Digital Twin relies on the safety and performance criteria outlined in ISO 15622, but further security and safety‑critical system details would need to be defined separately."
+]

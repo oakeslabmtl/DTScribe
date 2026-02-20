@@ -1,0 +1,155 @@
+// C3: Physical sensing components
+instance InternalHeatBedTempSensor : DTDFVocab:SensingComponent [
+    base:desc "DS18S20 1‑Wire digital thermometer mounted on the heat‑bed surface, measuring −55 °C to +125 °C with ±0.5 °C accuracy.",
+    DTDFVocab:producedData IncubatorTemperatureDataStream
+]
+
+instance InternalAirspaceTempSensor : DTDFVocab:SensingComponent [
+    base:desc "DS18S20 1‑Wire digital thermometer positioned in the incubator airspace, measuring −55 °C to +125 °C with ±0.5 °C accuracy.",
+    DTDFVocab:producedData IncubatorTemperatureDataStream
+]
+
+instance ExternalAmbientTempSensor : DTDFVocab:SensingComponent [
+    base:desc "DS18S20 1‑Wire digital thermometer located outside the incubator to monitor ambient conditions, measuring −55 °C to +125 °C with ±0.5 °C accuracy.",
+    DTDFVocab:producedData IncubatorTemperatureDataStream
+]
+
+// C4: Physical-to-virtual interaction
+instance IncubatorTemperatureDataStream : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom InternalHeatBedTempSensor, InternalAirspaceTempSensor, ExternalAmbientTempSensor
+]
+
+// C10: Data
+instance TemperatureMeasurementData : DTDFVocab:Data [
+    base:desc "Timestamped temperature measurements collected at ~1 Hz from the three DS18S20 sensors for calibration, validation, and runtime monitoring.",
+    DTDFVocab:fromData IncubatorTemperatureDataStream,
+    DTDFVocab:inputTo CalibrationEnabler, MonitoringEnabler, SimulationEnabler
+]
+
+// C10: Models/Data
+instance ReducedTemperatureModel : DTDFVocab:Model [
+    base:desc "Reduced thermal dynamics model of the incubator with two free parameters.",
+    DTDFVocab:inputTo CalibrationEnabler, SimulationEnabler
+]
+
+instance ExtendedTemperatureModel : DTDFVocab:Model [
+    base:desc "Extended thermal dynamics model capturing heat‑bed inertia with four free parameters.",
+    DTDFVocab:inputTo CalibrationEnabler, SimulationEnabler
+]
+
+// C11: Enablers
+instance CalibrationEnabler : DTDFVocab:Enabler [
+    base:desc "Python SciPy optimisation routines used to calibrate model parameters from temperature data.",
+    DTDFVocab:enables CalibrationService
+]
+
+instance MonitoringEnabler : DTDFVocab:Enabler [
+    base:desc "Python monitoring algorithms that check safety and optimal performance using incoming temperature data.",
+    DTDFVocab:enables MonitoringService
+]
+
+instance SimulationEnabler : DTDFVocab:Enabler [
+    base:desc "Python numerical integration library executing model‑based simulations for prediction.",
+    DTDFVocab:enables ModelSimulationService
+]
+
+instance RabbitMQMessageBusEnabler : DTDFVocab:Enabler [
+    base:desc "RabbitMQ server that synchronises messages between sensors, controller, and cyber services.",
+    DTDFVocab:enables DataAcquisitionService, SupervisoryControlService
+]
+
+instance RaspberryPiControllerEnabler : DTDFVocab:Enabler [
+    base:desc "Raspberry Pi 4 Model B hosting the control software and interfacing with the heat‑bed actuator.",
+    DTDFVocab:enables SupervisoryControlService, OptimisationFaultDetectionService
+]
+
+// C6: Services
+instance DataAcquisitionService : DTDFVocab:Service [
+    base:desc "Acquires temperature data from the physical twin's sensors via the RabbitMQ message bus.",
+    DTDFVocab:provides TemperatureDataInsight
+]
+
+instance ModelSimulationService : DTDFVocab:Service [
+    base:desc "Runs predictive simulations of incubator temperature dynamics using calibrated models.",
+    DTDFVocab:provides TemperatureProjectionInsight
+]
+
+instance CalibrationService : DTDFVocab:Service [
+    base:desc "Updates model parameters by fitting reduced or extended temperature models to collected data.",
+    DTDFVocab:provides CalibrationResultInsight
+]
+
+instance MonitoringService : DTDFVocab:Service [
+    base:desc "Continuously monitors temperature measurements for safety violations or performance degradation.",
+    DTDFVocab:provides SafetyAlertInsight
+]
+
+instance OptimisationFaultDetectionService : DTDFVocab:Service [
+    base:desc "Detects anomalies and proposes optimal heat‑bed control actions using optimisation algorithms.",
+    DTDFVocab:provides AnomalyDetectionInsight, HeatBedControlAction
+]
+
+instance SupervisoryControlService : DTDFVocab:Service [
+    base:desc "Closes the control loop by sending actuation commands from the digital twin to the Raspberry Pi controller.",
+    DTDFVocab:provides ControlCommandInsight
+]
+
+// C17: Insights/Actions
+instance TemperatureDataInsight : DTDFVocab:Insight [
+    base:desc "Provides operators with real‑time temperature readings from all three sensors."
+]
+
+instance TemperatureProjectionInsight : DTDFVocab:Insight [
+    base:desc "Predicts future internal temperature based on simulation results."
+]
+
+instance CalibrationResultInsight : DTDFVocab:Insight [
+    base:desc "Reports calibrated model parameters and fit quality metrics."
+]
+
+instance SafetyAlertInsight : DTDFVocab:Insight [
+    base:desc "Alerts when temperature exceeds safety thresholds."
+]
+
+instance AnomalyDetectionInsight : DTDFVocab:Insight [
+    base:desc "Identifies abnormal temperature patterns indicating possible faults."
+]
+
+instance ControlCommandInsight : DTDFVocab:Insight [
+    base:desc "Shows recent actuation commands sent to the heat‑bed."
+]
+
+instance HeatBedControlAction : DTDFVocab:Action [
+    base:desc "Command to adjust heat‑bed power level to achieve target temperature.",
+    DTDFVocab:IsAutomatic true
+]
+
+// C2: Acting Components
+instance HeatBedActuator : DTDFVocab:ActingComponent [
+    base:desc "Heat‑bed element that supplies thermal energy to raise the incubator's internal temperature, controlled by the digital twin."
+]
+
+// Environment composition
+instance IncubatorEnvironment : DTDFVocab:Environment [
+    base:contains HeatBedActuator,
+                 InternalHeatBedTempSensor,
+                 InternalAirspaceTempSensor,
+                 ExternalAmbientTempSensor,
+                 RaspberryPiControllerEnabler
+]
+
+instance virtual_to_physical_interaction : DTDFVocab:VirtualToPhysical [
+    base:desc "The incubator plant is controlled by a Raspberry Pi that drives the heat‑bed and the fan. The Digital Twin generates control commands (e.g., activate/deactivate the fan, adjust heat‑bed power) based on model predictions and monitoring outcomes, and these commands are sent to the Raspberry Pi to affect the physical actuators. The documents do not provide specifics on command message formats, validation, authentication, feedback loops, conflict resolution, or execution confirmation."
+]
+
+instance dt_constellation : DTDFVocab:Constellation [
+    base:desc "The Digital Twin adopts a layered orchestration where sensor data collected from the physical twin is fed to calibration algorithms that update the cyber‑physical system and environment models; the refreshed models are then used by monitoring components to evaluate safety and optimality, and upon detection of violations a decision layer (human operators or other algorithms) may initiate changes to the physical twin. This integration of data, models, and algorithms forms a closed‑loop architecture as described in the common structure illustrated in Fig. 1 of Document 1."
+]
+
+instance fidelity_and_validity_considerations : DTDFVocab:FidelityConsideration [
+    base:desc "Model fidelity is assessed by comparing the two temperature prediction models against experimental temperature traces; the four‑parameter model showed lower prediction error for thermal inertia, indicating higher fidelity. Calibration algorithms continuously update model parameters using incoming sensor data, serving as a validation loop. The DT employs monitors that evaluate the calibrated model output against safety and performance thresholds, providing error detection. No explicit uncertainty quantification or formal V&V procedures are detailed."
+]
+
+instance security_and_safety_considerations : DTDFVocab:SecuritySafety [
+    base:desc "The DT incorporates safety monitoring by continuously comparing sensor‑derived temperature data from the incubator with model‑based predictions; a monitor component flags violations of predefined safe operating bounds. When a violation is detected, the framework can trigger human operators or automated corrective actions to return the Physical Twin to a safe state. Calibration algorithms are employed to keep model parameters aligned with the actual plant, thereby supporting reliable fault detection. The physical plant itself includes redundant temperature sensors (two internal, one external) and a fan/heat‑bed actuation loop controlled by a Raspberry Pi, providing basic fail‑safe capability through hardware monitoring. No explicit cybersecurity protocols or access‑control mechanisms are described in the documents."
+]

@@ -1,0 +1,179 @@
+// C2: Physical Acting Components
+instance HeatbedActuator : DTDFVocab:ActingComponent [
+    base:desc "Electric heatbed under the incubator base that delivers heat to the managed airspace."
+]
+
+// C2: Physical Acting Components
+instance FanActuator : DTDFVocab:ActingComponent [
+    base:desc "Small centrifugal fan that circulates air within the incubator box and is driven via a PWM‑controlled transistor."
+]
+
+// C3: Physical sensing components
+instance InternalHeatbedTempSensor : DTDFVocab:SensingComponent [
+    base:desc "Digital DS18B20 temperature probe mounted close to the heatbed, sampling every few seconds via 1‑Wire."
+    DTDFVocab:producedData InternalHeatbedTempDataTransmitted
+]
+
+// C3: Physical sensing components
+instance InternalAirTempSensor : DTDFVocab:SensingComponent [
+    base:desc "Digital DS18B20 temperature probe placed in the central airspace of the incubator, sampling every few seconds via I²C."
+    DTDFVocab:producedData InternalAirTempDataTransmitted
+]
+
+// C3: Physical sensing components
+instance ExternalAmbientTempSensor : DTDFVocab:SensingComponent [
+    base:desc "Digital DS18B20 temperature probe mounted outside the insulated box to record ambient conditions."
+    DTDFVocab:producedData ExternalAmbientTempDataTransmitted
+]
+
+// C4: Physical‑to‑Virtual Interaction – Data Transmitted
+instance InternalHeatbedTempDataTransmitted : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom InternalHeatbedTempSensor
+]
+
+instance InternalAirTempDataTransmitted : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom InternalAirTempSensor
+]
+
+instance ExternalAmbientTempDataTransmitted : DTDFVocab:DataTransmitted [
+    DTDFVocab:producedFrom ExternalAmbientTempSensor
+]
+
+// Data instances fed into models and enablers
+instance InternalHeatbedTempData : DTDFVocab:Data [
+    base:desc "Live temperature time‑series from the heatbed probe, forwarded to the calibration and prediction enablers."
+    DTDFVocab:inputTo CalibrationEnabler, PredictionEnabler
+    DTDFVocab:fromData InternalHeatbedTempDataTransmitted
+]
+
+instance InternalAirTempData : DTDFVocab:Data [
+    base:desc "Live temperature time‑series from the central probe, forwarded to the calibration and prediction enablers."
+    DTDFVocab:inputTo CalibrationEnabler, PredictionEnabler
+    DTDFVocab:fromData InternalAirTempDataTransmitted
+]
+
+instance ExternalAmbientTempData : DTDFVocab:Data [
+    base:desc "Live temperature time‑series from the external probe, forwarded to the calibration and prediction enablers."
+    DTDFVocab:inputTo CalibrationEnabler, PredictionEnabler
+    DTDFVocab:fromData ExternalAmbientTempDataTransmitted
+]
+
+// C10: Models/Data – Thermal Simulation Models
+instance ThermalModelA : DTDFVocab:Model [
+    base:desc "First‑order linear differential equation model with two free parameters (overall heat‑transfer coefficient and initial temperature offset)."
+    DTDFVocab:inputTo CalibrationEnabler, PredictionEnabler
+]
+
+instance ThermalModelB : DTDFVocab:Model [
+    base:desc "Four‑parameter model that includes heatbed thermal inertia (heat capacity and heat‑transfer constant to ambient)."
+    DTDFVocab:inputTo CalibrationEnabler, PredictionEnabler
+]
+
+// C11: Enablers – Calibration and Prediction
+instance CalibrationEnabler : DTDFVocab:Enabler [
+    base:desc "Enabler that ingests live sensor data and model outputs to execute calibration algorithms that minimize prediction error."
+    DTDFVocab:enables CalibrationService
+]
+
+instance PredictionEnabler : DTDFVocab:Enabler [
+    base:desc "Enabler that drives the parametric thermal models to forecast future temperature trajectories and assess thermal inertia."
+    DTDFVocab:enables PredictionService
+]
+
+instance RaspberryPiControlEnabler : DTDFVocab:Enabler [
+    base:desc "Raspberry Pi microcontroller that exposes network sockets, receives setpoints, and executes PWM control for heatbed and fan."
+    DTDFVocab:enables ActuationService
+]
+
+// C6: Services – Monitoring, Calibration, Prediction, Actuation
+instance MonitoringService : DTDFVocab:Service [
+    base:desc "Real‑time monitoring of interior temperature against setpoints and safety bounds, issuing alerts when violations occur."
+    DTDFVocab:provides AnomalyDetectionInsight
+]
+
+instance CalibrationService : DTDFVocab:Service [
+    base:desc "Service that runs continuous calibration routines to update model parameters based on live sensor readings."
+    DTDFVocab:provides ModelCalibrationOutcomeInsight
+]
+
+instance PredictionService : DTDFVocab:Service [
+    base:desc "Service that executes ThermalModelA and ThermalModelB to forecast temperature trajectories and evaluate thermal inertia."
+    DTDFVocab:provides ForecastInsight
+]
+
+instance ActuationService : DTDFVocab:Service [
+    base:desc "Service that translates setpoints into commands for the heatbed and fan actuators."
+    DTDFVocab:provides AdjustHeatbedAction, AdjustFanAction
+]
+
+// C17: Insights and Actions
+instance ForecastInsight : DTDFVocab:Insight [
+    base:desc "Predicted temperature trajectory over the next several minutes based on the calibrated thermal model."
+]
+
+instance AnomalyDetectionInsight : DTDFVocab:Insight [
+    base:desc "Detection of fault conditions such as overheating or under‑heating based on deviation from expected behavior."
+]
+
+instance ModelCalibrationOutcomeInsight : DTDFVocab:Insight [
+    base:desc "Outcome metrics from the calibration routine, indicating parameter convergence and model health."
+]
+
+instance AdjustHeatbedAction : DTDFVocab:Action [
+    base:desc "Command to adjust heatbed power level via PWM to bring temperature toward setpoint."
+    DTDFVocab:IsAutomatic true
+]
+
+instance AdjustFanAction : DTDFVocab:Action [
+    base:desc "Command to adjust fan speed via PWM to enhance airflow and temperature stability."
+    DTDFVocab:IsAutomatic true
+]
+
+// C15: Environment – Physical System Under Study
+instance IncubatorEnvironment : DTDFVocab:Environment [
+    base:desc "Small‑scale thermal incubator comprising a styrofoam insulated box, heatbed, fan, three temperature sensors, and a Raspberry Pi controller."
+    base:contains HeatbedActuator, FanActuator, InternalHeatbedTempSensor, InternalAirTempSensor, ExternalAmbientTempSensor, RaspberryPiControlEnabler
+]
+
+// C0: Digital Twin Instance
+instance IncubatorDigitalTwin : DTDFVocab:DigitalTwin [
+    base:desc "Digital Twin instance representing the incubator's virtual model."
+]
+
+instance virtual_to_physical_interaction : DTDFVocab:VirtualToPhysical [
+    base:desc "Control commands are generated by the controller application running on the Raspberry Pi and transmitted to the physical twin via the RabbitMQ server. Messages, formatted according to the AMQP specification, contain explicit command payloads such as 'turn_on_fan', 'turn_on_heatbed', 'set_heating_duration' and corresponding parameters. The low‑level driver subscribes to the command queue, validates incoming requests against an embedded safe protocol, executes the requested actuator operations, and then publishes acknowledgment or status updates back to RabbitMQ to confirm execution. The DT architecture ensures that any conflict between concurrent commands is resolved by queue ordering and the controller’s priority logic."
+]
+
+instance dt_constellation : DTDFVocab:Constellation [
+    base:desc "The Digital Twin of the incubator is orchestrated around a communication subsystem that receives low‑level driver and controller messages from the physical plant.
+
+These messages are ingested into a time‑series database, where they are stored for historical analysis and real‑time querying.
+
+A dashboard layer subscribes to the database to provide live visualisations of temperature, fan status, and controller signals.
+
+On demand, a calibration module is triggered: it gathers recent sensor streams and runs a parameter‑identification routine to fit either Model A (two free parameters) or Model B (four free parameters).  The calibrated model is then supplied to a Kalman‑filter based anomaly‑detection and heat‑bed‑state‑estimation component.
+
+For what‑if scenarios, the Digital Twin launches a co‑simulation engine that feeds the calibrated model with current or historical data, running scenario simulations to optimise controller gains.
+
+All these functional blocks are coordinated by a central orchestration service that manages data flow, schedules calibration and simulation jobs, and ensures synchronization between the plant, data storage, and user interfaces."
+]
+
+instance life_cycle_stages : DTDFVocab:EvolutionStage [
+    base:desc "The Digital Twin follows a developmental chronology beginning with the creation of two thermal simulation models (Model‑A with two free parameters and Model‑B with four free parameters) for the incubator’s heatbed dynamics, as outlined in the case study. These models are calibrated against real‑time data collected from the incubator’s physical twin via its Raspberry‑Pi controller, incorporating readings from two internal temperature sensors and one external sensor. Calibration algorithms iteratively adjust the models’ parameters to maximise predictive fidelity, and the updated parameter sets are logged to enable version tracking. Upon calibration, the models are instantiated in the twin’s simulation engine, where they operate concurrently with diagnostic and control algorithms—including fault detectors, supervisory controllers, state estimators, and optimizers. The operational phase continuously ingests sensor streams, computes real‑time forecasts, and monitors for safety or performance violations. When a violation is detected, the monitoring layer signals either a human operator or an autonomous algorithm to enact corrective actions on the physical twin. Transition management is thus governed by the calibration cycle, and governance is exercised through the monitoring and supervisory control layers that uphold safety constraints and initiate adaptations. This cyclical lifecycle—modeling → sensor data acquisition → calibration → deployment → monitoring → adaptation—ensures continuous refinement of the twin’s fidelity and value."
+]
+
+instance fidelity_and_validity_considerations : DTDFVocab:FidelityConsideration [
+    base:desc "Model validity is established by comparing model predictions to the experimentally measured temperature traces. The non‑linear least‑squares calibration minimizes the residual error between simulated and measured temperatures, and the magnitude of the residual error is used to assess whether the model captures the thermal inertia of the heat‑bed. Model B consistently shows lower residuals than Model A, indicating higher fidelity for the Twin’s predictive tasks. No explicit uncertainty quantification beyond the residual‑error assessment is provided in the documents."
+]
+
+instance dt_technical_connection : DTDFVocab:TechnicalConnection [
+    base:desc "The digital twin relies on a RabbitMQ message broker deployed on the same Raspberry Pi that runs the controller; all communication between the physical and virtual layers occurs through RabbitMQ message queues. No explicit network topology beyond the on‑premise deployment, bandwidth, latency, redundancy, or security protocols are detailed in the documentation."
+]
+
+instance dt_hosting_deployment : DTDFVocab:Deployment [
+    base:desc "The digital twin is hosted on the Raspberry Pi 4 that also runs the control software for the incubator; the deployment is an on‑premise, single‑node setup with RabbitMQ serving as the integration layer. No explicit scalability, cloud or edge options are described."
+]
+
+instance security_and_safety_considerations : DTDFVocab:SecuritySafety [
+    base:desc "The Digital Twin architecture incorporates runtime safety monitoring that validates the behavior of the physical incubator by comparing sensor readings against the calibrated thermal models. Fault‑detection algorithms flag anomalies such as temperature drift or sensor failures, after which supervisory controllers are invoked to adjust heating cycles or trigger a halt of the heatbed. The Raspberry‑Pi‑based controller communicates with the monitoring layer via a low‑level driver that enforces a minimal safe operating mode, ensuring that the device remains in a safe state if communication or sensor data are lost. No explicit cyber‑security protocols, access controls, or authentication mechanisms are documented."
+]
