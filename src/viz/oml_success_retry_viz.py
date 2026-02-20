@@ -265,7 +265,7 @@ def generate_plots_for_model(model_df, model_name, viz_dir, max_retry_index, sum
                     label=cfg['label'])
             
             # Fill
-            ax1.fill_between(df_stats['retry_index'], 0, df_stats['success_rate_pct'], alpha=0.3, color=cfg['color'])
+            # ax1.fill_between(df_stats['retry_index'], 0, df_stats['success_rate_pct'], alpha=0.3, color=cfg['color'])
 
             # for _, row in df_stats.iterrows():
             #     ax1.annotate(f"{row['success_rate_pct']:.1f}%", 
