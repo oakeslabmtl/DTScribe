@@ -53,25 +53,25 @@ class ExtractionOrchestrator:
 
     def initialize_pipeline(self, input_path: str, config: ExperimentConfig):
         """Initialize the pipeline with the given PDF and configuration."""
-        print("🚀 Initializing extraction pipeline...")
+        print(" Initializing extraction pipeline...")
         if self._state_manager.get_state("vectordb"):
-            print("♻️ Resetting existing vector DB...")
+            print(" Resetting existing vector DB...")
             self._state_manager.get_state("vectordb")._client.reset()
         init_result = self._initializer.initialize(input_path, config, config.model_name, config.embedding_model)
         self._state_manager.update_state(init_result)
 
     def run_extraction(self, input_path: str, experiment_id: Optional[str] = None, config: Optional[ExperimentConfig] = None, save_results: bool = True) -> Dict[str, Any]:
         """Run the complete extraction pipeline with optional experiment tracking."""
-        print("🚀 Starting Enhanced Digital Twin Characteristics Extraction")
+        print(" Starting Enhanced Digital Twin Characteristics Extraction")
         print("=" * 60)
 
         overall_start_time = time.time()
         # Start experiment only if not externally provided
         if self._experiment_tracker and config and not experiment_id:
             experiment_id = self._experiment_tracker.start_experiment(config)
-            print(f"📊 Experiment ID (started): {experiment_id}")
+            print(f" Experiment ID (started): {experiment_id}")
         elif experiment_id:
-            print(f"📊 Using provided Experiment ID: {experiment_id}")
+            print(f" Using provided Experiment ID: {experiment_id}")
         self.last_experiment_id = experiment_id
 
         # Set up retriever and extractor
@@ -83,10 +83,10 @@ class ExtractionOrchestrator:
 
 
         if config.max_judge_retries <= 0:
-            print("⚠️ Skipping LLM judge step as max_judge_retries <= 0")
+            print(" Skipping LLM judge step as max_judge_retries <= 0")
             judge = None
         else:
-            print(f"🧪 Using LLM {config.judge_model_name} for judge")
+            print(f" Using LLM {config.judge_model_name} for judge")
             judge_llm = ChatOllama(
                 model=config.judge_model_name,
                 temperature=0.0,
@@ -176,7 +176,7 @@ class ExtractionOrchestrator:
                 self._state_manager.update_state({"extraction_metadata": existing_metadata})
             else:
                 error_msg = f"{block_name} processing failed: {result.error_message}"
-                print(f"❌ {error_msg}")
+                print(f" {error_msg}")
                 errors.append(error_msg)
 
         # Calculate characteristics extraction metrics
@@ -218,7 +218,7 @@ class ExtractionOrchestrator:
             )
 
             saved_path = self._experiment_tracker.results_saver.save_characteristics_results(characteristics_result)
-            print(f"💾 Characteristics results saved to: {saved_path}")
+            print(f" Characteristics results saved to: {saved_path}")
 
         # Include experiment_id in state for downstream consumers
         state = self._state_manager.get_all_state()
@@ -244,17 +244,17 @@ class ExtractionOrchestrator:
         if source_experiment_id and self._experiment_tracker:
             loaded = self._experiment_tracker.results_saver.load_characteristics_results(source_experiment_id)
             if loaded:
-                print(f"📄 Loaded characteristics from experiment {source_experiment_id}")
+                print(f" Loaded characteristics from experiment {source_experiment_id}")
                 characteristics = loaded.extracted_characteristics
                 # use source experiment id as lineage if no explicit experiment id passed
                 if experiment_id is None:
                     experiment_id = source_experiment_id
             else:
-                print(f"⚠️ No saved characteristics found for experiment id {source_experiment_id}; falling back to in-memory state")
+                print(f" No saved characteristics found for experiment id {source_experiment_id}; falling back to in-memory state")
         if characteristics is None:
             characteristics = self._state_manager.get_state("extracted_characteristics") or {}
         if not characteristics:
-            print("❌ No characteristics available to generate OML. Run extraction first or specify --exp-id.")
+            print(" No characteristics available to generate OML. Run extraction first or specify --exp-id.")
             return self._state_manager.get_all_state()
 
         try:
@@ -270,11 +270,11 @@ class ExtractionOrchestrator:
             is_critical = "429" in error_msg or "500" in error_msg or "too many requests" in error_msg or "503" in error_msg or "service unavailable" in error_msg
             
             if is_critical:
-                print(f"🔥 Critical OML generation error: {e}. Bubbling up for experiment retry.")
+                print(f" Critical OML generation error: {e}. Bubbling up for experiment retry.")
                 raise e
 
             oml_error = f"OML generation failed: {str(e)}"
-            print(f"❌ {oml_error}")
+            print(f" {oml_error}")
             traceback.print_exc()
             oml_errors.append(oml_error)
             oml_output = ""
@@ -302,7 +302,7 @@ class ExtractionOrchestrator:
                 total_output_tokens=total_output_tokens,
             )
             saved_oml_path = self._experiment_tracker.results_saver.save_oml_results(oml_result)
-            print(f"💾 OML results saved to: {saved_oml_path}")
+            print(f" OML results saved to: {saved_oml_path}")
         return self._state_manager.get_all_state()
 
     def analyze_characteristic_extraction(self, results: Dict[str, Any]) -> Dict[str, Any]:
@@ -377,10 +377,10 @@ class ExtractionPipelineFactory:
         chunk_size: int,
         chunk_overlap: int,
         temperature: float,
-        top_p: float,
-        top_k: int,
         max_judge_retries: int = 2,
         max_oml_retries: int = 3,
+        top_p: Optional[float] = None,
+        top_k: Optional[int] = None,
         judge_model_name: Optional[str] = None,
         baseline_full_doc: bool = False,
         baseline_max_chars: int = 24000,
@@ -415,7 +415,7 @@ def main():
     parser.add_argument("--chunk-size", type=int, default=3000)
     parser.add_argument("--chunk-overlap", type=int, default=500)
     parser.add_argument("--temperature", type=float, default=0.1)
-    parser.add_argument("--model-name", default="qwen3:8b")
+    parser.add_argument("--model-name", default="glm-4.7:cloud")
     parser.add_argument("--judge-model-name", default="deepseek-v3.2:cloud", help="Optional LLM model name used only for the judge. Defaults to --model-name.")
     parser.add_argument("--embedding-model", default="embeddinggemma")
     parser.add_argument("--exp-id", help="Existing experiment id (hash_timestamp or just hash for latest) containing characteristics for standalone OML generation")
@@ -463,7 +463,7 @@ def main():
 
     if extraction_results and extraction_results.get("extracted_characteristics"):
         quality_metrics = orchestrator.analyze_characteristic_extraction(extraction_results)
-        print("\n📈 Extraction Quality:")
+        print("\n Extraction Quality:")
         print(f" - Extraction Rate: {quality_metrics['extraction_rate']:.2f}%")
         print(f" - Extracted: {quality_metrics['extracted_count']}/{quality_metrics['total_characteristics']}")
 

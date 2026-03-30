@@ -22,11 +22,11 @@ class ExperimentConfig:
     chunk_size: int
     chunk_overlap: int
     temperature: float
-    top_p: float
-    top_k: int
     max_judge_retries: int
     max_oml_retries: int
     judge_model_name: str
+    top_p: Optional[float] = None
+    top_k: Optional[int] = None
     baseline_full_doc: bool = False
     baseline_max_chars: int = 24000
     custom_params: Optional[Dict[str, Any]] = None

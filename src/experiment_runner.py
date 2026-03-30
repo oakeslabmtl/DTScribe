@@ -36,7 +36,7 @@ def run_experiment_task(
             output_dir=output_dir_path
         )
         
-        print(f"🔬 Experiment {combo_idx} (Rep {rep+1}, Total {experiment_counter}) started with params: {params}")
+        print(f" Experiment {combo_idx} (Rep {rep+1}, Total {experiment_counter}) started with params: {params}")
 
         # Create configuration
         config = ExtractionPipelineFactory.create_config(
@@ -79,9 +79,9 @@ def run_experiment_task(
                              # Use the original experiment ID if available to link results
                              if "experiment_id" in data and not experiment_id:
                                  experiment_id = data["experiment_id"]
-                             print(f"📄 Loaded characteristics from {Path(characteristics_file_path).name}")
+                             print(f" Loaded characteristics from {Path(characteristics_file_path).name}")
                 except Exception as e:
-                    print(f"⚠️ Failed to load characteristics from {characteristics_file_path}: {e}")
+                    print(f" Failed to load characteristics from {characteristics_file_path}: {e}")
 
             oml_results = orchestrator.run_oml_generation(
                 config=config,
@@ -91,7 +91,7 @@ def run_experiment_task(
             )
             oml_output = oml_results.get("oml_output")
             if not oml_output:
-                print(f"⚠️  Experiment {experiment_counter}: No OML generated.")
+                print(f"  Experiment {experiment_counter}: No OML generated.")
         
         experiment_time = time.time() - start_time
 
@@ -109,14 +109,14 @@ def run_experiment_task(
         if extraction_results.get("extracted_characteristics"):
             quality_metrics = orchestrator.analyze_characteristic_extraction(extraction_results)
             result_data.update(quality_metrics)
-            print(f"✅ Experiment {experiment_counter} completed. Rate: {quality_metrics['extraction_rate']:.1f}%")
+            print(f" Experiment {experiment_counter} completed. Rate: {quality_metrics['extraction_rate']:.1f}%")
         else:
-             print(f"✅ Experiment {experiment_counter} completed (no characteristics).")
+             print(f" Experiment {experiment_counter} completed (no characteristics).")
 
         return result_data
 
     except Exception as e:
-        print(f"❌ Experiment {experiment_counter} failed: {str(e)}")
+        print(f" Experiment {experiment_counter} failed: {str(e)}")
         # traceback.print_exc()
         return {
             'experiment_number': experiment_counter,
@@ -165,7 +165,7 @@ class ExperimentRunner:
                     if batch and combo is not None and rep is not None:
                         file_map[(batch, int(combo), int(rep))] = str(file_path)
             except Exception as e:
-                print(f"⚠️ Error reading {file_path}: {e}")
+                print(f" Error reading {file_path}: {e}")
         
         return file_map
 
@@ -195,7 +195,7 @@ class ExperimentRunner:
                     if batch and combo is not None and rep is not None:
                         completed.add((batch, int(combo), int(rep)))
             except Exception as e:
-                print(f"⚠️ Error reading {file_path}: {e}")
+                print(f" Error reading {file_path}: {e}")
         
         return completed
 
@@ -223,10 +223,10 @@ class ExperimentRunner:
             if mode in ["oml", "both"]:
                 completed_oml = self._get_completed_experiments(self.output_dir, "oml_generation")
             
-            print(f"🔄 Resuming experiment batch. Found {len(completed_experiments)} completed extractions and {len(completed_oml)} completed OML generations.")
+            print(f" Resuming experiment batch. Found {len(completed_experiments)} completed extractions and {len(completed_oml)} completed OML generations.")
 
         if param_grid is None:
-            print("❌ No parameter grid provided for experiments.")
+            print(" No parameter grid provided for experiments.")
             return []
         
         parameter_combinations = self.define_combinations_from_parameter_grid(param_grid)
@@ -235,7 +235,7 @@ class ExperimentRunner:
         if max_experiments > 0:
             parameter_combinations = parameter_combinations[:max_experiments]
 
-        print(f"🧪 Preparing {len(parameter_combinations)} configurations × {repeat_experiments} repetitions...")
+        print(f" Preparing {len(parameter_combinations)} configurations × {repeat_experiments} repetitions...")
         
         tasks_args = []
 
@@ -244,7 +244,7 @@ class ExperimentRunner:
         existing_files_map = {}
         if mode == "oml":
              existing_files_map = self._map_completed_experiments(self.output_dir)
-             print(f"🔍 Found {len(existing_files_map)} existing characteristic files for OML generation.")
+             print(f" Found {len(existing_files_map)} existing characteristic files for OML generation.")
 
         for combo_idx, params in enumerate(parameter_combinations, 1):
             for rep in range(repeat_experiments):
@@ -293,37 +293,37 @@ class ExperimentRunner:
                     if result.get('success', False):
                         results.append(result)
                     else:
-                        print(f"⚠️ Experiment {result.get('experiment_number', '?')} failed temporarily (Error: {result.get('error')}). Will retry.")
+                        print(f" Experiment {result.get('experiment_number', '?')} failed temporarily (Error: {result.get('error')}). Will retry.")
                         failures.append(args)
                 except Exception as e:
-                    print(f"⚠️ Worker exception for Experiment {args[4]}: {e}")
+                    print(f" Worker exception for Experiment {args[4]}: {e}")
                     failures.append(args)
             return results, failures
 
         # 1. Initial Execution
         if workers > 1:
-            print(f"🚀 Running {total_experiments} experiments in parallel with {workers} workers...")
+            print(f" Running {total_experiments} experiments in parallel with {workers} workers...")
             with concurrent.futures.ProcessPoolExecutor(max_workers=workers) as executor:
                 future_to_args = {executor.submit(run_experiment_task, *args): args for args in tasks_args}
                 initial_results, failed_tasks_args = process_futures(future_to_args)
                 experiment_results.extend(initial_results)
         else:
-             print("🐢 Running sequentially...")
+             print(" Running sequentially...")
              for args in tasks_args:
                  result = run_experiment_task(*args)
                  if result.get('success', False):
                      experiment_results.append(result)
                  else:
-                     print(f"⚠️ Experiment {result.get('experiment_number')} failed. Will retry.")
+                     print(f" Experiment {result.get('experiment_number')} failed. Will retry.")
                      failed_tasks_args.append(args)
 
         # 2. Retry Logic (Sequential)
         if failed_tasks_args:
-            print(f"\n🔄 Retrying {len(failed_tasks_args)} failed experiments sequentially to mitigate rate limits (429/503)...")
+            print(f"\n Retrying {len(failed_tasks_args)} failed experiments sequentially to mitigate rate limits (429/503)...")
             
             for args in failed_tasks_args:
                 exp_num = args[4]
-                print(f"   ↪️ Retrying Experiment {exp_num}...") 
+                print(f"    Retrying Experiment {exp_num}...") 
                 
                 # We can add a small sleep before retry
                 time.sleep(2.0)
@@ -332,15 +332,15 @@ class ExperimentRunner:
                 experiment_results.append(result) # Append result regardless of success/failure this time
                 
                 if result.get('success', False):
-                    print(f"   ✅ Retry successful for Experiment {exp_num}")
+                    print(f"    Retry successful for Experiment {exp_num}")
                 else:
-                    print(f"   ❌ Retry failed for Experiment {exp_num}: {result.get('error')}")
+                    print(f"    Retry failed for Experiment {exp_num}: {result.get('error')}")
 
         # Sort results
         experiment_results.sort(key=lambda x: x.get('experiment_number', 0))
 
-        print(f"\n✅ Experiments {experiment_name} completed!")
-        print(f"📊 Processed {len(experiment_results)}/{total_experiments} experiments.")
+        print(f"\n Experiments {experiment_name} completed!")
+        print(f" Processed {len(experiment_results)}/{total_experiments} experiments.")
         return experiment_results
     
     def analyze_and_visualize_results(self, experiment_results: List[Dict[str, Any]]):
@@ -352,34 +352,34 @@ class ExperimentRunner:
         # Save detailed results
         results_file = self.output_dir / "experiments.csv"
         df.to_csv(results_file, index=False)
-        print(f"\n💾 Detailed results saved to: {results_file}")
+        print(f"\n Detailed results saved to: {results_file}")
         
         # Filter successful experiments
         successful_df = df[df['success'] == True]
         
         if len(successful_df) == 0:
-            print("❌ No successful experiments to analyze")
+            print(" No successful experiments to analyze")
             return
         
-        print(f"\n📊 Analysis of {len(successful_df)} successful experiments:")
+        print(f"\n Analysis of {len(successful_df)} successful experiments:")
         
         # Basic statistics
-        print(f"   📈 Extraction Rate: {successful_df['extraction_rate'].mean():.2f}% ± {successful_df['extraction_rate'].std():.2f}%")
-        print(f"   ⏱️ Average Time: {successful_df['total_time'].mean():.2f}s ± {successful_df['total_time'].std():.2f}s")
-        print(f"   🏆 Best Extraction Rate: {successful_df['extraction_rate'].max():.2f}%")
-        print(f"   ⚡ Fastest Time: {successful_df['total_time'].min():.2f}s")
+        print(f"    Extraction Rate: {successful_df['extraction_rate'].mean():.2f}% ± {successful_df['extraction_rate'].std():.2f}%")
+        print(f"    Average Time: {successful_df['total_time'].mean():.2f}s ± {successful_df['total_time'].std():.2f}s")
+        print(f"    Best Extraction Rate: {successful_df['extraction_rate'].max():.2f}%")
+        print(f"    Fastest Time: {successful_df['total_time'].min():.2f}s")
         
         # Find best configuration
         best_extraction = successful_df.loc[successful_df['extraction_rate'].idxmax()]
         fastest_config = successful_df.loc[successful_df['total_time'].idxmin()]
         
-        print(f"\n🏆 Best Extraction Rate Configuration:")
+        print(f"\n Best Extraction Rate Configuration:")
         for param in ['chunk_size', 'model_name', 'temperature']:
             if param in best_extraction:
                 print(f"   • {param}: {best_extraction[param]}")
         print(f"   • Extraction Rate: {best_extraction['extraction_rate']:.2f}%")
 
-        print(f"\n⚡ Fastest Configuration:")
+        print(f"\n Fastest Configuration:")
         for param in ['chunk_size', 'model_name', 'temperature']:
             if param in fastest_config:
                 print(f"   • {param}: {fastest_config[param]}")
@@ -418,7 +418,7 @@ class ExperimentRunner:
         # Save visualization
         viz_file = self.output_dir / "analysis.png"
         plt.savefig(viz_file, dpi=300, bbox_inches='tight')
-        print(f"📊 Visualizations saved to: {viz_file}")
+        print(f" Visualizations saved to: {viz_file}")
         
         plt.show()
         
@@ -435,7 +435,7 @@ class ExperimentRunner:
         plt.tight_layout()
         corr_file = self.output_dir / "correlation_matrix.png"
         plt.savefig(corr_file, dpi=300, bbox_inches='tight')
-        print(f"🔗 Correlation matrix saved to: {corr_file}")
+        print(f" Correlation matrix saved to: {corr_file}")
         
         plt.show()
 
@@ -461,7 +461,7 @@ def main():
         output_dirs = output_dirs * len(input_paths)
 
     if len(input_paths) != len(output_dirs):
-        print(f"❌ Configuration Error: Provided {len(input_paths)} inputs but {len(output_dirs)} outputs.")
+        print(f" Configuration Error: Provided {len(input_paths)} inputs but {len(output_dirs)} outputs.")
         return
 
     param_grid = {
@@ -480,7 +480,7 @@ def main():
         "baseline_max_chars": [24000],
     }
 
-    print(f"🧪 Parameter grid defined with {len(param_grid)} keys.")
+    print(f" Parameter grid defined with {len(param_grid)} keys.")
 
     # Process each configured input/output pair
     for cfg_idx, (in_path_str, out_dir_str) in enumerate(zip(input_paths, output_dirs)):
@@ -488,23 +488,23 @@ def main():
         base_output_dir = Path(out_dir_str)
         
         print(f"\n" + "=" * 80)
-        print(f"🚀 Configuration {cfg_idx+1}/{len(input_paths)}")
-        print(f"📥 Input: {input_arg}")
-        print(f"📤 Output: {base_output_dir}")
+        print(f" Configuration {cfg_idx+1}/{len(input_paths)}")
+        print(f" Input: {input_arg}")
+        print(f" Output: {base_output_dir}")
 
         files_to_process = []
         if input_arg.is_dir():
             files_to_process = list(input_arg.glob("*.pdf"))
-            print(f"📂 Found {len(files_to_process)} PDF files in {input_arg}")
+            print(f" Found {len(files_to_process)} PDF files in {input_arg}")
         elif input_arg.exists():
             files_to_process = [input_arg]
         else:
-            print(f"❌ Input path not found: {input_arg}")
+            print(f" Input path not found: {input_arg}")
             continue
 
         for i, file_path in enumerate(files_to_process):
             print("\n" + "-" * 40)
-            print(f"📄 Processing file {i+1}/{len(files_to_process)}: {file_path.name}")
+            print(f" Processing file {i+1}/{len(files_to_process)}: {file_path.name}")
             
             # Determine output directory for this specific experiment
             if len(files_to_process) > 1:
@@ -512,7 +512,7 @@ def main():
             else:
                 experiment_name = str(base_output_dir)
                 
-            print(f"📂 Output directory: {experiment_name}")
+            print(f" Output directory: {experiment_name}")
         
             # Create experiment runner
             orchestrator = ExtractionPipelineFactory.create_orchestrator(with_experiment_tracking=True, output_dir=experiment_name)
@@ -533,7 +533,7 @@ def main():
             # Analyze and visualize results
             # runner.analyze_and_visualize_results(experiment_results)
 
-    print("\n✅ All experiments completed!")
+    print("\n All experiments completed!")
 
 
 if __name__ == "__main__":

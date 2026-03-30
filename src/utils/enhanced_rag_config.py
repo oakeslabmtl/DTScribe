@@ -127,7 +127,7 @@ class EnhancedRAGPipeline:
                 if is_rate_limit or is_server_error:
                     # Exponential backoff: initial_delay * 2^attempt + jitter
                     delay = initial_delay * (2 ** attempt) + random.uniform(0, 1)
-                    print(f"⚠️ API Error ({e}). Retrying in {delay:.2f}s... (Attempt {attempt + 1}/{max_retries})")
+                    print(f" API Error ({e}). Retrying in {delay:.2f}s... (Attempt {attempt + 1}/{max_retries})")
                     time.sleep(delay)
                 else:
                     # For other types of errors (e.g. context length exceeded), we might not want to retry blindly, 
@@ -160,7 +160,7 @@ class EnhancedRAGPipeline:
         path = Path(input_path)
 
         if path.is_dir():
-            print(f"📂 Loading documents in directory: {path}")
+            print(f" Loading documents in directory: {path}")
             loader = DirectoryLoader(
                 str(path),
                 glob="**/*.*",
@@ -173,17 +173,17 @@ class EnhancedRAGPipeline:
 
             docs = loader.load()
             # print(f"\n\n DEBUG: docs[0].metadata: {docs[0].metadata} \n\n")
-            print(f"✅ Loaded {len(docs)} documents from directory.")
+            print(f" Loaded {len(docs)} documents from directory.")
             return docs
 
         elif path.is_file():
             ext = path.suffix.lower()
-            print(f"📄 Loading single file: {path.name} ({ext})")
+            print(f" Loading single file: {path.name} ({ext})")
 
             # Case 1: PDF -> process as Markdown
             if ext == ".pdf":
                 try:
-                    # print("🧾 Extracting PDF as Markdown using pymupdf4llm...")
+                    # print(" Extracting PDF as Markdown using pymupdf4llm...")
                     md_text = pymupdf4llm.to_markdown(str(path))
 
                     m = re.search(r"\n#+\s*\**references\**\s*\n", md_text, flags=re.I)
@@ -199,12 +199,12 @@ class EnhancedRAGPipeline:
                         },
                         page_content=md_text,
                     )
-                    print(f"✅ Loaded 1 Markdown document from PDF ({len(md_text)} chars).")
+                    print(f" Loaded 1 Markdown document from PDF ({len(md_text)} chars).")
                     # print(f"\n\n DEBUG: docs[0].page_content: {doc.page_content} \n\n")
                     return [doc]
 
                 except Exception as e:
-                    print(f"⚠️ Markdown conversion failed ({e}), falling back to UnstructuredLoader.")
+                    print(f" Markdown conversion failed ({e}), falling back to UnstructuredLoader.")
                     loader = UnstructuredLoader(str(path), mode="paged", strategy="fast")
                     docs = loader.load()
                     # print(f"\n\n DEBUG: docs[0].metadata: {docs[0].metadata} \n\n")
@@ -217,18 +217,18 @@ class EnhancedRAGPipeline:
                 for d in docs:
                     d.metadata["source"] = str(path)
                     d.metadata["format"] = ext.strip(".")
-                print(f"✅ Loaded {len(docs)} elements from {ext} file.")
+                print(f" Loaded {len(docs)} elements from {ext} file.")
                 # print(f"\n\n DEBUG: docs[0].metadata: {docs[0].metadata} \n\n")
                 return docs
 
         else:
-            raise FileNotFoundError(f"❌ Path not found: {input_path}")
+            raise FileNotFoundError(f" Path not found: {input_path}")
         
     
     def chunk_and_store(self, docs: List, chunk_size: int, overlap: int) -> Chroma:
         """Split all documents into chunks and store them in Chroma with metadata."""
 
-        print(f"✂️ Chunking {len(docs)} documents (chunk_size={chunk_size}, overlap={overlap})...")
+        print(f" Chunking {len(docs)} documents (chunk_size={chunk_size}, overlap={overlap})...")
 
         splitter = RecursiveCharacterTextSplitter(
             chunk_size=chunk_size,
@@ -253,7 +253,7 @@ class EnhancedRAGPipeline:
                 "word_count": len(doc.page_content.split()),
             })
 
-        print(f"✅ Created {len(chunks)} chunks total.")
+        print(f" Created {len(chunks)} chunks total.")
 
         # print(f"\n\n DEBUG: first chunk after filter and add id and count: {chunks[0]} \n\n")
 
@@ -265,7 +265,7 @@ class EnhancedRAGPipeline:
             client_settings=Settings(allow_reset=True),
         )
 
-        print("📦 Vector DB created and ready for retrieval.")
+        print(" Vector DB created and ready for retrieval.")
         return vectordb
 
     def chunk_retrieval(self, vectordb: Chroma, query: str, k: int = 5) -> List:
@@ -300,7 +300,7 @@ class EnhancedRAGPipeline:
                 else:
                     processed_docs.append(doc_item)
         else:
-             print("⚠️ No documents retrieved for extraction!")
+             print(" No documents retrieved for extraction!")
 
         docs_content = "\n\n".join([
             f"## Document {i+1}:\n{str(doc.page_content)}" 
@@ -530,7 +530,7 @@ JSON OUTPUT:
 
     def _create_fallback_output(self, schema: Type[BaseModel]) -> BaseModel:
         """Create a fallback output when all parsing attempts fail."""
-        print(f"⚠️ Creating fallback output (all fields 'Not in Document') for schema {schema.__name__}")
+        print(f" Creating fallback output (all fields 'Not in Document') for schema {schema.__name__}")
         # Get field names from schema
         field_names = list(schema.model_fields.keys())
         fallback_data = {field: "Not in Document" for field in field_names}
@@ -672,15 +672,15 @@ JSON:
         # e.g., if max_retries=3, we try: Initial, Retry 1, Retry 2, Retry 3.
         total_attempts = max_retries + 1
         
-        print(f"🔄 Starting OML Generation & Validation Loop (Max Attempts: {total_attempts})...")
+        print(f" Starting OML Generation & Validation Loop (Max Attempts: {total_attempts})...")
 
         for attempt in range(total_attempts):
             loop_start = time.perf_counter()
-            print(f"📝 Attempt {attempt + 1}/{total_attempts}...")
+            print(f" Attempt {attempt + 1}/{total_attempts}...")
 
             # A. Sanity Check: Ensure OML isn't empty
             if component_based_characteristics and (not component_based_oml or not component_based_oml.strip()):
-                print(f"❌ Attempt {attempt + 1}: Component-based OML is empty. Regenerating...")
+                print(f" Attempt {attempt + 1}: Component-based OML is empty. Regenerating...")
                 component_based_oml, response_metadata = self.generate_component_based_oml(component_based_characteristics, vocab_files, comma_separated_description_based_vocab_mapping_keys)
                 total_input_tokens += response_metadata.get('prompt_eval_count', 0)
                 total_output_tokens += response_metadata.get('eval_count', 0)
@@ -692,7 +692,7 @@ JSON:
 
             # C. Syntax Check (Brackets)
             if combined_oml.count('[') != combined_oml.count(']'):
-                print(f"❌ Attempt {attempt + 1}: Syntax error (mismatched brackets). Repairing...")
+                print(f" Attempt {attempt + 1}: Syntax error (mismatched brackets). Repairing...")
                 # Regenerate and force a retry
                 component_based_oml, response_metadata = self.generate_component_based_oml(component_based_characteristics, vocab_files, comma_separated_description_based_vocab_mapping_keys)
                 total_input_tokens += response_metadata.get('prompt_eval_count', 0)
@@ -718,14 +718,14 @@ JSON:
             while True:
                 try:
                     concurrency_attempt += 1
-                    print(f"🔒 Acquiring lock on {lock_path} (Concurrency attempt {concurrency_attempt})...")
+                    print(f" Acquiring lock on {lock_path} (Concurrency attempt {concurrency_attempt})...")
                     
                     with lock:
                         # Lock acquired. We hold it as long as we are in this block.
                         # No risk of premature timeout while validating.
                         
                         if not writer.write_oml(combined_oml, output_path):
-                            print(f"❌ Attempt {attempt + 1}: File write failed.")
+                            print(f" Attempt {attempt + 1}: File write failed.")
                             write_success = False
                             break # Exit lock context
 
@@ -736,7 +736,7 @@ JSON:
 
                         if is_valid:
                             validation_success = True
-                            print(f"✅ Attempt {attempt + 1}: Validation Successful! (⏱️ {time.perf_counter() - loop_start:.2f}s)")
+                            print(f" Attempt {attempt + 1}: Validation Successful! ( {time.perf_counter() - loop_start:.2f}s)")
                             
                             # Deploy to Fuseki immediately (still under lock to prevent overwrites during load)
                             fuseki_success, fuseki_output_str = self._load_oml_into_fuseki(catalog_parent_path)
@@ -748,7 +748,7 @@ JSON:
                         break
 
                 except Timeout:
-                    print(f"⏳ Lock busy. Waiting... (Concurrency attempt {concurrency_attempt})")
+                    print(f" Lock busy. Waiting... (Concurrency attempt {concurrency_attempt})")
                     # Loop continues to retry acquisition
 
             if not write_success:
@@ -757,31 +757,31 @@ JSON:
             # Return success if validation passed (handled outside lock to ensure clean release)
             if validation_success:
                 if fuseki_success:
-                    print("🚀 Fuseki start & OML load successful.")
+                    print(" Fuseki start & OML load successful.")
                     if combined_oml and combined_oml.strip() != "":
                         print("OML generation completed")
                     else:
-                        print("⚠️ OML generation failed or produced empty output")
+                        print(" OML generation failed or produced empty output")
                     return combined_oml, oml_repetition_count, 1, total_input_tokens, total_output_tokens
                 else:
-                    print("⚠️ Validation passed, but Fuseki load failed:")
+                    print(" Validation passed, but Fuseki load failed:")
                     print(fuseki_output_str)
                     if combined_oml and combined_oml.strip() != "":
                         print("OML generation completed")
                     else:
-                        print("⚠️ OML generation failed or produced empty output")
+                        print(" OML generation failed or produced empty output")
                     return combined_oml, oml_repetition_count, 0, total_input_tokens, total_output_tokens
 
             # --- PHASE: REPAIR (FAILURE) ---
-            print(f"❌ Attempt {attempt + 1}: Validation failed.")
+            print(f" Attempt {attempt + 1}: Validation failed.")
             
             # If this was the last attempt, we fail gracefully
             if attempt == total_attempts - 1:
-                print("❌ Retries exhausted. Final validation failed.")
+                print(" Retries exhausted. Final validation failed.")
                 break # Exit loop to return failure
 
             # Otherwise, use the Reasoner report to repair
-            print("🔧 Repairing OML with reasoner feedback...")
+            print(" Repairing OML with reasoner feedback...")
             try:
                 component_based_oml, response_metadata = self._fix_oml_with_feedback(
                     component_based_oml, 
@@ -794,7 +794,7 @@ JSON:
                 total_output_tokens += response_metadata.get('eval_count', 0)
                 oml_repetition_count += 1
             except Exception as e:
-                print(f"❌ Error during repair: {e}")
+                print(f" Error during repair: {e}")
                 # Try a raw regeneration if repair crashes
                 component_based_oml, response_metadata = self.generate_component_based_oml(component_based_characteristics, vocab_files, comma_separated_description_based_vocab_mapping_keys)
                 total_input_tokens += response_metadata.get('prompt_eval_count', 0)
@@ -802,13 +802,13 @@ JSON:
 
         # --- 4. FAILURE EXIT ---
         # If we reach here, we exhausted retries without returning success
-        print("⚠️ OML generation failed or produced empty output")
+        print(" OML generation failed or produced empty output")
 
         return combined_oml, oml_repetition_count, 0, total_input_tokens, total_output_tokens
 
     def generate_description_based_oml(self, characteristics: Dict[str, Any], vocab_mapping: Dict[str, str]) -> str:
         """Generate OML of description characteristics programmatically."""
-        print("🏗️ Generating description-based OML...")
+        print(" Generating description-based OML...")
         # Generate OML for each characteristic
         oml_parts = []
         for key in characteristics:
@@ -821,7 +821,7 @@ JSON:
     def generate_component_based_oml(self, characteristics: Dict[str, Any], 
                                     vocab_files: Dict[str, str], description_based_vocab_mapping: str) -> tuple[str, dict]:
         """Generate OML of component characteristics with an LLM."""
-        print("🏗️ Generating component-based OML...")
+        print(" Generating component-based OML...")
         # Load vocabulary files
         vocab_context = ""
         for name, path in vocab_files.items():
@@ -906,7 +906,7 @@ Generate ONLY the OML code with no additional explanations:
             guiding_syntax=guiding_syntax
         )
         
-        print("⏳ Sending request to LLM for component-based OML...")
+        print(" Sending request to LLM for component-based OML...")
         # We call invoke_with_retry OUTSIDE the try/catch block so that actual network/API errors 
         # bubble up immediately as critical failures.
         response = self._invoke_with_retry(formatted_prompt)
@@ -916,10 +916,10 @@ Generate ONLY the OML code with no additional explanations:
             response_metadata = getattr(response, 'response_metadata', {})
             response_text = self._clean_llm_response(response_text)
             response_text = response_text.replace("<", "").replace(">", "")  # Remove any stray angle brackets for components
-            print("✅ LLM response received.")
+            print(" LLM response received.")
             return response_text, response_metadata
         except Exception as e:
-            print(f"❌ Error generating component-based OML (Processing failed): {e}")
+            print(f" Error generating component-based OML (Processing failed): {e}")
             # Return empty string to trigger retry logic in orchestrator
             return "", {}
 
@@ -928,7 +928,7 @@ Generate ONLY the OML code with no additional explanations:
         """
         Fix OML content based on OpenCAESAR validation feedback.
         """
-        print("🔧 Attempting to fix OML based on validation feedback...")
+        print(" Attempting to fix OML based on validation feedback...")
         
         # Load vocabulary context
         vocab_context = ""
@@ -942,7 +942,7 @@ Generate ONLY the OML code with no additional explanations:
 
         # Combine OML content and validation output
         oml_content = writer._combine_oml_with_validation_errors(oml_content, validation_output)
-        print("🔍 Validation errors integrated into OML content for context")
+        print(" Validation errors integrated into OML content for context")
 
         # Create fix prompt with validation feedback
         fix_prompt = PromptTemplate.from_template("""
@@ -1071,10 +1071,10 @@ Generate ONLY the corrected OML code with no explanations or comments:
             response_text = self._clean_llm_response(response_text)
             response_text = response_text.replace("<", "").replace(">", "").replace(";", "")  # Remove any stray characters
 
-            print("🔧 Fixed OML generated based on validation feedback")
+            print(" Fixed OML generated based on validation feedback")
             return response_text, response_metadata
         except Exception as e:
-            print(f"❌ Error fixing OML with feedback: {e}")
+            print(f" Error fixing OML with feedback: {e}")
             return oml_content, {}  # Return original if fixing fails
 
     def _validate_oml_with_opencaesar(self, catalog_parent_path: Path, output_path: str = "report.txt") -> tuple[bool, str]:
@@ -1107,7 +1107,7 @@ Generate ONLY the corrected OML code with no explanations or comments:
                 return False, error_msg
             
             # Run the validation
-            print("⚙️ Validating written OML file with OpenCAESAR...")
+            print(" Validating written OML file with OpenCAESAR...")
             print("Parameters:")
             print(f" - Working Directory: {abs_catalog_path}")
             print(f" - Gradlew Script: {gradlew_script}")
@@ -1123,7 +1123,7 @@ Generate ONLY the corrected OML code with no explanations or comments:
             text=True,
             timeout=300)
 
-            print("📤 OpenCAESAR OML validation result:")
+            print(" OpenCAESAR OML validation result:")
             print(f"Return code: {result.returncode}")
             # print(f"Stdout: {result.stdout}")
             print(f"Stderr: {result.stderr}")
@@ -1183,7 +1183,7 @@ Generate ONLY the corrected OML code with no explanations or comments:
                 print(msg)
                 return False, msg
 
-            print("🚀 Starting Fuseki server via Gradle...")
+            print(" Starting Fuseki server via Gradle...")
             start_cmd = [str(gradlew_script), "startFuseki"]
             start_proc = subprocess.run(
                 start_cmd,
@@ -1197,7 +1197,7 @@ Generate ONLY the corrected OML code with no explanations or comments:
             if start_proc.returncode != 0:
                 return False, start_output
 
-            print("📥 Loading OML into Fuseki (owlLoad)...")
+            print(" Loading OML into Fuseki (owlLoad)...")
             load_cmd = [str(gradlew_script), "owlLoad"]
             load_proc = subprocess.run(
                 load_cmd,

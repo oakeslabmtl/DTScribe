@@ -80,7 +80,7 @@ class CharacteristicsExtractor(ICharacteristicsExtractor):
                 description, documents, schema, judge_results
             )
         except Exception as e:
-            print(f"⚠️  Structured output failed, trying manual parsing: {e}")
+            print(f"  Structured output failed, trying manual parsing: {e}")
             return self._rag_pipeline.generate_with_manual_parsing(
                 description, documents, schema, judge_results
             )
@@ -113,12 +113,12 @@ class PipelineInitializer(IPipelineInitializer):
         if original_len > baseline_max_chars:
             truncated_text = combined_text[:baseline_max_chars]
             # print(
-            #     f"✂️ Baseline truncation applied: {original_len} → "
+            #     f" Baseline truncation applied: {original_len} → "
             #     f"{len(truncated_text)} characters (limit={baseline_max_chars})."
             # )
         else:
             truncated_text = combined_text
-            print(f"✅ No truncation needed (len={original_len} chars).")
+            print(f" No truncation needed (len={original_len} chars).")
 
         # create a single docuemnt with the full/truncated content
         baseline_doc = Document(
@@ -137,7 +137,7 @@ class PipelineInitializer(IPipelineInitializer):
         # BASELINE:
         if baseline_full_doc:
 
-            print("✅ Baseline full-doc pipeline initialized successfully")
+            print(" Baseline full-doc pipeline initialized successfully")
             return {
                 "vectordb": None,
                 "rag_pipeline": self._rag_pipeline,
@@ -153,7 +153,7 @@ class PipelineInitializer(IPipelineInitializer):
         else:
             vectordb = self._rag_pipeline.chunk_and_store(docs, chunk_size=config.chunk_size, overlap=config.chunk_overlap)
             
-            print("✅ RAG Pipeline initialized successfully")
+            print(" RAG Pipeline initialized successfully")
             return {
                 "vectordb": vectordb,
                 "rag_pipeline": self._rag_pipeline,
@@ -170,7 +170,7 @@ class OMLGenerator(IOMLGenerator):
         self._rag_pipeline = rag_pipeline
 
     def generate(self, characteristics: Dict[str, Any], vocab_files: Dict[str, str], max_retries: int = 3):
-        print("🏗️ Generating OML description...")
+        print(" Generating OML description...")
         return self._rag_pipeline.generate_oml(characteristics, vocab_files, max_retries=max_retries)
 
 
@@ -239,7 +239,7 @@ class BaseBlockProcessor(IBlockProcessor, ABC):
         config = self.get_config()
         label = self.block_label or f"Block {self.block_index}"
 
-        print(f"🔍 Retrieving documents for {label} characteristics...")
+        print(f" Retrieving documents for {label} characteristics...")
 
         start_time = time.time()
         meta_prefix = f"block_{self.block_index}"
@@ -248,7 +248,7 @@ class BaseBlockProcessor(IBlockProcessor, ABC):
             retrieved_docs = retriever.retrieve_documents(config.query, k=config.k) # Type: List[Tuple[Document, float]]
             
             if not retrieved_docs:
-                print(f"⚠️ Warning: No documents retrieved for {label}. Extractor will likely return empty results.")
+                print(f" Warning: No documents retrieved for {label}. Extractor will likely return empty results.")
 
             rag_pipeline = getattr(retriever, "_rag_pipeline", None)
             judge_source_doc = getattr(rag_pipeline, "full_corpus_doc", None) if rag_pipeline else None # full document for judge context, type: langchain document
@@ -267,7 +267,7 @@ class BaseBlockProcessor(IBlockProcessor, ABC):
             last_judge_item_map = {} 
 
             while True:
-                print(f"🧠 Extracting {label} (attempt {retries+1})...")
+                print(f" Extracting {label} (attempt {retries+1})...")
                 output, response_metadata = extractor.extract(
                     config.description, retrieved_docs, self.get_schema(), judge_results
                 )
@@ -310,7 +310,7 @@ class BaseBlockProcessor(IBlockProcessor, ABC):
 
                 # Judge step
                 if judge is not None:
-                    print(f"🔬 Performing LLM evaluation of {label} (attempt {retries+1})...")
+                    print(f" Performing LLM evaluation of {label} (attempt {retries+1})...")
                     
                     judge_results = judge.evaluate(extracted_dict, judge_source_doc, config.description)
 
@@ -327,7 +327,7 @@ class BaseBlockProcessor(IBlockProcessor, ABC):
                     # for k, v in extracted_dict.items():
                     #     print(f" - {k}: {v}\n")
 
-                    # print(f"💡 LLM evaluation results for {label}:")
+                    # print(f" LLM evaluation results for {label}:")
                     # for res in judge_results:
                     #     print(f"  - Characteristic: {res.get('characteristic')}")
                     #     print(f"    Score: {res.get('score')}")
@@ -382,7 +382,7 @@ class BaseBlockProcessor(IBlockProcessor, ABC):
 
                     if retry_candidates and retries < max_retries:
                         print(
-                            f"⚠️ Low judge score detected in {label}. "
+                            f" Low judge score detected in {label}. "
                             f"Retrying extraction for: {sorted(retry_candidates)}"
                         )
                         retries += 1
@@ -407,7 +407,7 @@ class BaseBlockProcessor(IBlockProcessor, ABC):
                 break  # acceptable quality, no judge, or retries exhausted
 
 
-            print(f"✅ Extraction for {label} completed successfully.")
+            print(f" Extraction for {label} completed successfully.")
 
             processing_time = time.time() - start_time
             meta = {
@@ -435,11 +435,11 @@ class BaseBlockProcessor(IBlockProcessor, ABC):
             is_critical = "429" in error_msg or "500" in error_msg or "too many requests" in error_msg or "503" in error_msg or "service unavailable" in error_msg
             
             if is_critical:
-                print(f"🔥 Critical error in {meta_prefix}: {e}. Bubbling up for experiment retry.")
+                print(f" Critical error in {meta_prefix}: {e}. Bubbling up for experiment retry.")
                 raise e
 
             processing_time = time.time() - start_time
-            print(f"❌ Error processing {meta_prefix}: {e}")
+            print(f" Error processing {meta_prefix}: {e}")
             # import traceback
             # traceback.print_exc() 
             return ExtractionResult(

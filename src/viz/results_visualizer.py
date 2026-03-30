@@ -44,7 +44,7 @@ class ExperimentResultsVisualizer:
             print("No successful experiment rows to summarize.")
             return
         print("\n" + "=" * 70)
-        print("📈 SUMMARY STATISTICS")
+        print(" SUMMARY STATISTICS")
         print("=" * 70)
         for col in ["extraction_rate", "total_time", "extracted_count"]:
             if col in self.successful_df.columns:
@@ -57,7 +57,7 @@ class ExperimentResultsVisualizer:
         if self.successful_df.empty:
             return
         print("\n" + "=" * 70)
-        print("🏆 BEST CONFIGURATIONS")
+        print(" BEST CONFIGURATIONS")
         print("=" * 70)
         sdf = self.successful_df
         if "extraction_rate" in sdf.columns:
@@ -152,7 +152,7 @@ class ExperimentResultsVisualizer:
             out_path = Path(save_path)
             out_path.parent.mkdir(parents=True, exist_ok=True)
             fig.savefig(out_path, dpi=150)
-            print(f"💾 Dashboard saved to {out_path}")
+            print(f" Dashboard saved to {out_path}")
         if show:
             plt.show()
         else:
@@ -181,7 +181,7 @@ def visualize_csv(csv_file_path: str, summary_only: bool = False, output_dir: Op
             viz.create_all_visualizations(output_dir, show=show)
         return True
     except Exception as e:
-        print(f"❌ Visualization failed: {e}")
+        print(f" Visualization failed: {e}")
         return False
 
 # ---------------------------- Results Analyzer ---------------------------- #
@@ -297,9 +297,9 @@ class ResultsAnalyzer:
                     report.append(f"- **Older experiments avg extraction rate**: {older_df['extraction_rate'].mean():.2f}%")
                     improvement = recent_df['extraction_rate'].mean() - older_df['extraction_rate'].mean()
                     if improvement > 0:
-                        report.append(f"- **Improvement**: +{improvement:.2f}% 📈")
+                        report.append(f"- **Improvement**: +{improvement:.2f}% ")
                     else:
-                        report.append(f"- **Change**: {improvement:.2f}% 📉")
+                        report.append(f"- **Change**: {improvement:.2f}% ")
                     report.append("")
 
         # Recommendations
@@ -412,7 +412,7 @@ class ResultsAnalyzer:
         plt.tight_layout()
         dashboard_file = self.analysis_dir / "characteristics_dashboard.png"
         plt.savefig(dashboard_file, dpi=300, bbox_inches='tight')
-        print(f"📊 Characteristics dashboard saved to: {dashboard_file}")
+        print(f" Characteristics dashboard saved to: {dashboard_file}")
         if show:
             plt.show()
         else:
@@ -468,7 +468,7 @@ class ResultsAnalyzer:
         plt.tight_layout()
         dashboard_file = self.analysis_dir / "oml_dashboard.png"
         plt.savefig(dashboard_file, dpi=300, bbox_inches='tight')
-        print(f"📊 OML dashboard saved to: {dashboard_file}")
+        print(f" OML dashboard saved to: {dashboard_file}")
         if show:
             plt.show()
         else:
@@ -517,7 +517,7 @@ class ResultsAnalyzer:
         plt.tight_layout()
         comparison_file = self.analysis_dir / "comparison_dashboard.png"
         plt.savefig(comparison_file, dpi=300, bbox_inches='tight')
-        print(f"📊 Comparison dashboard saved to: {comparison_file}")
+        print(f" Comparison dashboard saved to: {comparison_file}")
         if show:
             plt.show()
         else:
@@ -546,7 +546,7 @@ class ResultsAnalyzer:
         report_file = self.analysis_dir / f"research_summary_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md"
         with open(report_file, 'w', encoding='utf-8') as f:
             f.write(report)
-        print(f"📄 Research summary saved to: {report_file}")
+        print(f" Research summary saved to: {report_file}")
         return str(report_file)
 
 
@@ -605,7 +605,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             for name in args.which:
                 fn = CSV_VISUALIZATIONS.get(name)
                 if fn is None:
-                    print(f"⚠️  Unknown CSV visualization '{name}'. Skipping.")
+                    print(f"  Unknown CSV visualization '{name}'. Skipping.")
                     continue
                 fn(viz, out_dir, args.show)
         return 0
